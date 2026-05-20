@@ -382,6 +382,57 @@ python scripts/health_report.py
 10. Configure backups for PostgreSQL, `data/raw`, and `data/exports`.
 11. Enable `CURRENT_PRICE_SCHEDULER_ENABLED=true` only after the manual check is healthy.
 
+## Post-Deploy Checks
+
+Run these checks after every server deploy:
+
+```bash
+docker compose ps
+docker compose logs app --tail=200
+docker compose run --rm app python scripts/operational_report.py
+docker compose run --rm app python scripts/health_report.py
+```
+
+Verify the production scheduler from logs. It should register `current_price_source_0900` and `current_price_source_1800`. It should not register `current_price_source_test_interval` unless `CURRENT_PRICE_TEST_INTERVAL_SECONDS` is deliberately set for a short test.
+
+Check raw storage:
+
+```bash
+find data/raw/current_price_source -type f | tail
+du -h data/raw data/exports logs --max-depth=2
+```
+
+Check backup planning:
+
+```bash
+docker compose run --rm app python scripts/backup.py --dry-run
+```
+
+Safe code update flow:
+
+```bash
+git pull
+docker compose build app
+docker compose up -d app
+docker compose ps
+docker compose run --rm app python scripts/health_report.py
+docker compose run --rm app python scripts/operational_report.py
+```
+
+If host bind-mounted `logs/` or `data/` are not writable by the app container, fix only those project directories. Do not change ownership of `/data1` or other projects. The app image runs as a non-root user by default, using `APP_UID` and `APP_GID` build args, both defaulting to `1000`.
+
+### PostgreSQL Password Rotation
+
+For an existing PostgreSQL Docker volume, changing only `.env` is not enough: the database user password stored inside PostgreSQL remains unchanged. The safe order is:
+
+1. Generate a new password outside git.
+2. Run a one-off SQL command against the running database: `ALTER USER collector WITH PASSWORD '<new-password>';`.
+3. Update `DATABASE_URL` in the server `.env` to use the same password.
+4. Recreate the app container with `docker compose up -d app`.
+5. Run `health_report.py` and `operational_report.py`.
+
+Do not commit production `.env` and do not print the new password in logs or reports.
+
 ## Health Check
 
 Use the health helper from Python:
