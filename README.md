@@ -541,6 +541,40 @@ data/exports/{timestamp}/dataset_manifest.json
 
 Real CSV and Parquet exports will be added later.
 
+## Phase 3.2 Daily Features
+
+Daily features turn raw daily price observations and official CBR FX rates into one row per product and local feature date. Dates are calculated in `SCHEDULE_TIMEZONE` (`Europe/Moscow` in production), and FX uses an as-of rule: for each feature date, the builder uses the latest USD/RUB, EUR/RUB, and CNY/RUB rate with `fx_rates.observed_at <= feature_date`. Weekend and holiday CBR gaps therefore use the last available official rate without looking into the future.
+
+Build all available features:
+
+```bash
+python scripts/build_features.py daily
+```
+
+Build an explicit inclusive range:
+
+```bash
+python scripts/build_features.py daily --from-date 2026-05-20 --to-date 2026-05-25
+```
+
+The builder upserts by `(product_id, feature_date)`: repeated runs update changed rows, skip identical rows, and do not create duplicates. Rolling windows require full windows: 3 daily price points for `price_rolling_mean_3d`, and 7 daily price points for `price_rolling_mean_7d` / `price_rolling_std_7d`; otherwise the fields stay `NULL`.
+
+Check the result:
+
+```sql
+SELECT *
+FROM daily_product_features
+ORDER BY feature_date DESC, product_id
+LIMIT 20;
+
+SELECT product_id, feature_date, COUNT(*)
+FROM daily_product_features
+GROUP BY product_id, feature_date
+HAVING COUNT(*) > 1;
+```
+
+This is feature engineering only. It is not an ML model, and it does not add news, weather, ECB, or other external sources.
+
 ## Adding a Collector
 
 1. Add a class under `app/collectors/`.

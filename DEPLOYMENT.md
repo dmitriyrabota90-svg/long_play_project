@@ -122,6 +122,43 @@ HAVING COUNT(*) > 1;
 "
 ```
 
+## Daily Features Deployment
+
+Phase 3.2 adds manual daily feature building. It reads `price_observations` and CBR `fx_rates`, then upserts one row per `(product_id, feature_date)` into `daily_product_features`. `feature_date` uses `SCHEDULE_TIMEZONE`; FX uses the latest official CBR rate with `observed_at <= feature_date`, so weekends use the last available CBR date and never future FX.
+
+After deploying code and applying migrations, build all currently available features:
+
+```bash
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app python scripts/build_features.py daily
+```
+
+Build an explicit inclusive range:
+
+```bash
+docker compose run --rm app python scripts/build_features.py daily --from-date 2026-05-20 --to-date 2026-05-25
+```
+
+Check output and duplicate safety:
+
+```bash
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT *
+FROM daily_product_features
+ORDER BY feature_date DESC, product_id
+LIMIT 20;
+"
+
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT product_id, feature_date, COUNT(*)
+FROM daily_product_features
+GROUP BY product_id, feature_date
+HAVING COUNT(*) > 1;
+"
+```
+
+There is no automatic feature scheduler in Phase 3.2. Features are built manually until the output is observed in production. This is not an ML model and does not add news, weather, ECB, or other sources.
+
 ## Checking The Collector
 
 Manual run:

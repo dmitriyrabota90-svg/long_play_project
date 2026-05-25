@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
 from app.config.settings import get_settings
-from app.db.models import CollectorRun, DataQualityCheck, FxRate, PriceObservation, Product, RawResponse, Source
+from app.db.models import CollectorRun, DailyProductFeature, DataQualityCheck, FxRate, PriceObservation, Product, RawResponse, Source
 from app.db.session import session_scope
 from app.monitoring.quality_summary import build_quality_summary, problematic_quality_filter
 from app.monitoring.redaction import mask_database_url
@@ -44,6 +45,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "raw_responses": 0,
             "price_observations": 0,
             "fx_rates": 0,
+            "daily_product_features": 0,
             "problematic_quality_checks": 0,
         },
         "last_runs": {
@@ -54,6 +56,12 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         "cbr_fx": {
             "last_successful_run": None,
             "fx_rates_last_24h": 0,
+        },
+        "daily_product_features": {
+            "count": 0,
+            "last_date": None,
+            "last_24h": 0,
+            "missing_recent_features": [],
         },
         "quality_checks": {
             "total_checks": 0,
@@ -105,6 +113,14 @@ def _fill_db_report(
     report["last_24h"]["fx_rates"] = session.scalar(
         select(func.count()).select_from(FxRate).where(FxRate.created_at >= cutoff)
     )
+    report["last_24h"]["daily_product_features"] = session.scalar(
+        select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.updated_at >= cutoff)
+    )
+    report["daily_product_features"]["count"] = session.scalar(select(func.count()).select_from(DailyProductFeature))
+    last_feature_date = session.scalar(select(func.max(DailyProductFeature.feature_date)))
+    report["daily_product_features"]["last_date"] = last_feature_date.isoformat() if last_feature_date else None
+    report["daily_product_features"]["last_24h"] = report["last_24h"]["daily_product_features"]
+    report["daily_product_features"]["missing_recent_features"] = _missing_recent_features(session, cutoff=cutoff)
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())
@@ -167,6 +183,27 @@ def _stale_products(session: Session, source_id: int, cutoff: datetime) -> list[
                 }
             )
     return stale
+
+
+def _missing_recent_features(session: Session, *, cutoff: datetime) -> list[dict[str, Any]]:
+    local_tz = ZoneInfo(get_settings().schedule_timezone)
+    recent = session.scalars(select(PriceObservation).where(PriceObservation.created_at >= cutoff)).all()
+    missing: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for observation in recent:
+        feature_date = _to_utc(observation.observed_at).astimezone(local_tz).date()
+        key = (observation.product_id, feature_date.isoformat())
+        if key in seen:
+            continue
+        seen.add(key)
+        exists = session.scalar(
+            select(DailyProductFeature.id)
+            .where(DailyProductFeature.product_id == observation.product_id, DailyProductFeature.feature_date == feature_date)
+            .limit(1)
+        )
+        if exists is None:
+            missing.append({"product_id": observation.product_id, "feature_date": feature_date.isoformat()})
+    return missing
 
 
 def _run_to_dict(run: CollectorRun | None) -> dict[str, Any] | None:

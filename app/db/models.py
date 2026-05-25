@@ -226,6 +226,7 @@ class NewsProductLink(Base):
 class DailyProductFeature(Base):
     __tablename__ = "daily_product_features"
     __table_args__ = (
+        UniqueConstraint("product_id", "feature_date", name="uq_daily_product_features_product_date"),
         Index("ix_daily_product_features_product_feature_date", "product_id", "feature_date"),
     )
 
@@ -235,7 +236,35 @@ class DailyProductFeature(Base):
     as_of_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     features_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     feature_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    price_last: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_first: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_min: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_max: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_observations_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    price_delta_abs_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_delta_pct_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    price_intraday_delta_abs: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_intraday_delta_pct: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    price_rolling_mean_3d: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_rolling_mean_7d: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    price_rolling_std_7d: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    cny_rub: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    usd_rub: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    eur_rub: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    cny_rub_delta_abs_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    cny_rub_delta_pct_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    usd_rub_delta_abs_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    usd_rub_delta_pct_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    eur_rub_delta_abs_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    eur_rub_delta_pct_1d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    fx_as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
 
     product: Mapped[Product] = relationship()
 
