@@ -144,6 +144,7 @@ docker compose run --rm app python -m app.db.seed
 docker compose run --rm app python scripts/run_collector.py current_price_source
 docker compose run --rm app python scripts/health_report.py
 docker compose run --rm app python scripts/operational_report.py
+docker compose run --rm app python scripts/quality_summary.py
 ```
 
 If `docker compose config` passes but `docker compose up` cannot connect to Docker, the code path has not failed; the Docker daemon is simply unavailable in that environment.
@@ -309,7 +310,7 @@ The report includes:
 - latest successful `current_price_source` run;
 - latest failed or partial run;
 - `price_observations` count for the last 24 hours;
-- failed quality checks for the last 24 hours;
+- problematic quality checks for the last 24 hours;
 - products without a fresh price;
 - raw storage status;
 - database status.
@@ -323,7 +324,32 @@ python scripts/operational_report.py
 python scripts/operational_report.py --freshness-hours 12
 ```
 
-It includes database status, app version, DB URL setting, collector run counts, latest success/partial/error runs, raw/price/quality counts for the last 24 hours, stale products, and sizes of `data/raw`, `data/exports`, and `logs`.
+It includes database status, app version, masked DB URL setting, collector run counts, latest success/partial/error runs, raw/price/problematic quality counts for the last 24 hours, stale products, and sizes of `data/raw`, `data/exports`, and `logs`.
+
+## Data Collection Phases
+
+The current Phase 2 MVP collects only `current_price_source` current prices. Empty `fx_rates`, `commodity_benchmarks`, `weather_observations`, `news_items`, `daily_product_features`, and `dataset_exports` tables are expected at this stage and are not a production error.
+
+Planned phases:
+
+- Phase 2: current price collection only.
+- Phase 3: FX rates and commodity benchmarks.
+- Phase 4: feature building and dataset export workflows.
+
+Do not add FX/news/weather/features/export sources as part of diagnostics cleanup.
+
+## Quality Summary
+
+Use the quality summary CLI to review checks without treating `pass` or `skip` rows as failures:
+
+```bash
+python scripts/quality_summary.py
+python scripts/quality_summary.py --limit 50
+```
+
+The CLI prints total checks, checks by status, checks by severity, problematic checks, latest problematic checks, and a conclusion of `ok`, `warning`, or `error`. Statuses `pass` and `skip` are successful; any other status is considered problematic. When the problematic count is zero, the output includes `quality checks ok`.
+
+When exporting problematic quality checks for diagnostics, use `quality_checks_problematic.csv`; the old `quality_checks_failed.csv` name is intentionally avoided because `pass` and `skip` are not failures.
 
 ## Log Rotation
 

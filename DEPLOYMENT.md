@@ -34,6 +34,7 @@ docker compose ps
 docker compose logs app --tail=200
 docker compose run --rm app python scripts/health_report.py
 docker compose run --rm app python scripts/operational_report.py
+docker compose run --rm app python scripts/quality_summary.py
 docker compose run --rm app python scripts/backup.py --dry-run
 ```
 
@@ -48,9 +49,26 @@ docker compose ps
 docker compose logs app --tail=100
 docker compose run --rm app python scripts/health_report.py
 docker compose run --rm app python scripts/operational_report.py
+docker compose run --rm app python scripts/quality_summary.py
 ```
 
 Only the app container needs rebuilding for Python code changes. Do not recreate or remove the PostgreSQL volume unless there is an explicit database maintenance plan.
+
+## Current Data Scope
+
+Phase 2 collects only `current_price_source` current prices. At this stage, empty `fx_rates`, `commodity_benchmarks`, `weather_observations`, `news_items`, `daily_product_features`, and `dataset_exports` tables are expected and should not be treated as deployment failures.
+
+Phase 3 will add FX rates and commodity benchmarks. Phase 4 will add feature building and dataset export workflows. Do not add those sources or change the scheduler during diagnostics cleanup.
+
+Check quality status with:
+
+```bash
+docker compose run --rm app python scripts/quality_summary.py
+```
+
+`pass` and `skip` are successful quality statuses. Any other status is reported as problematic; if none exist, the CLI prints `quality checks ok`.
+
+Diagnostic CSV exports for these rows should be named `quality_checks_problematic.csv`, not `quality_checks_failed.csv`.
 
 ## Checking The Collector
 

@@ -11,6 +11,8 @@ from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
 from app.config.settings import get_settings
 from app.db.models import CollectorRun, DataQualityCheck, PriceObservation, Product, RawResponse, Source
 from app.db.session import session_scope
+from app.monitoring.quality_summary import build_quality_summary, problematic_quality_filter
+from app.monitoring.redaction import mask_database_url
 from app.operations.storage import directory_size_bytes
 
 
@@ -25,7 +27,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         "app_version": settings.app_version,
         "database": {
             "ok": False,
-            "database_url": settings.database_url,
+            "database_url": mask_database_url(settings.database_url),
         },
         "paths": {
             "raw_data_dir": str(settings.raw_data_dir),
@@ -41,12 +43,20 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "collector_runs": 0,
             "raw_responses": 0,
             "price_observations": 0,
-            "failed_quality_checks": 0,
+            "problematic_quality_checks": 0,
         },
         "last_runs": {
             "success": None,
             "partial_success": None,
             "error": None,
+        },
+        "quality_checks": {
+            "total_checks": 0,
+            "pass_checks": 0,
+            "skip_checks": 0,
+            "problematic_checks": 0,
+            "conclusion": "ok",
+            "message": "quality checks ok",
         },
         "stale_products": [],
     }
@@ -60,7 +70,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
     except Exception as exc:
         report["database"] = {
             "ok": False,
-            "database_url": settings.database_url,
+            "database_url": mask_database_url(settings.database_url),
             "error": str(exc),
         }
 
@@ -87,11 +97,20 @@ def _fill_db_report(
     report["last_24h"]["price_observations"] = session.scalar(
         select(func.count()).select_from(PriceObservation).where(PriceObservation.created_at >= cutoff)
     )
-    report["last_24h"]["failed_quality_checks"] = session.scalar(
+    report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())
         .select_from(DataQualityCheck)
-        .where(DataQualityCheck.checked_at >= cutoff, DataQualityCheck.status == "fail")
+        .where(DataQualityCheck.checked_at >= cutoff, problematic_quality_filter())
     )
+    quality_summary = build_quality_summary(session=session)
+    report["quality_checks"] = {
+        "total_checks": quality_summary["total_checks"],
+        "pass_checks": quality_summary["pass_checks"],
+        "skip_checks": quality_summary["skip_checks"],
+        "problematic_checks": quality_summary["problematic_checks"],
+        "conclusion": quality_summary["conclusion"],
+        "message": "quality checks ok" if quality_summary["problematic_checks"] == 0 else "quality checks need review",
+    }
 
     for status in ("success", "partial_success", "error"):
         run = session.scalar(
