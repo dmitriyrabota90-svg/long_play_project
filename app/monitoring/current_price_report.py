@@ -11,6 +11,7 @@ from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
 from app.config.settings import get_settings
 from app.db.models import CollectorRun, DataQualityCheck, PriceObservation, Product, Source
 from app.db.session import session_scope
+from app.monitoring.quality_summary import problematic_quality_filter
 
 
 def build_current_price_health_report(*, freshness_hours: int = 24, session: Session | None = None) -> dict[str, Any]:
@@ -34,7 +35,7 @@ def build_current_price_health_report(*, freshness_hours: int = 24, session: Ses
             "last_successful_run": None,
             "last_failed_or_partial_run": None,
             "price_observations_last_24h": 0,
-            "quality_failures_last_24h": 0,
+            "problematic_quality_checks_last_24h": 0,
             "stale_products": [],
         },
     }
@@ -97,13 +98,13 @@ def _fill_report(
             PriceObservation.created_at >= quality_cutoff,
         )
     )
-    report["current_price_source"]["quality_failures_last_24h"] = session.scalar(
+    report["current_price_source"]["problematic_quality_checks_last_24h"] = session.scalar(
         select(func.count())
         .select_from(DataQualityCheck)
         .where(
             DataQualityCheck.source_id == source.id,
             DataQualityCheck.checked_at >= quality_cutoff,
-            DataQualityCheck.status == "fail",
+            problematic_quality_filter(),
         )
     )
     report["current_price_source"]["stale_products"] = _stale_products(session, source.id, cutoff)
