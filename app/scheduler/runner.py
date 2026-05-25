@@ -6,6 +6,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.config.settings import get_settings
 from app.scheduler.jobs import (
+    cbr_fx_job,
     current_price_source_job,
     current_price_source_test_interval_job,
     daily_quality_check_job,
@@ -43,6 +44,25 @@ def build_scheduler() -> BlockingScheduler:
             )
     else:
         logger.info("current_price_source scheduler disabled by CURRENT_PRICE_SCHEDULER_ENABLED")
+
+    if settings.cbr_fx_scheduler_enabled:
+        hour, minute = _parse_schedule_time(settings.cbr_fx_schedule_time)
+        scheduler.add_job(
+            cbr_fx_job,
+            "cron",
+            hour=hour,
+            minute=minute,
+            id="cbr_fx_daily",
+            args=[settings.cbr_fx_schedule_time],
+            replace_existing=True,
+        )
+        logger.info(
+            "registered scheduler job id=cbr_fx_daily trigger=cron time=%s timezone=%s",
+            settings.cbr_fx_schedule_time,
+            settings.schedule_timezone,
+        )
+    else:
+        logger.info("cbr_fx scheduler disabled by CBR_FX_SCHEDULER_ENABLED")
     if settings.current_price_test_interval_seconds:
         if settings.current_price_test_interval_seconds <= 0:
             raise ValueError("CURRENT_PRICE_TEST_INTERVAL_SECONDS must be a positive integer")

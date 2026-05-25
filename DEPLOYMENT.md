@@ -58,7 +58,7 @@ Only the app container needs rebuilding for Python code changes. Do not recreate
 
 Phase 2 collects only `current_price_source` current prices. At this stage, empty `fx_rates`, `commodity_benchmarks`, `weather_observations`, `news_items`, `daily_product_features`, and `dataset_exports` tables are expected and should not be treated as deployment failures.
 
-Phase 3 will add FX rates and commodity benchmarks. Phase 4 will add feature building and dataset export workflows. Do not add those sources or change the scheduler during diagnostics cleanup.
+Phase 3 starts with CBR FX; additional FX sources and commodity benchmarks will follow later. Phase 4 will add feature building and dataset export workflows. Do not add those sources or change the scheduler during diagnostics cleanup.
 
 Check quality status with:
 
@@ -69,6 +69,37 @@ docker compose run --rm app python scripts/quality_summary.py
 `pass` and `skip` are successful quality statuses. Any other status is reported as problematic; if none exist, the CLI prints `quality checks ok`.
 
 Diagnostic CSV exports for these rows should be named `quality_checks_problematic.csv`, not `quality_checks_failed.csv`.
+
+## CBR FX Deployment
+
+`cbr_fx` collects official CBR XML daily rates for USD/RUB, EUR/RUB, and CNY/RUB. It writes raw XML to `data/raw/cbr_fx`, normalized rows to `fx_rates`, and quality checks to `data_quality_checks`.
+
+Manual run after deploy:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py cbr_fx
+docker compose run --rm app python scripts/run_collector.py cbr_fx --date 2026-05-25
+```
+
+Check stored rates:
+
+```bash
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT base_currency, quote_currency, rate, observed_at, created_at
+FROM fx_rates
+ORDER BY created_at DESC
+LIMIT 20;
+"
+```
+
+The CBR FX scheduler remains disabled unless explicitly enabled in `.env`:
+
+```env
+CBR_FX_SCHEDULER_ENABLED=false
+CBR_FX_SCHEDULE_TIME=10:00
+```
+
+Do not enable it during routine deploy unless there is a separate scheduling decision. `CURRENT_PRICE_SCHEDULER_ENABLED` and `CURRENT_PRICE_SCHEDULE_TIMES` are independent and should remain unchanged.
 
 ## Checking The Collector
 

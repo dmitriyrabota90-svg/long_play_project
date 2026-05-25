@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
 from app.config.settings import get_settings
-from app.db.models import CollectorRun, DataQualityCheck, PriceObservation, Product, RawResponse, Source
+from app.db.models import CollectorRun, DataQualityCheck, FxRate, PriceObservation, Product, RawResponse, Source
 from app.db.session import session_scope
 from app.monitoring.quality_summary import build_quality_summary, problematic_quality_filter
 from app.monitoring.redaction import mask_database_url
@@ -43,6 +43,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "collector_runs": 0,
             "raw_responses": 0,
             "price_observations": 0,
+            "fx_rates": 0,
             "problematic_quality_checks": 0,
         },
         "last_runs": {
@@ -96,6 +97,9 @@ def _fill_db_report(
     )
     report["last_24h"]["price_observations"] = session.scalar(
         select(func.count()).select_from(PriceObservation).where(PriceObservation.created_at >= cutoff)
+    )
+    report["last_24h"]["fx_rates"] = session.scalar(
+        select(func.count()).select_from(FxRate).where(FxRate.created_at >= cutoff)
     )
     report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())

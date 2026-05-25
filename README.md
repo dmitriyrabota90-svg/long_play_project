@@ -333,7 +333,7 @@ The current Phase 2 MVP collects only `current_price_source` current prices. Emp
 Planned phases:
 
 - Phase 2: current price collection only.
-- Phase 3: FX rates and commodity benchmarks.
+- Phase 3: CBR FX first; additional FX sources and commodity benchmarks later.
 - Phase 4: feature building and dataset export workflows.
 
 Do not add FX/news/weather/features/export sources as part of diagnostics cleanup.
@@ -350,6 +350,35 @@ python scripts/quality_summary.py --limit 50
 The CLI prints total checks, checks by status, checks by severity, problematic checks, latest problematic checks, and a conclusion of `ok`, `warning`, or `error`. Statuses `pass` and `skip` are successful; any other status is considered problematic. When the problematic count is zero, the output includes `quality checks ok`.
 
 When exporting problematic quality checks for diagnostics, use `quality_checks_problematic.csv`; the old `quality_checks_failed.csv` name is intentionally avoided because `pass` and `skip` are not failures.
+
+## CBR FX Collector
+
+Phase 3 adds the first FX source: `cbr_fx`, the official Central Bank of Russia XML daily rates endpoint. It collects USD/RUB, EUR/RUB, and CNY/RUB from `https://www.cbr.ru/scripts/XML_daily.asp`, stores the raw XML in `data/raw/cbr_fx/...`, writes normalized rates to `fx_rates`, and records quality checks in `data_quality_checks`.
+
+Manual run:
+
+```bash
+python scripts/run_collector.py cbr_fx
+python scripts/run_collector.py cbr_fx --date 2026-05-25
+```
+
+The CBR XML value is normalized as `Value / Nominal`, so CNY with `Nominal=10` is stored as the RUB price of 1 CNY.
+
+The CBR FX scheduler is controlled separately and is disabled by default:
+
+```env
+CBR_FX_SCHEDULER_ENABLED=false
+CBR_FX_SCHEDULE_TIME=10:00
+```
+
+To inspect data:
+
+```sql
+SELECT base_currency, quote_currency, rate, observed_at, created_at
+FROM fx_rates
+ORDER BY created_at DESC
+LIMIT 20;
+```
 
 ## Log Rotation
 
