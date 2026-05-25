@@ -1,6 +1,6 @@
 """expand daily product features
 
-Revision ID: 0004_expand_daily_product_features
+Revision ID: 0004_daily_features
 Revises: 0003_add_collection_slot_index
 Create Date: 2026-05-25 00:00:00.000000
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0004_expand_daily_product_features"
+revision = "0004_daily_features"
 down_revision = "0003_add_collection_slot_index"
 branch_labels = None
 depends_on = None
