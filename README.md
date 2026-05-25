@@ -360,7 +360,10 @@ Manual run:
 ```bash
 python scripts/run_collector.py cbr_fx
 python scripts/run_collector.py cbr_fx --date 2026-05-25
+python scripts/run_collector.py cbr_fx --from-date 2026-05-20 --to-date 2026-05-25
 ```
+
+Backfill ranges are inclusive. Each requested day stores its own raw XML response and uses the same idempotency check as normal runs, so repeating the command should increase `skipped_existing` instead of creating duplicate `fx_rates` rows.
 
 The CBR XML value is normalized as `Value / Nominal`, so CNY with `Nominal=10` is stored as the RUB price of 1 CNY.
 
@@ -371,6 +374,8 @@ CBR_FX_SCHEDULER_ENABLED=false
 CBR_FX_SCHEDULE_TIME=10:00
 ```
 
+Set `CBR_FX_SCHEDULER_ENABLED=true` to collect CBR FX once per day at `CBR_FX_SCHEDULE_TIME` in `SCHEDULE_TIMEZONE`. This does not change `CURRENT_PRICE_SCHEDULER_ENABLED` or `CURRENT_PRICE_SCHEDULE_TIMES`.
+
 To inspect data:
 
 ```sql
@@ -378,6 +383,11 @@ SELECT base_currency, quote_currency, rate, observed_at, created_at
 FROM fx_rates
 ORDER BY created_at DESC
 LIMIT 20;
+
+SELECT base_currency, quote_currency, observed_at, COUNT(*)
+FROM fx_rates
+GROUP BY base_currency, quote_currency, observed_at
+HAVING COUNT(*) > 1;
 ```
 
 ## Log Rotation

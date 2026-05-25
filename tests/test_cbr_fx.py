@@ -10,7 +10,7 @@ import httpx
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.collectors.fx.cbr_fx import CbrFxCollector, CbrFxParseError, assess_cbr_xml_response, parse_cbr_xml
+from app.collectors.fx.cbr_fx import CbrFxCollector, CbrFxParseError, _date_range, assess_cbr_xml_response, parse_cbr_xml
 from app.db.models import Base, CollectorRun, DataQualityCheck, FxRate, RawResponse, Source
 from app.storage.raw_store import RawStore
 
@@ -31,21 +31,43 @@ MISSING_CNY_XML = b'''<?xml version="1.0" encoding="windows-1251"?>
 '''
 
 
+def cbr_xml_for(day: date, *, usd: str = "91,1234", eur: str = "99,5000", cny: str = "125,0000") -> bytes:
+    return f'''<?xml version="1.0" encoding="windows-1251"?>
+<ValCurs Date="{day:%d.%m.%Y}" name="Foreign Currency Market">
+  <Valute ID="R01235"><CharCode>USD</CharCode><Nominal>1</Nominal><Value>{usd}</Value></Valute>
+  <Valute ID="R01239"><CharCode>EUR</CharCode><Nominal>1</Nominal><Value>{eur}</Value></Valute>
+  <Valute ID="R01375"><CharCode>CNY</CharCode><Nominal>10</Nominal><Value>{cny}</Value></Valute>
+</ValCurs>
+'''.encode("windows-1251")
+
+
 class FakeHttpClient:
-    def __init__(self, payload: bytes = CBR_XML, status_code: int = 200, content_type: str = "application/xml") -> None:
+    def __init__(
+        self,
+        payload: bytes = CBR_XML,
+        status_code: int = 200,
+        content_type: str = "application/xml",
+        responses_by_date: dict[str, tuple[bytes, int]] | None = None,
+    ) -> None:
         self.payload = payload
         self.status_code = status_code
         self.content_type = content_type
+        self.responses_by_date = responses_by_date or {}
         self.calls: list[dict[str, object]] = []
 
     def get(self, url: str, *, params: dict[str, str], headers: dict[str, str], timeout: float) -> httpx.Response:
         self.calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout})
         request_url = url
+        payload = self.payload
+        status_code = self.status_code
         if params:
-            request_url = f"{url}?date_req={params['date_req']}"
+            date_req = params["date_req"]
+            request_url = f"{url}?date_req={date_req}"
+            if date_req in self.responses_by_date:
+                payload, status_code = self.responses_by_date[date_req]
         return httpx.Response(
-            self.status_code,
-            content=self.payload,
+            status_code,
+            content=payload,
             headers={"content-type": self.content_type},
             request=httpx.Request("GET", request_url),
         )
@@ -152,7 +174,119 @@ def test_cbr_fx_collector_is_idempotent_for_same_observed_date(tmp_path: Path) -
     assert second.status == "success"
     assert second.records_found == 3
     assert second.records_written == 0
+    assert second.skipped_existing == 3
     assert rate_count == 3
+
+
+def test_date_range_is_inclusive() -> None:
+    assert _date_range(date(2026, 5, 20), date(2026, 5, 22)) == [
+        date(2026, 5, 20),
+        date(2026, 5, 21),
+        date(2026, 5, 22),
+    ]
+
+
+def test_cbr_fx_backfill_writes_inclusive_range_without_duplicates(tmp_path: Path) -> None:
+    responses = {
+        "20/05/2026": (cbr_xml_for(date(2026, 5, 20), usd="90,0000", eur="98,0000", cny="120,0000"), 200),
+        "21/05/2026": (cbr_xml_for(date(2026, 5, 21), usd="91,0000", eur="99,0000", cny="121,0000"), 200),
+    }
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_cbr_source(session)
+        collector = CbrFxCollector(
+            http_client=FakeHttpClient(responses_by_date=responses),
+            raw_store=RawStore(tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 25, 7, 0, tzinfo=timezone.utc),
+        )
+
+        first = collector.run_backfill(session=session, from_date=date(2026, 5, 20), to_date=date(2026, 5, 21))
+        second = collector.run_backfill(session=session, from_date=date(2026, 5, 20), to_date=date(2026, 5, 21))
+        session.commit()
+
+        rate_count = session.scalar(select(func.count()).select_from(FxRate))
+        runs = session.scalars(select(CollectorRun).order_by(CollectorRun.id)).all()
+
+    assert first.status == "success"
+    assert first.dates_requested == 2
+    assert first.dates_success == 2
+    assert first.records_found == 6
+    assert first.records_written == 6
+    assert first.skipped_existing == 0
+    assert second.status == "success"
+    assert second.records_written == 0
+    assert second.skipped_existing == 6
+    assert rate_count == 6
+    assert [run.run_type for run in runs] == ["backfill", "backfill"]
+
+
+def test_cbr_fx_backfill_one_date_error_does_not_fail_range(tmp_path: Path) -> None:
+    responses = {
+        "20/05/2026": (cbr_xml_for(date(2026, 5, 20)), 200),
+        "21/05/2026": (b"not xml", 200),
+        "22/05/2026": (cbr_xml_for(date(2026, 5, 22)), 200),
+    }
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _seed_cbr_source(session)
+        collector = CbrFxCollector(
+            http_client=FakeHttpClient(responses_by_date=responses),
+            raw_store=RawStore(tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 25, 7, 0, tzinfo=timezone.utc),
+        )
+
+        result = collector.run_backfill(session=session, from_date=date(2026, 5, 20), to_date=date(2026, 5, 22))
+        session.commit()
+
+        rate_count = session.scalar(select(func.count()).select_from(FxRate))
+
+    assert result.status == "partial_success"
+    assert result.dates_requested == 3
+    assert result.dates_success == 2
+    assert result.dates_failed == 1
+    assert result.records_found == 6
+    assert result.records_written == 6
+    assert result.errors_count == 1
+    assert "2026-05-21: XML parsing failed" in result.error_message
+    assert rate_count == 6
+
+
+def test_cbr_fx_manual_date_still_works(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    http_client = FakeHttpClient()
+    with SessionLocal() as session:
+        _seed_cbr_source(session)
+        collector = CbrFxCollector(
+            http_client=http_client,
+            raw_store=RawStore(tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 25, 7, 0, tzinfo=timezone.utc),
+        )
+
+        result = collector.run(session=session, requested_date=date(2026, 5, 25))
+        session.commit()
+
+    assert result.status == "success"
+    assert result.observed_at_values == ["2026-05-25T00:00:00+00:00"]
+    assert result.currency_pairs == ["CNY/RUB", "EUR/RUB", "USD/RUB"]
+    assert http_client.calls[0]["params"] == {"date_req": "25/05/2026"}
+
+
+def test_cbr_fx_default_manual_run_still_works(tmp_path: Path) -> None:
+    SessionLocal = _session_factory()
+    http_client = FakeHttpClient()
+    with SessionLocal() as session:
+        _seed_cbr_source(session)
+        collector = CbrFxCollector(
+            http_client=http_client,
+            raw_store=RawStore(tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 25, 7, 0, tzinfo=timezone.utc),
+        )
+
+        result = collector.run(session=session)
+        session.commit()
+
+    assert result.status == "success"
+    assert http_client.calls[0]["params"] == {}
 
 
 def test_cbr_fx_missing_currency_is_partial_success(tmp_path: Path) -> None:
@@ -186,3 +320,5 @@ def test_run_collector_help_lists_cbr_fx() -> None:
     )
 
     assert "cbr_fx" in result.stdout
+    assert "--from-date" in result.stdout
+    assert "--to-date" in result.stdout

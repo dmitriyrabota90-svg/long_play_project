@@ -79,7 +79,10 @@ Manual run after deploy:
 ```bash
 docker compose run --rm app python scripts/run_collector.py cbr_fx
 docker compose run --rm app python scripts/run_collector.py cbr_fx --date 2026-05-25
+docker compose run --rm app python scripts/run_collector.py cbr_fx --from-date 2026-05-20 --to-date 2026-05-25
 ```
+
+Backfill ranges are inclusive and safe to repeat. Existing `(source_id, base_currency, quote_currency, observed_at)` rows are skipped and reported as `skipped_existing`.
 
 Check stored rates:
 
@@ -99,7 +102,25 @@ CBR_FX_SCHEDULER_ENABLED=false
 CBR_FX_SCHEDULE_TIME=10:00
 ```
 
-Do not enable it during routine deploy unless there is a separate scheduling decision. `CURRENT_PRICE_SCHEDULER_ENABLED` and `CURRENT_PRICE_SCHEDULE_TIMES` are independent and should remain unchanged.
+Enable it only after a successful manual run/backfill:
+
+```env
+CBR_FX_SCHEDULER_ENABLED=true
+CBR_FX_SCHEDULE_TIME=10:00
+```
+
+`CURRENT_PRICE_SCHEDULER_ENABLED` and `CURRENT_PRICE_SCHEDULE_TIMES` are independent and should remain unchanged.
+
+Check for duplicates:
+
+```bash
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT base_currency, quote_currency, observed_at, COUNT(*)
+FROM fx_rates
+GROUP BY base_currency, quote_currency, observed_at
+HAVING COUNT(*) > 1;
+"
+```
 
 ## Checking The Collector
 

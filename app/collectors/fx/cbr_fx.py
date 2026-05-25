@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 from urllib.parse import urlencode
@@ -70,6 +70,36 @@ class XmlCheck:
     details: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class CbrFxRunResult(CollectorResult):
+    observed_at_values: list[str] = field(default_factory=list)
+    currency_pairs: list[str] = field(default_factory=list)
+    skipped_existing: int = 0
+
+
+@dataclass(frozen=True)
+class CbrFxBackfillResult(CbrFxRunResult):
+    dates_requested: int = 0
+    dates_success: int = 0
+    dates_failed: int = 0
+
+
+@dataclass
+class _DateCollectionStats:
+    requested_date: date | None
+    records_found: int = 0
+    records_written: int = 0
+    skipped_existing: int = 0
+    raw_response_ids: list[int] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    observed_at_values: set[str] = field(default_factory=set)
+    currency_pairs: set[str] = field(default_factory=set)
+
+    @property
+    def success(self) -> bool:
+        return self.records_found == len(CURRENCIES) and not self.errors
+
+
 class CbrFxCollector(BaseCollector):
     source_code = SOURCE_CODE
     collector_name = COLLECTOR_NAME
@@ -116,6 +146,20 @@ class CbrFxCollector(BaseCollector):
             requested_date=requested_date,
         )
 
+    def run_backfill(
+        self,
+        session: Session | None = None,
+        *,
+        from_date: date,
+        to_date: date,
+    ) -> CbrFxBackfillResult:
+        if from_date > to_date:
+            raise ValueError("from_date must be on or before to_date")
+        if session is None:
+            with session_scope() as scoped_session:
+                return self._run_backfill_with_session(scoped_session, from_date=from_date, to_date=to_date)
+        return self._run_backfill_with_session(session, from_date=from_date, to_date=to_date)
+
     def _run_with_session(
         self,
         session: Session,
@@ -123,7 +167,7 @@ class CbrFxCollector(BaseCollector):
         run_type: str,
         collection_slot: datetime | None,
         requested_date: date | None,
-    ) -> CollectorResult:
+    ) -> CbrFxRunResult:
         started_at = _to_utc(self.clock())
         source = session.scalar(select(Source).where(Source.code == self.source_code))
         collector_run = CollectorRun(
@@ -145,16 +189,150 @@ class CbrFxCollector(BaseCollector):
             session.flush()
             return _result_from_run(self, collector_run, started_at, errors_count=1)
 
-        errors: list[str] = []
+        stats = self._collect_one_date(session, source=source, collector_run=collector_run, requested_date=requested_date)
+
+        collector_run.finished_at = _to_utc(self.clock())
+        collector_run.records_found = stats.records_found
+        collector_run.records_written = stats.records_written
+        if stats.records_found == len(CURRENCIES):
+            collector_run.status = "success"
+        elif stats.records_found > 0:
+            collector_run.status = "partial_success"
+        else:
+            collector_run.status = "error"
+        collector_run.error_message = "\n".join(stats.errors) if stats.errors else None
+        session.flush()
+
+        return CbrFxRunResult(
+            run_id=collector_run.id,
+            source_code=self.source_code,
+            collector_name=self.collector_name,
+            parser_version=self.parser_version,
+            started_at=started_at,
+            finished_at=collector_run.finished_at,
+            status=collector_run.status,
+            records_found=stats.records_found,
+            records_written=stats.records_written,
+            raw_response_ids=stats.raw_response_ids,
+            error_message=collector_run.error_message,
+            errors_count=len(stats.errors),
+            observed_at_values=sorted(stats.observed_at_values),
+            currency_pairs=sorted(stats.currency_pairs),
+            skipped_existing=stats.skipped_existing,
+        )
+
+    def _run_backfill_with_session(self, session: Session, *, from_date: date, to_date: date) -> CbrFxBackfillResult:
+        started_at = _to_utc(self.clock())
+        source = session.scalar(select(Source).where(Source.code == self.source_code))
+        collector_run = CollectorRun(
+            source_id=source.id if source else None,
+            collector_name=self.collector_name,
+            started_at=started_at,
+            status="running",
+            run_type="backfill",
+            collection_slot=None,
+        )
+        session.add(collector_run)
+        session.flush()
+
+        if source is None:
+            message = f"source mapping not found: {self.source_code}"
+            collector_run.status = "error"
+            collector_run.finished_at = _to_utc(self.clock())
+            collector_run.error_message = message
+            session.flush()
+            return CbrFxBackfillResult(
+                run_id=collector_run.id,
+                source_code=self.source_code,
+                collector_name=self.collector_name,
+                parser_version=self.parser_version,
+                started_at=started_at,
+                finished_at=collector_run.finished_at,
+                status="error",
+                error_message=message,
+                errors_count=1,
+                dates_requested=len(_date_range(from_date, to_date)),
+                dates_failed=len(_date_range(from_date, to_date)),
+            )
+
+        dates = _date_range(from_date, to_date)
+        all_errors: list[str] = []
         raw_response_ids: list[int] = []
+        observed_at_values: set[str] = set()
+        currency_pairs: set[str] = set()
         records_found = 0
         records_written = 0
+        skipped_existing = 0
+        dates_success = 0
+        dates_failed = 0
 
+        for requested_date in dates:
+            stats = self._collect_one_date(
+                session,
+                source=source,
+                collector_run=collector_run,
+                requested_date=requested_date,
+            )
+            records_found += stats.records_found
+            records_written += stats.records_written
+            skipped_existing += stats.skipped_existing
+            raw_response_ids.extend(stats.raw_response_ids)
+            observed_at_values.update(stats.observed_at_values)
+            currency_pairs.update(stats.currency_pairs)
+            if stats.success:
+                dates_success += 1
+            else:
+                dates_failed += 1
+                date_label = requested_date.isoformat()
+                all_errors.extend(f"{date_label}: {error}" for error in stats.errors)
+
+        collector_run.finished_at = _to_utc(self.clock())
+        collector_run.records_found = records_found
+        collector_run.records_written = records_written
+        if dates_success == len(dates):
+            collector_run.status = "success"
+        elif dates_success > 0:
+            collector_run.status = "partial_success"
+        else:
+            collector_run.status = "error"
+        collector_run.error_message = "\n".join(all_errors) if all_errors else None
+        session.flush()
+
+        return CbrFxBackfillResult(
+            run_id=collector_run.id,
+            source_code=self.source_code,
+            collector_name=self.collector_name,
+            parser_version=self.parser_version,
+            started_at=started_at,
+            finished_at=collector_run.finished_at,
+            status=collector_run.status,
+            records_found=records_found,
+            records_written=records_written,
+            raw_response_ids=raw_response_ids,
+            error_message=collector_run.error_message,
+            errors_count=len(all_errors),
+            observed_at_values=sorted(observed_at_values),
+            currency_pairs=sorted(currency_pairs),
+            skipped_existing=skipped_existing,
+            dates_requested=len(dates),
+            dates_success=dates_success,
+            dates_failed=dates_failed,
+        )
+
+    def _collect_one_date(
+        self,
+        session: Session,
+        *,
+        source: Source,
+        collector_run: CollectorRun,
+        requested_date: date | None,
+    ) -> _DateCollectionStats:
+        stats = _DateCollectionStats(requested_date=requested_date)
         try:
             response = self._fetch(requested_date=requested_date)
             fetched_at = _to_utc(self.clock())
             raw_response = self._save_raw_response(session, source, collector_run, response, fetched_at)
-            raw_response_ids.append(raw_response.id)
+            stats.raw_response_ids.append(raw_response.id)
             parse_result, checks = assess_cbr_xml_response(
                 payload=response.content,
                 content_type=response.headers.get("content-type"),
@@ -170,14 +348,14 @@ class CbrFxCollector(BaseCollector):
             )
 
             if response.status_code != 200:
-                errors.append(f"HTTP status {response.status_code}")
+                stats.errors.append(f"HTTP status {response.status_code}")
             elif parse_result is None:
-                errors.append("XML parsing failed")
+                stats.errors.append("XML parsing failed")
             else:
                 for currency in CURRENCIES:
                     parsed_rate = parse_result.rates.get(currency)
                     if parsed_rate is None:
-                        errors.append(f"missing currency {currency}")
+                        stats.errors.append(f"missing currency {currency}")
                         _write_fx_rate_quality_checks(
                             session,
                             source_id=source.id,
@@ -190,7 +368,9 @@ class CbrFxCollector(BaseCollector):
                         )
                         continue
 
-                    records_found += 1
+                    stats.records_found += 1
+                    stats.observed_at_values.add(parsed_rate.observed_at.isoformat())
+                    stats.currency_pairs.add(f"{parsed_rate.base_currency}/{parsed_rate.quote_currency}")
                     _write_fx_rate_quality_checks(
                         session,
                         source_id=source.id,
@@ -204,6 +384,7 @@ class CbrFxCollector(BaseCollector):
                     _write_fx_rate_jump_check(session, source_id=source.id, current_rate=parsed_rate, checked_at=fetched_at)
                     existing = _find_existing_fx_rate(session, source_id=source.id, rate=parsed_rate)
                     if existing is not None:
+                        stats.skipped_existing += 1
                         continue
                     session.add(
                         FxRate(
@@ -216,42 +397,16 @@ class CbrFxCollector(BaseCollector):
                             published_at=None,
                         )
                     )
-                    records_written += 1
+                    stats.records_written += 1
                     session.flush()
         except httpx.TimeoutException as exc:
-            errors.append(f"timeout: {exc}")
+            stats.errors.append(f"timeout: {exc}")
         except httpx.RequestError as exc:
-            errors.append(f"connection error: {exc}")
+            stats.errors.append(f"connection error: {exc}")
         except Exception as exc:
             logger.exception("cbr_fx collector failed")
-            errors.append(str(exc))
-
-        collector_run.finished_at = _to_utc(self.clock())
-        collector_run.records_found = records_found
-        collector_run.records_written = records_written
-        if records_found == len(CURRENCIES):
-            collector_run.status = "success"
-        elif records_found > 0:
-            collector_run.status = "partial_success"
-        else:
-            collector_run.status = "error"
-        collector_run.error_message = "\n".join(errors) if errors else None
-        session.flush()
-
-        return CollectorResult(
-            run_id=collector_run.id,
-            source_code=self.source_code,
-            collector_name=self.collector_name,
-            parser_version=self.parser_version,
-            started_at=started_at,
-            finished_at=collector_run.finished_at,
-            status=collector_run.status,
-            records_found=records_found,
-            records_written=records_written,
-            raw_response_ids=raw_response_ids,
-            error_message=collector_run.error_message,
-            errors_count=len(errors),
-        )
+            stats.errors.append(str(exc))
+        return stats
 
     def _fetch(self, *, requested_date: date | None) -> httpx.Response:
         params = _date_params(requested_date)
@@ -438,6 +593,11 @@ def build_cbr_url(requested_date: date | None) -> str:
     return f"{ENDPOINT}?{urlencode(params)}"
 
 
+def _date_range(from_date: date, to_date: date) -> list[date]:
+    days = (to_date - from_date).days
+    return [from_date + timedelta(days=offset) for offset in range(days + 1)]
+
+
 def _find_existing_fx_rate(session: Session, *, source_id: int, rate: ParsedCbrRate) -> FxRate | None:
     return session.scalar(
         select(FxRate)
@@ -599,8 +759,8 @@ def _result_from_run(
     started_at: datetime,
     *,
     errors_count: int,
-) -> CollectorResult:
-    return CollectorResult(
+) -> CbrFxRunResult:
+    return CbrFxRunResult(
         run_id=collector_run.id,
         source_code=collector.source_code,
         collector_name=collector.collector_name,

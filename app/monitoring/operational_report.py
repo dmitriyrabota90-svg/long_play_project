@@ -51,6 +51,10 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "partial_success": None,
             "error": None,
         },
+        "cbr_fx": {
+            "last_successful_run": None,
+            "fx_rates_last_24h": 0,
+        },
         "quality_checks": {
             "total_checks": 0,
             "pass_checks": 0,
@@ -101,6 +105,7 @@ def _fill_db_report(
     report["last_24h"]["fx_rates"] = session.scalar(
         select(func.count()).select_from(FxRate).where(FxRate.created_at >= cutoff)
     )
+    report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())
         .select_from(DataQualityCheck)
@@ -121,6 +126,13 @@ def _fill_db_report(
             select(CollectorRun).where(CollectorRun.status == status).order_by(CollectorRun.started_at.desc()).limit(1)
         )
         report["last_runs"][status] = _run_to_dict(run)
+    cbr_fx_run = session.scalar(
+        select(CollectorRun)
+        .where(CollectorRun.collector_name == "cbr_fx_collector", CollectorRun.status == "success")
+        .order_by(CollectorRun.started_at.desc())
+        .limit(1)
+    )
+    report["cbr_fx"]["last_successful_run"] = _run_to_dict(cbr_fx_run)
 
     if source is not None:
         report["stale_products"] = _stale_products(session, source.id, freshness_cutoff)
@@ -178,4 +190,3 @@ def _to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
-
