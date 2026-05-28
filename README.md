@@ -656,6 +656,45 @@ diagnostics/chinese_source_audit/chinese_source_capabilities.json
 
 Current Phase 4.2 recommendation: consider a separate historical daily OHLC prototype for already confirmed instruments before adding news, broad catalogs, or new commodity families.
 
+## Phase 4.3 Historical Price Probe
+
+Phase 4.3 probes historical Jijinhao/Cngold endpoints for the already confirmed production instruments only:
+
+- `rapeseed_oil` / `JO_166042`
+- `soybean_oil` / `JO_165951`
+- `rapeseed_meal` / `JO_166106`
+- `soybean_meal` / `JO_165938`
+
+It is diagnostics-only. It does not write to PostgreSQL, does not create production `raw_responses`, does not update `daily_product_features`, and is not a production collector.
+
+Run bounded probes:
+
+```bash
+python scripts/probe_historical_prices.py --endpoint historys --all-confirmed --days 30
+python scripts/probe_historical_prices.py --endpoint kdata --all-confirmed --days 30
+python scripts/probe_historical_prices.py --endpoint historys --product-code soybean_meal --days 30
+```
+
+Supported endpoint aliases:
+
+- `historys` -> `https://api.jijinhao.com/quoteCenter/historys.htm`
+- `kdata` -> `https://api.jijinhao.com/sQuoteCenter/kDataList.htm`
+- `today_min` -> `https://api.jijinhao.com/sQuoteCenter/todayMin.htm`
+- `four_days_min` -> `https://api.jijinhao.com/sQuoteCenter/fourDaysMin.htm`
+
+Outputs:
+
+```text
+diagnostics/historical_price_probe/HISTORICAL_PRICE_PROBE_REPORT.md
+diagnostics/historical_price_probe/historical_price_probe_results.json
+diagnostics/historical_price_probe/historical_price_comparison.csv
+diagnostics/historical_price_probe/raw/
+```
+
+Raw diagnostic responses are saved only under `diagnostics/historical_price_probe/raw/`, not under production `data/raw/`. If database access is available, the probe performs read-only comparison against existing `price_observations` for overlapping dates.
+
+This phase does not decide the production schema. A future historical collector should be a separate phase after choosing whether to use a dedicated `historical_price_bars` table or explicit `observation_type` / OHLC fields.
+
 ## Backup Skeleton
 
 Current backup script only prints the planned steps:

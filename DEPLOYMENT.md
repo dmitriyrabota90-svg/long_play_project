@@ -222,8 +222,8 @@ Expected healthy result:
 
 ```text
 status=success
-records_found=3
-records_written=3
+records_found=4
+records_written=4
 errors_count=0
 ```
 
@@ -232,6 +232,29 @@ Raw files should appear under:
 ```text
 data/raw/current_price_source/{yyyy}/{mm}/{dd}/{collector_run_id}/
 ```
+
+## Historical Price Probe
+
+Phase 4.3 historical probing is diagnostics-only. It must not be scheduled and must not write to PostgreSQL production tables or production `data/raw/`.
+
+Run bounded checks after deploy when investigating historical Jijinhao/Cngold endpoints:
+
+```bash
+docker compose run --rm app python scripts/probe_historical_prices.py --endpoint historys --all-confirmed --days 30
+docker compose run --rm app python scripts/probe_historical_prices.py --endpoint kdata --all-confirmed --days 30
+docker compose run --rm app python scripts/probe_historical_prices.py --endpoint historys --product-code soybean_meal --days 30
+```
+
+Outputs:
+
+```text
+diagnostics/historical_price_probe/HISTORICAL_PRICE_PROBE_REPORT.md
+diagnostics/historical_price_probe/historical_price_probe_results.json
+diagnostics/historical_price_probe/historical_price_comparison.csv
+diagnostics/historical_price_probe/raw/
+```
+
+The probe can run read-only SELECT comparisons against `price_observations` when the database is available. It does not create `raw_responses`, does not update `daily_product_features`, and is not a production historical collector. Production historical collection requires a later schema/design decision, preferably a dedicated historical bars model or explicit `observation_type` plus OHLC fields.
 
 ## Checking The Production Scheduler
 
