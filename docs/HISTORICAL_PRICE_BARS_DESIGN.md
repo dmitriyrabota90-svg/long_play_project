@@ -220,11 +220,12 @@ Endpoint priority:
    - Payloads around 0.97-1.48 MB per instrument for 30 rows in Phase 4.3.
    - Requires max response bytes, pagination/window limits, timeout controls, and storage monitoring.
 
-Proposed future CLI:
+Implemented Phase 4.6 CLI:
 
 ```bash
 python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --days 30
 python scripts/run_collector.py jijinhao_historical_prices --product-code soybean_meal --endpoint historys --days 30
+python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --days 30 --run-type backfill
 ```
 
 Run types:
@@ -236,6 +237,16 @@ Scheduler:
 
 - Do not enable a scheduler in the first production phase.
 - Use manual/backfill runs until schema, idempotency, and quality checks are proven.
+
+Phase 4.6 production behavior:
+
+- Only `historys` is accepted by the production collector.
+- `kdata` is rejected with a CLI error and remains diagnostics-only.
+- Raw payloads are stored through `RawStore` and linked through `raw_responses`.
+- Parsed rows are written only to `historical_price_bars`.
+- `price_observations` and `daily_product_features` are not changed by the collector.
+- Existing rows with matching `source_record_hash` are skipped.
+- Existing rows with a changed `source_record_hash` create a `historical_existing_bar_hash_changed` warning and are not overwritten silently in Phase 4.6.
 
 ## Quality Checks
 
@@ -256,7 +267,7 @@ Data checks:
 - `historical_no_future_observed_at`
 - `historical_fetched_at_present`
 - `historical_source_record_hash_present`
-- `historical_raw_response_present`
+- `historical_existing_bar_hash_changed`
 
 OHLC consistency:
 
@@ -324,26 +335,32 @@ Initial `kdata` limits if investigated later:
 
 ## Migration Plan For Next Phase
 
-Phase 4.5 should be schema-only or schema-plus-tests:
+Phase 4.5 was schema-only/schema-plus-tests:
 
 1. Add SQLAlchemy model `HistoricalPriceBar`.
 2. Add Alembic migration for `historical_price_bars`. Phase 4.5 implements this as revision `0005_historical_price_bars`.
 3. Add seed row for source `jijinhao_historical_prices`.
-4. Add parser/unit tests for `historys` payloads.
-5. Add idempotency/upsert tests.
-6. Add quality check tests.
-7. Do not enable scheduler.
+4. Do not enable scheduler.
+
+Phase 4.6 adds the first manual production collector:
+
+1. Reuse the Phase 4.3 parser for `historys` rows.
+2. Write production raw evidence through `RawStore`.
+3. Insert `collector_runs`, `raw_responses`, and `historical_price_bars` rows.
+4. Add parser, idempotency, conflict, raw linkage, and quality check tests.
+5. Keep scheduler disabled.
 
 ## Production Rollout Plan
 
-1. Apply migration after review.
-2. Run source seed.
+1. Apply migration after review. Done in Phase 4.5.
+2. Run source seed. Required before Phase 4.6 server run if the source row is not present yet.
 3. Run a single manual historical collector for one product with `days=30`.
 4. Verify `collector_runs`, `raw_responses`, and `historical_price_bars`.
 5. Verify duplicates and quality checks.
 6. Run all four confirmed products manually.
-7. Compare bars against current snapshots for overlapping dates.
-8. Keep feature builder unchanged until explicit feature-source mode is implemented.
+7. Run the all-products command again to verify idempotency.
+8. Compare bars against current snapshots for overlapping dates in a later analysis step.
+9. Keep feature builder unchanged until explicit feature-source mode is implemented.
 
 ## Open Questions
 

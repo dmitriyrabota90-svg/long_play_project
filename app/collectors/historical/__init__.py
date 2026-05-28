@@ -1,0 +1,2 @@
+"""Historical price collectors."""
+

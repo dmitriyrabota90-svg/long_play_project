@@ -724,6 +724,63 @@ Phase 4.5 implements schema-only support for `historical_price_bars`:
 
 The table is expected to be empty immediately after migration. No production historical collector exists yet, daily features do not read `historical_price_bars`, and historical bars must not be mixed into `price_observations`.
 
+## Phase 4.6 Manual Jijinhao Historical Price Collector
+
+Phase 4.6 adds the first controlled production historical collector, `jijinhao_historical_prices`. It supports only the compact `quoteCenter/historys.htm` endpoint and writes normalized rows into `historical_price_bars`. It is manual/backfill only and is not registered in the scheduler.
+
+Run all confirmed instruments:
+
+```bash
+python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --days 30
+```
+
+Run one product:
+
+```bash
+python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --product-code soybean_meal --days 30
+```
+
+Run as a backfill-labeled collector run:
+
+```bash
+python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --days 30 --run-type backfill
+```
+
+Phase 4.6 deliberately rejects `kdata` for production collection:
+
+```bash
+python scripts/run_collector.py jijinhao_historical_prices --endpoint kdata --days 30
+```
+
+Expected output includes `run_id`, `status`, `endpoint_alias`, `products_processed`, `records_found`, `records_written`, `skipped_existing`, `conflicts_count`, and `errors_count`.
+
+The collector stores raw evidence through the production `RawStore` under:
+
+```text
+data/raw/jijinhao_historical_prices/{yyyy}/{mm}/{dd}/{collector_run_id}/{sha256}.txt
+```
+
+It creates `collector_runs`, `raw_responses`, `historical_price_bars`, and quality checks. It does not write to `price_observations`, does not rebuild `daily_product_features`, and does not change `current_price_source` or `cbr_fx` behavior.
+
+Idempotency is by `(product_id, source_id, endpoint_alias, bar_timeframe, bar_date)`. If the existing row has the same `source_record_hash`, the row is counted as `skipped_existing`. If the existing row has a different hash, Phase 4.6 records a `historical_existing_bar_hash_changed` warning, increments `conflicts_count`, and does not overwrite the row silently.
+
+Check stored bars:
+
+```sql
+SELECT p.code, hpb.endpoint_alias, hpb.bar_timeframe, hpb.bar_date, hpb.price, hpb.close_price, hpb.currency, hpb.unit, hpb.fetched_at
+FROM historical_price_bars hpb
+JOIN products p ON p.id = hpb.product_id
+ORDER BY hpb.created_at DESC
+LIMIT 20;
+
+SELECT product_id, source_id, endpoint_alias, bar_timeframe, bar_date, COUNT(*)
+FROM historical_price_bars
+GROUP BY product_id, source_id, endpoint_alias, bar_timeframe, bar_date
+HAVING COUNT(*) > 1;
+```
+
+Daily features still use `price_observations` plus `fx_rates`; historical bars are not consumed by feature building yet.
+
 ## Backup Skeleton
 
 Current backup script only prints the planned steps:

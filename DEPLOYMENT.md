@@ -283,7 +283,58 @@ The expected immediate table count is zero:
 SELECT COUNT(*) AS historical_price_bars_count FROM historical_price_bars;
 ```
 
-This is intentional. The production historical collector is not implemented yet, and `daily_product_features` continues to use `price_observations` plus `fx_rates`.
+This is intentional for Phase 4.5. `daily_product_features` continues to use `price_observations` plus `fx_rates`.
+
+## Manual Historical Price Collector
+
+Phase 4.6 adds a controlled manual/backfill collector for compact Jijinhao history rows. It supports only `quoteCenter/historys.htm`; `kDataList.htm` remains diagnostics-only and must not be used by the production collector yet.
+
+After deployment, run the idempotent seed so the source row exists:
+
+```bash
+docker compose run --rm app python -m app.db.seed
+```
+
+Run one product first:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --product-code soybean_meal --days 30
+```
+
+If that run is healthy, run all confirmed products:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --days 30
+```
+
+Then run the same all-products command again to verify idempotency. The retry should report `records_written=0`, `skipped_existing` near the number of existing bars, `conflicts_count=0`, and `errors_count=0`.
+
+Check output:
+
+```bash
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT p.code, COUNT(*) AS rows_count, MIN(hpb.bar_date) AS first_bar_date, MAX(hpb.bar_date) AS last_bar_date
+FROM historical_price_bars hpb
+JOIN products p ON p.id = hpb.product_id
+GROUP BY p.code
+ORDER BY p.code;
+"
+
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT product_id, source_id, endpoint_alias, bar_timeframe, bar_date, COUNT(*)
+FROM historical_price_bars
+GROUP BY product_id, source_id, endpoint_alias, bar_timeframe, bar_date
+HAVING COUNT(*) > 1;
+"
+
+docker compose exec -T postgres psql -U collector -d commodity_dataset -c "
+SELECT COUNT(*) AS rows_without_raw_response
+FROM historical_price_bars
+WHERE raw_response_id IS NULL;
+"
+```
+
+There is no scheduler for `jijinhao_historical_prices` in Phase 4.6. Do not rebuild daily features as part of this collector rollout; feature builder source selection will be a later phase.
 
 ## Checking The Production Scheduler
 

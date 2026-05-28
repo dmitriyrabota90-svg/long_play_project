@@ -76,6 +76,9 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         "historical_price_bars": {
             "count": 0,
             "last_date": None,
+            "last_bar_date": None,
+            "last_created_at": None,
+            "last_successful_run": None,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -137,7 +140,12 @@ def _fill_db_report(
     report["daily_product_features"]["missing_recent_features"] = _missing_recent_features(session, cutoff=cutoff)
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
     last_historical_bar_date = session.scalar(select(func.max(HistoricalPriceBar.bar_date)))
-    report["historical_price_bars"]["last_date"] = last_historical_bar_date.isoformat() if last_historical_bar_date else None
+    last_historical_created_at = session.scalar(select(func.max(HistoricalPriceBar.created_at)))
+    report["historical_price_bars"]["last_bar_date"] = last_historical_bar_date.isoformat() if last_historical_bar_date else None
+    report["historical_price_bars"]["last_date"] = report["historical_price_bars"]["last_bar_date"]
+    report["historical_price_bars"]["last_created_at"] = (
+        _to_utc(last_historical_created_at).isoformat() if last_historical_created_at else None
+    )
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())
@@ -166,6 +174,13 @@ def _fill_db_report(
         .limit(1)
     )
     report["cbr_fx"]["last_successful_run"] = _run_to_dict(cbr_fx_run)
+    historical_run = session.scalar(
+        select(CollectorRun)
+        .where(CollectorRun.collector_name == "jijinhao_historical_prices_collector", CollectorRun.status == "success")
+        .order_by(CollectorRun.started_at.desc())
+        .limit(1)
+    )
+    report["historical_price_bars"]["last_successful_run"] = _run_to_dict(historical_run)
 
     if source is not None:
         report["stale_products"] = _stale_products(session, source.id, freshness_cutoff)
