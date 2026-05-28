@@ -190,6 +190,25 @@ price_path=JO_165938.q5
 
 Do not add `sunflower_oil` or `sunflower_meal` until reliable instruments are confirmed.
 
+## Chinese Source Capability Audit
+
+Phase 4.2 audit tooling is read-only and writes only diagnostics:
+
+```bash
+docker compose run --rm app python scripts/audit_chinese_source.py --mode inventory
+docker compose run --rm app python scripts/audit_chinese_source.py --mode check-known
+docker compose run --rm app python scripts/audit_chinese_source.py --mode search-keywords
+```
+
+Outputs:
+
+```text
+diagnostics/chinese_source_audit/CHINESE_SOURCE_CAPABILITY_REPORT.md
+diagnostics/chinese_source_audit/chinese_source_capabilities.json
+```
+
+`check-known` runs only bounded probes against confirmed quote/history endpoints. It must not be scheduled and must not write to PostgreSQL. `search-keywords` currently reports `not_supported`; do not replace it with broad crawling.
+
 ## Checking The Collector
 
 Manual run:

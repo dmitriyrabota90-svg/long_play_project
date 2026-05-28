@@ -635,6 +635,27 @@ Phase 4.1 promotes only the confirmed discovery candidate for `soybean_meal` int
 
 `sunflower_oil` and `sunflower_meal` are intentionally not added because reliable Jijinhao/Cngold instruments have not been found.
 
+## Phase 4.2 Chinese Source Capability Audit
+
+Phase 4.2 maps what the Cngold/Jijinhao source can provide beyond the currently collected instruments. It is read-only: it writes only diagnostic artifacts, does not write PostgreSQL rows, does not save production `raw_responses`, and does not run production collectors.
+
+```bash
+python scripts/audit_chinese_source.py --mode inventory
+python scripts/audit_chinese_source.py --mode check-known
+python scripts/audit_chinese_source.py --mode search-keywords
+```
+
+Outputs:
+
+```text
+diagnostics/chinese_source_audit/CHINESE_SOURCE_CAPABILITY_REPORT.md
+diagnostics/chinese_source_audit/chinese_source_capabilities.json
+```
+
+`inventory` is static source mapping. `check-known` performs a small number of bounded HTTP probes against confirmed current quote endpoints and the compact `quoteCenter/historys.htm` history endpoint. `search-keywords` is intentionally `not_supported` to avoid crawler-like behavior.
+
+Current Phase 4.2 recommendation: consider a separate historical daily OHLC prototype for already confirmed instruments before adding news, broad catalogs, or new commodity families.
+
 ## Backup Skeleton
 
 Current backup script only prints the planned steps:
