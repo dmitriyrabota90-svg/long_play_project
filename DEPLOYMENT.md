@@ -178,6 +178,18 @@ The discovery command must not be scheduled. It does not write to PostgreSQL, do
 
 Only candidates marked `ready_to_add` should be considered for a later Phase 4.1 production config change. Candidates marked `not_found` need a separate source review instead of guessed codes.
 
+Phase 4.1 adds only the confirmed `soybean_meal` candidate to `current_price_source`:
+
+```text
+product_code=soybean_meal
+external_code=JO_165938
+endpoint=https://api.jijinhao.com/quoteCenter/realTime.htm
+parser_type=json
+price_path=JO_165938.q5
+```
+
+Do not add `sunflower_oil` or `sunflower_meal` until reliable instruments are confirmed.
+
 ## Checking The Collector
 
 Manual run:

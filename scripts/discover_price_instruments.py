@@ -45,10 +45,10 @@ def main() -> None:
             ),
         )
 
-    results = discover_price_instruments(
-        candidates=candidates if candidates is not None else None or (),
-        timeout=args.timeout,
-    ) if candidates is not None else discover_price_instruments(timeout=args.timeout)
+    if candidates is None:
+        results = discover_price_instruments(timeout=args.timeout)
+    else:
+        results = discover_price_instruments(candidates=candidates, timeout=args.timeout)
     write_discovery_outputs(results, Path(args.output_dir))
 
     for result in results:

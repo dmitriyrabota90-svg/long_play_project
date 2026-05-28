@@ -43,6 +43,29 @@ def test_parse_csv_response_for_rapeseed_meal() -> None:
     assert parse_price_response(instrument("rapeseed_meal"), payload) == Decimal("3210")
 
 
+def test_parse_json_response_for_soybean_meal() -> None:
+    payload = 'var quote_json = {"JO_165938":{"showName":"豆粕主力","q5":"2977.00"}};'
+
+    assert parse_price_response(instrument("soybean_meal"), payload) == Decimal("2977.00")
+
+
+def test_current_price_instruments_include_confirmed_soybean_meal_without_removing_existing_products() -> None:
+    instruments_by_product = {item.product_code: item for item in CURRENT_PRICE_INSTRUMENTS}
+
+    assert set(instruments_by_product) == {
+        "rapeseed_oil",
+        "soybean_oil",
+        "rapeseed_meal",
+        "soybean_meal",
+    }
+    soybean_meal = instruments_by_product["soybean_meal"]
+    assert soybean_meal.external_code == "JO_165938"
+    assert soybean_meal.endpoint == "https://api.jijinhao.com/quoteCenter/realTime.htm"
+    assert soybean_meal.parser_type == "json"
+    assert soybean_meal.price_path == ("JO_165938", "q5")
+    assert soybean_meal.params == {"codes": "JO_165938"}
+
+
 def test_parse_error_missing_response_prefix() -> None:
     with pytest.raises(PriceParseError, match="missing response_prefix"):
         parse_price_response(instrument("rapeseed_oil"), '{"JO_166042":{"q5":"7654.25"}}')

@@ -59,6 +59,18 @@ CURRENT_PRICE_INSTRUMENTS: tuple[CurrentPriceInstrument, ...] = (
         unit="metric_ton",
         source_note="Jijinhao current quote, rapeseed meal.",
     ),
+    CurrentPriceInstrument(
+        product_code="soybean_meal",
+        external_code="JO_165938",
+        endpoint="https://api.jijinhao.com/quoteCenter/realTime.htm",
+        params={"codes": "JO_165938"},
+        parser_type="json",
+        response_prefix="var quote_json = ",
+        price_path=("JO_165938", "q5"),
+        currency="CNY",
+        unit="metric_ton",
+        source_note="Jijinhao current quote, soybean meal.",
+    ),
 )
 
 
@@ -68,4 +80,3 @@ CURRENT_PRICE_HEADERS: dict[str, str] = {
     "Accept-Language": "ru,en;q=0.9",
     "Referer": "https://m.cngold.org//",
 }
-

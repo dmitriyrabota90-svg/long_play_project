@@ -207,6 +207,7 @@ It currently collects:
 - `rapeseed_oil` from `JO_166042`, JSON response, price path `JO_166042.q5`.
 - `soybean_oil` from `JO_165951`, CSV-like response, price index `3`.
 - `rapeseed_meal` from `JO_166106`, CSV-like response, price index `3`.
+- `soybean_meal` from `JO_165938`, JSON response, price path `JO_165938.q5`.
 
 Instrument config lives in:
 
@@ -621,6 +622,18 @@ Discovery statuses mean:
 - `ready_to_add`: the candidate parsed and matched the expected product name, but still needs Phase 4.1 confirmation before production use.
 - `needs_manual_check`: a possible source exists, but the current parser/config is not reliable enough.
 - `not_found`: no reliable current-source instrument was found; do not guess.
+
+## Phase 4.1 Soybean Meal
+
+Phase 4.1 promotes only the confirmed discovery candidate for `soybean_meal` into the production current-price instrument config:
+
+- external code: `JO_165938`
+- endpoint: `https://api.jijinhao.com/quoteCenter/realTime.htm`
+- parser type: `json`
+- response prefix: `var quote_json = `
+- price path: `JO_165938.q5`
+
+`sunflower_oil` and `sunflower_meal` are intentionally not added because reliable Jijinhao/Cngold instruments have not been found.
 
 ## Backup Skeleton
 
