@@ -159,6 +159,25 @@ HAVING COUNT(*) > 1;
 
 There is no automatic feature scheduler in Phase 3.2. Features are built manually until the output is observed in production. This is not an ML model and does not add news, weather, ECB, or other sources.
 
+## Price Instrument Discovery
+
+Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
+
+```bash
+docker compose run --rm app python scripts/discover_price_instruments.py
+```
+
+Outputs are limited to:
+
+```text
+diagnostics/discovery/PRICE_INSTRUMENT_DISCOVERY_REPORT.md
+diagnostics/discovery/price_instrument_candidates.json
+```
+
+The discovery command must not be scheduled. It does not write to PostgreSQL, does not save production `raw_responses`, does not touch raw collector data, and does not change `CURRENT_PRICE_SCHEDULE_TIMES`.
+
+Only candidates marked `ready_to_add` should be considered for a later Phase 4.1 production config change. Candidates marked `not_found` need a separate source review instead of guessed codes.
+
 ## Checking The Collector
 
 Manual run:

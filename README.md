@@ -587,6 +587,41 @@ This is feature engineering only. It is not an ML model, and it does not add new
 
 Collectors must not use future data to build features. Feature availability must be controlled through `fetched_at`, `published_at`, and `as_of_at`.
 
+## Phase 4.0 Price Instrument Discovery
+
+Phase 4.0 is a read-only discovery step for missing product instruments. It does not add products to `CURRENT_PRICE_INSTRUMENTS`, does not write to `price_observations`, does not write to production `raw_responses`, and is not registered in any scheduler.
+
+Run the built-in discovery:
+
+```bash
+python scripts/discover_price_instruments.py
+```
+
+The script writes concise diagnostics only:
+
+```text
+diagnostics/discovery/PRICE_INSTRUMENT_DISCOVERY_REPORT.md
+diagnostics/discovery/price_instrument_candidates.json
+```
+
+You can probe a single candidate without changing production config:
+
+```bash
+python scripts/discover_price_instruments.py \
+  --product-code soybean_meal \
+  --title "Соевый шрот" \
+  --endpoint "https://api.jijinhao.com/quoteCenter/realTime.htm" \
+  --external-code JO_165938 \
+  --parser-type json \
+  --expected-keyword 豆粕
+```
+
+Discovery statuses mean:
+
+- `ready_to_add`: the candidate parsed and matched the expected product name, but still needs Phase 4.1 confirmation before production use.
+- `needs_manual_check`: a possible source exists, but the current parser/config is not reliable enough.
+- `not_found`: no reliable current-source instrument was found; do not guess.
+
 ## Backup Skeleton
 
 Current backup script only prints the planned steps:
