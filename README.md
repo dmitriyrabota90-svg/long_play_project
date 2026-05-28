@@ -695,6 +695,24 @@ Raw diagnostic responses are saved only under `diagnostics/historical_price_prob
 
 This phase does not decide the production schema. A future historical collector should be a separate phase after choosing whether to use a dedicated `historical_price_bars` table or explicit `observation_type` / OHLC fields.
 
+## Phase 4.4 Historical Price Bars Design
+
+Phase 4.4 is design-only. It documents how future historical daily bars should be stored without implementing a production historical collector or creating an Alembic migration.
+
+Design document:
+
+```text
+docs/HISTORICAL_PRICE_BARS_DESIGN.md
+```
+
+Draft SQL, not to apply:
+
+```text
+docs/sql_drafts/0005_historical_price_bars_draft.sql
+```
+
+The design recommends a separate `historical_price_bars` table linked to `raw_responses`, because historical bars have a different as-of/leakage profile from current snapshot rows in `price_observations`. The first future collector candidate should use compact `quoteCenter/historys.htm`; `kDataList.htm` remains later/manual-check due to larger payloads.
+
 ## Backup Skeleton
 
 Current backup script only prints the planned steps:

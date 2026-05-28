@@ -256,6 +256,19 @@ diagnostics/historical_price_probe/raw/
 
 The probe can run read-only SELECT comparisons against `price_observations` when the database is available. It does not create `raw_responses`, does not update `daily_product_features`, and is not a production historical collector. Production historical collection requires a later schema/design decision, preferably a dedicated historical bars model or explicit `observation_type` plus OHLC fields.
 
+## Historical Price Bars Design
+
+Phase 4.4 is documentation-only. It does not create a migration and does not change production schema.
+
+Read before implementing any historical collector:
+
+```text
+docs/HISTORICAL_PRICE_BARS_DESIGN.md
+docs/sql_drafts/0005_historical_price_bars_draft.sql
+```
+
+The draft SQL is explicitly marked `DRAFT ONLY. DO NOT APPLY.` Future rollout should first add an Alembic migration and tests, then run a manual/backfill collector with scheduler disabled.
+
 ## Checking The Production Scheduler
 
 Production `.env` should use:
