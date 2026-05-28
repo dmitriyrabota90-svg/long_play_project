@@ -1,6 +1,6 @@
 -- DRAFT ONLY. DO NOT APPLY.
 -- Not an Alembic migration.
--- Phase 4.4 design draft for future review.
+-- Phase 4.5 schema draft for review.
 
 CREATE TABLE historical_price_bars (
     id SERIAL PRIMARY KEY,
@@ -12,12 +12,12 @@ CREATE TABLE historical_price_bars (
     endpoint_alias VARCHAR(50) NOT NULL,
     bar_date DATE NOT NULL,
     bar_timeframe VARCHAR(50) NOT NULL,
-    open_price NUMERIC(18, 6),
-    high_price NUMERIC(18, 6),
-    low_price NUMERIC(18, 6),
-    close_price NUMERIC(18, 6),
-    price NUMERIC(18, 6),
-    volume NUMERIC(24, 6),
+    open_price NUMERIC(18, 8),
+    high_price NUMERIC(18, 8),
+    low_price NUMERIC(18, 8),
+    close_price NUMERIC(18, 8),
+    price NUMERIC(18, 8),
+    volume NUMERIC(24, 8),
     currency VARCHAR(16) NOT NULL,
     unit VARCHAR(100) NOT NULL,
     observed_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -27,21 +27,24 @@ CREATE TABLE historical_price_bars (
     source_payload_hash VARCHAR(64) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_historical_price_bars_product_source_endpoint_timeframe_date
+    CONSTRAINT uq_hist_bars_product_source_endpoint_timeframe_date
         UNIQUE (product_id, source_id, endpoint_alias, bar_timeframe, bar_date)
 );
 
-CREATE INDEX ix_historical_price_bars_product_bar_date
+CREATE INDEX ix_hist_bars_product_bar_date
     ON historical_price_bars (product_id, bar_date);
 
-CREATE INDEX ix_historical_price_bars_source_fetched_at
+CREATE INDEX ix_hist_bars_source_fetched_at
     ON historical_price_bars (source_id, fetched_at);
 
-CREATE INDEX ix_historical_price_bars_product_source_timeframe_bar_date
+CREATE INDEX ix_hist_bars_product_source_timeframe_date
     ON historical_price_bars (product_id, source_id, bar_timeframe, bar_date);
 
-CREATE INDEX ix_historical_price_bars_raw_response_id
+CREATE INDEX ix_hist_bars_raw_response_id
     ON historical_price_bars (raw_response_id);
 
-CREATE INDEX ix_historical_price_bars_collector_run_id
+CREATE INDEX ix_hist_bars_collector_run_id
     ON historical_price_bars (collector_run_id);
+
+CREATE INDEX ix_hist_bars_source_record_hash
+    ON historical_price_bars (source_record_hash);

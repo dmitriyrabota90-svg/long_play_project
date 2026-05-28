@@ -143,6 +143,54 @@ class PriceObservation(Base):
     raw_response: Mapped[RawResponse] = relationship()
 
 
+class HistoricalPriceBar(Base, TimestampMixin):
+    __tablename__ = "historical_price_bars"
+    __table_args__ = (
+        UniqueConstraint(
+            "product_id",
+            "source_id",
+            "endpoint_alias",
+            "bar_timeframe",
+            "bar_date",
+            name="uq_hist_bars_product_source_endpoint_timeframe_date",
+        ),
+        Index("ix_hist_bars_product_bar_date", "product_id", "bar_date"),
+        Index("ix_hist_bars_source_fetched_at", "source_id", "fetched_at"),
+        Index("ix_hist_bars_product_source_timeframe_date", "product_id", "source_id", "bar_timeframe", "bar_date"),
+        Index("ix_hist_bars_raw_response_id", "raw_response_id"),
+        Index("ix_hist_bars_collector_run_id", "collector_run_id"),
+        Index("ix_hist_bars_source_record_hash", "source_record_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    external_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    endpoint_alias: Mapped[str] = mapped_column(String(50), nullable=False)
+    bar_date: Mapped[date] = mapped_column(Date, nullable=False)
+    bar_timeframe: Mapped[str] = mapped_column(String(50), nullable=False)
+    open_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    high_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    low_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    close_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    currency: Mapped[str] = mapped_column(String(16), nullable=False)
+    unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    product: Mapped[Product] = relationship()
+    source: Mapped[Source] = relationship()
+    raw_response: Mapped[RawResponse] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
+
+
 class FxRate(Base):
     __tablename__ = "fx_rates"
 

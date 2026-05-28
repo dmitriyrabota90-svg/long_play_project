@@ -126,6 +126,8 @@ Recommended first unique constraint:
 UNIQUE(product_id, source_id, endpoint_alias, bar_timeframe, bar_date)
 ```
 
+Implemented name in Phase 4.5: `uq_hist_bars_product_source_endpoint_timeframe_date` (shortened to avoid PostgreSQL identifier-length issues).
+
 This is preferable to including `source_record_hash` in the uniqueness constraint. If the source later revises a historical bar, a unique constraint that includes the hash would allow duplicate bars for the same product/date/endpoint. The desired behavior is upsert by product/source/endpoint/timeframe/date, then update values and `updated_at` if the normalized record changed.
 
 Keep `source_record_hash` as a non-unique change detector and audit field. If the hash changes for an existing unique key, update the row and optionally write a quality warning or revision metric.
@@ -133,26 +135,26 @@ Keep `source_record_hash` as a non-unique change detector and audit field. If th
 Recommended indexes:
 
 ```text
-ix_historical_price_bars_product_bar_date
+ix_hist_bars_product_bar_date
   (product_id, bar_date)
 
-ix_historical_price_bars_source_fetched_at
+ix_hist_bars_source_fetched_at
   (source_id, fetched_at)
 
-ix_historical_price_bars_product_source_timeframe_bar_date
+ix_hist_bars_product_source_timeframe_date
   (product_id, source_id, bar_timeframe, bar_date)
 
-ix_historical_price_bars_raw_response_id
+ix_hist_bars_raw_response_id
   (raw_response_id)
 
-ix_historical_price_bars_collector_run_id
+ix_hist_bars_collector_run_id
   (collector_run_id)
 ```
 
 Optional later index for export workloads:
 
 ```text
-ix_historical_price_bars_timeframe_bar_date
+ix_hist_bars_timeframe_bar_date
   (bar_timeframe, bar_date)
 ```
 
@@ -325,7 +327,7 @@ Initial `kdata` limits if investigated later:
 Phase 4.5 should be schema-only or schema-plus-tests:
 
 1. Add SQLAlchemy model `HistoricalPriceBar`.
-2. Add Alembic migration for `historical_price_bars`.
+2. Add Alembic migration for `historical_price_bars`. Phase 4.5 implements this as revision `0005_historical_price_bars`.
 3. Add seed row for source `jijinhao_historical_prices`.
 4. Add parser/unit tests for `historys` payloads.
 5. Add idempotency/upsert tests.

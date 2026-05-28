@@ -44,6 +44,8 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["database"]["ok"] is True
     assert report["status"] == "degraded"
     assert report["last_24h"]["collector_runs"] == 0
+    assert report["historical_price_bars"]["count"] == 0
+    assert report["historical_price_bars"]["last_date"] is None
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:
@@ -78,4 +80,3 @@ def test_backup_plan_defaults_to_dry_run(tmp_path: Path) -> None:
     assert plan["dry_run"] is True
     assert plan["actions_executed"] == []
     assert "pg_dump" in plan["postgres"]["command"]
-

@@ -41,6 +41,12 @@ PRODUCTS: tuple[ProductSeed, ...] = (
 
 SOURCES: tuple[SourceSeed, ...] = (
     SourceSeed("current_price_source", "Current price source", "price"),
+    SourceSeed(
+        "jijinhao_historical_prices",
+        "Jijinhao Historical Prices",
+        "price_history",
+        "https://api.jijinhao.com/",
+    ),
     SourceSeed("world_bank_pink_sheet", "World Bank Pink Sheet", "benchmark", "https://www.worldbank.org/"),
     SourceSeed("cbr_fx", "Central Bank of Russia FX", "fx", "https://www.cbr.ru/"),
     SourceSeed("ecb_fx", "European Central Bank FX", "fx", "https://www.ecb.europa.eu/"),
@@ -110,4 +116,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

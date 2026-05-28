@@ -10,7 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
 from app.config.settings import get_settings
-from app.db.models import CollectorRun, DailyProductFeature, DataQualityCheck, FxRate, PriceObservation, Product, RawResponse, Source
+from app.db.models import (
+    CollectorRun,
+    DailyProductFeature,
+    DataQualityCheck,
+    FxRate,
+    HistoricalPriceBar,
+    PriceObservation,
+    Product,
+    RawResponse,
+    Source,
+)
 from app.db.session import session_scope
 from app.monitoring.quality_summary import build_quality_summary, problematic_quality_filter
 from app.monitoring.redaction import mask_database_url
@@ -62,6 +72,10 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "last_date": None,
             "last_24h": 0,
             "missing_recent_features": [],
+        },
+        "historical_price_bars": {
+            "count": 0,
+            "last_date": None,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -121,6 +135,9 @@ def _fill_db_report(
     report["daily_product_features"]["last_date"] = last_feature_date.isoformat() if last_feature_date else None
     report["daily_product_features"]["last_24h"] = report["last_24h"]["daily_product_features"]
     report["daily_product_features"]["missing_recent_features"] = _missing_recent_features(session, cutoff=cutoff)
+    report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
+    last_historical_bar_date = session.scalar(select(func.max(HistoricalPriceBar.bar_date)))
+    report["historical_price_bars"]["last_date"] = last_historical_bar_date.isoformat() if last_historical_bar_date else None
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())

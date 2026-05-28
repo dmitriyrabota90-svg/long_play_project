@@ -269,6 +269,22 @@ docs/sql_drafts/0005_historical_price_bars_draft.sql
 
 The draft SQL is explicitly marked `DRAFT ONLY. DO NOT APPLY.` Future rollout should first add an Alembic migration and tests, then run a manual/backfill collector with scheduler disabled.
 
+## Historical Price Bars Schema
+
+Phase 4.5 adds the `historical_price_bars` table and the seed source `jijinhao_historical_prices`. After deploying this phase, apply migrations normally:
+
+```bash
+docker compose run --rm app alembic upgrade head
+```
+
+The expected immediate table count is zero:
+
+```sql
+SELECT COUNT(*) AS historical_price_bars_count FROM historical_price_bars;
+```
+
+This is intentional. The production historical collector is not implemented yet, and `daily_product_features` continues to use `price_observations` plus `fx_rates`.
+
 ## Checking The Production Scheduler
 
 Production `.env` should use:

@@ -713,6 +713,17 @@ docs/sql_drafts/0005_historical_price_bars_draft.sql
 
 The design recommends a separate `historical_price_bars` table linked to `raw_responses`, because historical bars have a different as-of/leakage profile from current snapshot rows in `price_observations`. The first future collector candidate should use compact `quoteCenter/historys.htm`; `kDataList.htm` remains later/manual-check due to larger payloads.
 
+## Phase 4.5 Historical Price Bars Schema
+
+Phase 4.5 implements schema-only support for `historical_price_bars`:
+
+- SQLAlchemy model: `HistoricalPriceBar`.
+- Alembic revision: `0005_historical_price_bars`.
+- Idempotent seed source: `jijinhao_historical_prices`.
+- Operational report count/last-date fields for historical bars.
+
+The table is expected to be empty immediately after migration. No production historical collector exists yet, daily features do not read `historical_price_bars`, and historical bars must not be mixed into `price_observations`.
+
 ## Backup Skeleton
 
 Current backup script only prints the planned steps:

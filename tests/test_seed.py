@@ -16,7 +16,10 @@ def test_seed_is_idempotent() -> None:
 
         product_count = session.scalar(select(func.count()).select_from(Product))
         source_count = session.scalar(select(func.count()).select_from(Source))
+        historical_source = session.scalar(select(Source).where(Source.code == "jijinhao_historical_prices"))
 
     assert product_count == len(PRODUCTS)
     assert source_count == len(SOURCES)
-
+    assert historical_source is not None
+    assert historical_source.name == "Jijinhao Historical Prices"
+    assert historical_source.source_type == "price_history"
