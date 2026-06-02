@@ -130,6 +130,7 @@ def test_quality_summary_cli_outputs_summary(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["DATABASE_URL"] = database_url
+    env["LOG_DIR"] = str(tmp_path / "logs")
     result = subprocess.run(
         [sys.executable, "scripts/quality_summary.py", "--limit", "5"],
         cwd=Path(__file__).resolve().parents[1],

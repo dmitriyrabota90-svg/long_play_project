@@ -365,7 +365,20 @@ Phase 4.6 adds the first manual production collector:
 ## Open Questions
 
 - Confirm final q-field semantics for `historys.htm`: whether `q1/q2/q3/q4/q60` always map to open/close/high/low/volume for all four instruments.
-- Decide whether historical source should update existing bars when values change, or store revisions in a separate future audit table.
+- Observe whether revisions ever affect older closed bars; Phase 4.6C allows controlled updates only for the latest bar and records older changes as conflicts.
 - Decide exact max response size limits after a few more controlled diagnostics.
 - Decide whether `observed_at` should always be UTC midnight or derived from source timestamps when available.
 - Decide whether dataset export should expose historical bars before feature builder uses them.
+
+## Phase 4.6C Mutable Latest Bar Policy
+
+Controlled production retries confirmed that the latest daily bar can change after the first fetch. Phase 4.6C therefore adds `historical_price_bar_revisions` as an audit layer.
+
+Policy:
+
+1. Same unique key and same `source_record_hash`: skip the existing row.
+2. Changed hash on the current `MAX(bar_date)` for the same product, source, endpoint, and timeframe: write a revision row first, then update the main row to the latest accepted values and raw-response linkage.
+3. Changed hash on an older closed bar: preserve the main row, write an `immutable_old_bar_conflict` revision and quality warning, and require manual review.
+4. Never silently overwrite historical values.
+
+The revision row records previous and incoming values, raw-response IDs, collector-run IDs, hashes, `changed_fields`, and `diff_json`. The main table remains the latest accepted view. Daily features remain unchanged and continue to use only current snapshots plus FX until an explicit historical feature-source mode is designed.

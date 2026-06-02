@@ -191,6 +191,62 @@ class HistoricalPriceBar(Base, TimestampMixin):
     collector_run: Mapped[CollectorRun] = relationship()
 
 
+class HistoricalPriceBarRevision(Base):
+    __tablename__ = "historical_price_bar_revisions"
+    __table_args__ = (
+        Index("ix_hist_bar_revisions_bar_id", "historical_price_bar_id"),
+        Index("ix_hist_bar_revisions_product_created", "product_id", "created_at"),
+        Index("ix_hist_bar_revisions_source_created", "source_id", "created_at"),
+        Index("ix_hist_bar_revisions_created_at", "created_at"),
+        Index("ix_hist_bar_revisions_reason", "revision_reason"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    historical_price_bar_id: Mapped[int] = mapped_column(ForeignKey("historical_price_bars.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    revision_reason: Mapped[str] = mapped_column(String(100), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_open: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    previous_high: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    previous_low: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    previous_close: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    previous_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    previous_volume: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    previous_currency: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    previous_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    previous_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    previous_fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    previous_source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    new_raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    new_collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    new_open: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_high: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_low: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_close: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_volume: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
+    new_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    new_fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    new_source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    new_source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_fields: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    diff_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    historical_price_bar: Mapped[HistoricalPriceBar] = relationship()
+    product: Mapped[Product] = relationship()
+    source: Mapped[Source] = relationship()
+    raw_response: Mapped[RawResponse] = relationship(foreign_keys=[raw_response_id])
+    collector_run: Mapped[CollectorRun] = relationship(foreign_keys=[collector_run_id])
+    new_raw_response: Mapped[RawResponse] = relationship(foreign_keys=[new_raw_response_id])
+    new_collector_run: Mapped[CollectorRun] = relationship(foreign_keys=[new_collector_run_id])
+
+
 class FxRate(Base):
     __tablename__ = "fx_rates"
 

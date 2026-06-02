@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -15,7 +17,7 @@ from app.collectors.historical.jijinhao_historical_prices import (
     JijinhaoHistoricalPricesCollector,
     assess_historys_response,
 )
-from app.db.models import Base, CollectorRun, DataQualityCheck, HistoricalPriceBar, RawResponse
+from app.db.models import Base, CollectorRun, DataQualityCheck, HistoricalPriceBar, HistoricalPriceBarRevision, RawResponse
 from app.db.seed import seed_database
 from app.storage.raw_store import RawStore
 
@@ -145,7 +147,7 @@ def test_duplicate_retry_skips_existing_rows(tmp_path: Path) -> None:
     assert bars_count == 1
 
 
-def test_changed_existing_hash_records_conflict_without_overwrite(tmp_path: Path) -> None:
+def test_changed_existing_hash_on_latest_bar_creates_revision_and_updates_main_row(tmp_path: Path) -> None:
     session, cleanup = build_seeded_session()
     try:
         first = JijinhaoHistoricalPricesCollector(
@@ -159,20 +161,131 @@ def test_changed_existing_hash_records_conflict_without_overwrite(tmp_path: Path
             clock=lambda: datetime(2026, 5, 28, 12, 5, tzinfo=timezone.utc),
         ).run(session, product_code="soybean_meal", days=30)
         bar = session.scalar(select(HistoricalPriceBar))
-        conflict_check = session.scalar(
-            select(DataQualityCheck).where(DataQualityCheck.check_name == "historical_existing_bar_hash_changed")
+        revision = session.scalar(select(HistoricalPriceBarRevision))
+        update_check = session.scalar(
+            select(DataQualityCheck).where(DataQualityCheck.check_name == "historical_latest_bar_updated")
         )
     finally:
         cleanup()
 
     assert first.records_written == 1
     assert second.records_written == 0
+    assert second.updated_existing == 1
+    assert second.revisions_written == 1
+    assert second.conflicts_count == 0
+    assert second.status == "success"
+    assert bar.price == 2995
+    assert bar.close_price == 2995
+    assert revision is not None
+    assert revision.revision_reason == "mutable_latest_bar_update"
+    assert revision.revision_number == 1
+    assert revision.previous_price == Decimal("2990.00000000")
+    assert revision.new_price == Decimal("2995.00000000")
+    assert "price" in revision.changed_fields
+    assert revision.diff_json["price"]["diff_abs"] == "5"
+    assert update_check is not None
+    assert update_check.status == "pass"
+    assert update_check.severity == "warning"
+    assert update_check.details_json["policy_decision"] == "updated_latest_bar"
+    assert "changed_fields" in update_check.details_json
+    assert "diff_json" in update_check.details_json
+
+
+def test_retry_after_controlled_update_skips_existing_row(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    try:
+        collector = JijinhaoHistoricalPricesCollector(
+            http_client=FakeHttpClient(_historys_payload(close=2990)),
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+        )
+        collector.run(session, product_code="soybean_meal", days=30)
+        JijinhaoHistoricalPricesCollector(
+            http_client=FakeHttpClient(_historys_payload(close=2995)),
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 28, 12, 5, tzinfo=timezone.utc),
+        ).run(session, product_code="soybean_meal", days=30)
+        retry = JijinhaoHistoricalPricesCollector(
+            http_client=FakeHttpClient(_historys_payload(close=2995)),
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 28, 12, 10, tzinfo=timezone.utc),
+        ).run(session, product_code="soybean_meal", days=30)
+        revisions_count = session.scalar(select(func.count()).select_from(HistoricalPriceBarRevision))
+    finally:
+        cleanup()
+
+    assert retry.records_written == 0
+    assert retry.skipped_existing == 1
+    assert retry.updated_existing == 0
+    assert retry.revisions_written == 0
+    assert retry.conflicts_count == 0
+    assert revisions_count == 1
+
+
+def test_changed_existing_hash_on_old_bar_creates_warning_without_update(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    try:
+        first = JijinhaoHistoricalPricesCollector(
+            http_client=FakeHttpClient(_historys_payload(close=2990)),
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+        ).run(session, product_code="soybean_meal", days=30)
+        existing = session.scalar(select(HistoricalPriceBar))
+        session.add(
+            HistoricalPriceBar(
+                product_id=existing.product_id,
+                source_id=existing.source_id,
+                raw_response_id=existing.raw_response_id,
+                collector_run_id=existing.collector_run_id,
+                external_code=existing.external_code,
+                endpoint_alias=existing.endpoint_alias,
+                bar_date=date(2026, 5, 26),
+                bar_timeframe=existing.bar_timeframe,
+                open_price=existing.open_price,
+                high_price=existing.high_price,
+                low_price=existing.low_price,
+                close_price=existing.close_price,
+                price=existing.price,
+                volume=existing.volume,
+                currency=existing.currency,
+                unit=existing.unit,
+                observed_at=datetime(2026, 5, 26, tzinfo=timezone.utc),
+                published_at=None,
+                fetched_at=existing.fetched_at,
+                source_record_hash="f" * 64,
+                source_payload_hash=existing.source_payload_hash,
+            )
+        )
+        session.flush()
+        second = JijinhaoHistoricalPricesCollector(
+            http_client=FakeHttpClient(_historys_payload(close=2995)),
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 5, 28, 12, 5, tzinfo=timezone.utc),
+        ).run(session, product_code="soybean_meal", days=30)
+        old_bar = session.scalar(select(HistoricalPriceBar).where(HistoricalPriceBar.bar_date == date(2026, 5, 25)))
+        revision = session.scalar(
+            select(HistoricalPriceBarRevision).where(
+                HistoricalPriceBarRevision.revision_reason == "immutable_old_bar_conflict"
+            )
+        )
+        warning = session.scalar(select(DataQualityCheck).where(DataQualityCheck.check_name == "historical_old_bar_hash_changed"))
+    finally:
+        cleanup()
+
+    assert first.records_written == 1
+    assert second.records_written == 0
+    assert second.updated_existing == 0
     assert second.conflicts_count == 1
+    assert second.revisions_written == 1
     assert second.status == "partial_success"
-    assert bar.price == 2990
-    assert conflict_check is not None
-    assert conflict_check.status == "fail"
-    assert conflict_check.severity == "warning"
+    assert old_bar.price == 2990
+    assert revision is not None
+    assert revision.revision_reason == "immutable_old_bar_conflict"
+    assert warning is not None
+    assert warning.status == "fail"
+    assert warning.severity == "warning"
+    assert warning.details_json["policy_decision"] == "rejected_old_bar_conflict"
+    assert "diff_json" in warning.details_json
 
 
 def test_quality_checks_are_written(tmp_path: Path) -> None:
@@ -193,7 +306,7 @@ def test_quality_checks_are_written(tmp_path: Path) -> None:
     assert "historical_ohlc_consistent" in check_names
 
 
-def test_cli_rejects_kdata_for_production_historical_collector() -> None:
+def test_cli_rejects_kdata_for_production_historical_collector(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
@@ -207,6 +320,7 @@ def test_cli_rejects_kdata_for_production_historical_collector() -> None:
         check=False,
         capture_output=True,
         text=True,
+        env={**os.environ, "LOG_DIR": str(tmp_path / "logs")},
     )
 
     assert result.returncode != 0
@@ -225,4 +339,3 @@ def build_seeded_session():
         engine.dispose()
 
     return session, cleanup
-

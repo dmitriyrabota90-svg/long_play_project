@@ -49,6 +49,9 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["historical_price_bars"]["last_bar_date"] is None
     assert report["historical_price_bars"]["last_created_at"] is None
     assert report["historical_price_bars"]["last_successful_run"] is None
+    assert report["historical_price_bars"]["last_partial_run"] is None
+    assert report["historical_price_bar_revisions"]["count"] == 0
+    assert report["historical_price_bar_revisions"]["last_created_at"] is None
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:

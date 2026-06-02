@@ -752,7 +752,7 @@ Phase 4.6 deliberately rejects `kdata` for production collection:
 python scripts/run_collector.py jijinhao_historical_prices --endpoint kdata --days 30
 ```
 
-Expected output includes `run_id`, `status`, `endpoint_alias`, `products_processed`, `records_found`, `records_written`, `skipped_existing`, `conflicts_count`, and `errors_count`.
+Expected output includes `run_id`, `status`, `endpoint_alias`, `products_processed`, `records_found`, `records_written`, `skipped_existing`, `updated_existing`, `revisions_written`, `conflicts_count`, and `errors_count`.
 
 The collector stores raw evidence through the production `RawStore` under:
 
@@ -762,7 +762,15 @@ data/raw/jijinhao_historical_prices/{yyyy}/{mm}/{dd}/{collector_run_id}/{sha256}
 
 It creates `collector_runs`, `raw_responses`, `historical_price_bars`, and quality checks. It does not write to `price_observations`, does not rebuild `daily_product_features`, and does not change `current_price_source` or `cbr_fx` behavior.
 
-Idempotency is by `(product_id, source_id, endpoint_alias, bar_timeframe, bar_date)`. If the existing row has the same `source_record_hash`, the row is counted as `skipped_existing`. If the existing row has a different hash, Phase 4.6 records a `historical_existing_bar_hash_changed` warning, increments `conflicts_count`, and does not overwrite the row silently.
+Idempotency is by `(product_id, source_id, endpoint_alias, bar_timeframe, bar_date)`. If the existing row has the same `source_record_hash`, the row is counted as `skipped_existing`.
+
+## Phase 4.6C Mutable Latest Historical Bar Revisions
+
+Phase 4.6C adds an audit trail for source revisions. Jijinhao can revise the latest daily historical bar after an initial fetch, so `historical_price_bars` stores the latest accepted version while `historical_price_bar_revisions` preserves the previous and incoming values, raw-response links, hashes, changed fields, and field-level diff.
+
+Controlled updates are allowed only when a changed row is the latest `MAX(bar_date)` for its `(product_id, source_id, endpoint_alias, bar_timeframe)` series. The collector writes a `historical_latest_bar_updated` quality record and increments `updated_existing` / `revisions_written`. If an older closed bar changes, the collector does not overwrite it: it records an `immutable_old_bar_conflict` revision, writes `historical_old_bar_hash_changed`, and increments `conflicts_count`.
+
+There is still no historical scheduler. Daily features still read only `price_observations` plus `fx_rates`; they do not consume `historical_price_bars`.
 
 Check stored bars:
 

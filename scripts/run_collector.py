@@ -124,6 +124,10 @@ def main() -> None:
     print(f"records_written={result.records_written}")
     if hasattr(result, "skipped_existing"):
         print(f"skipped_existing={result.skipped_existing}")
+    if hasattr(result, "updated_existing"):
+        print(f"updated_existing={result.updated_existing}")
+    if hasattr(result, "revisions_written"):
+        print(f"revisions_written={result.revisions_written}")
     if hasattr(result, "conflicts_count"):
         print(f"conflicts_count={result.conflicts_count}")
     if hasattr(result, "observed_at_values"):

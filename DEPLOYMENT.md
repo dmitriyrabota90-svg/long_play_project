@@ -307,7 +307,7 @@ If that run is healthy, run all confirmed products:
 docker compose run --rm app python scripts/run_collector.py jijinhao_historical_prices --endpoint historys --days 30
 ```
 
-Then run the same all-products command again to verify idempotency. The retry should report `records_written=0`, `skipped_existing` near the number of existing bars, `conflicts_count=0`, and `errors_count=0`.
+Then run the same all-products command again to verify idempotency. An unchanged retry should report `records_written=0`, `skipped_existing` near the number of existing bars, `updated_existing=0`, `revisions_written=0`, `conflicts_count=0`, and `errors_count=0`.
 
 Check output:
 
@@ -335,6 +335,28 @@ WHERE raw_response_id IS NULL;
 ```
 
 There is no scheduler for `jijinhao_historical_prices` in Phase 4.6. Do not rebuild daily features as part of this collector rollout; feature builder source selection will be a later phase.
+
+## Historical Mutable Latest Bar Revisions
+
+Phase 4.6C adds Alembic revision `0006_historical_bar_revisions` and table `historical_price_bar_revisions`. Apply the migration after deploying reviewed code:
+
+```bash
+docker compose run --rm app alembic upgrade head
+```
+
+Jijinhao may revise the latest daily bar. The collector permits a controlled update only for the current `MAX(bar_date)` of the same product, source, endpoint, and timeframe. Before updating the main row, it writes a revision containing old/new values, raw-response links, hashes, `changed_fields`, and `diff_json`. Older changed bars are not overwritten silently: they remain conflicts requiring review.
+
+After migration, run one manual historical retry and verify:
+
+```sql
+SELECT COUNT(*) FROM historical_price_bar_revisions;
+SELECT id, historical_price_bar_id, revision_reason, revision_number, changed_fields, created_at
+FROM historical_price_bar_revisions
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+The historical collector remains manual-only. Do not add a scheduler and do not rebuild daily features during this rollout.
 
 ## Checking The Production Scheduler
 

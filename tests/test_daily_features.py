@@ -229,7 +229,7 @@ def test_build_features_cli_with_and_without_dates(tmp_path: Path) -> None:
         _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 20, tzinfo=timezone.utc))
         session.commit()
 
-    env = {**os.environ, "DATABASE_URL": database_url}
+    env = {**os.environ, "DATABASE_URL": database_url, "LOG_DIR": str(tmp_path / "logs")}
     get_settings.cache_clear()
     first = subprocess.run(
         [sys.executable, "scripts/build_features.py", "daily", "--from-date", "2026-05-20", "--to-date", "2026-05-20"],

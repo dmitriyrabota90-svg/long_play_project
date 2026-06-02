@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.collectors.base import BaseCollector, CollectorResult
@@ -26,7 +26,15 @@ from app.collectors.historical.jijinhao_history_config import (
     HistoricalPriceInstrument,
     historys_params,
 )
-from app.db.models import CollectorRun, DataQualityCheck, HistoricalPriceBar, Product, RawResponse, Source
+from app.db.models import (
+    CollectorRun,
+    DataQualityCheck,
+    HistoricalPriceBar,
+    HistoricalPriceBarRevision,
+    Product,
+    RawResponse,
+    Source,
+)
 from app.db.session import session_scope
 from app.discovery.historical_price_probe import HistoricalRow, parse_historical_response
 from app.storage.hashes import stable_json_hash
@@ -77,6 +85,8 @@ class HistoricalCollectorResult(CollectorResult):
     endpoint_alias: str = ENDPOINT_ALIAS
     products_processed: int = 0
     skipped_existing: int = 0
+    updated_existing: int = 0
+    revisions_written: int = 0
     conflicts_count: int = 0
 
 
@@ -86,6 +96,8 @@ class _ProductStats:
     records_found: int = 0
     records_written: int = 0
     skipped_existing: int = 0
+    updated_existing: int = 0
+    revisions_written: int = 0
     conflicts_count: int = 0
     raw_response_ids: list[int] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -165,6 +177,8 @@ class JijinhaoHistoricalPricesCollector(BaseCollector):
         records_found = 0
         records_written = 0
         skipped_existing = 0
+        updated_existing = 0
+        revisions_written = 0
         conflicts_count = 0
         products_processed = 0
 
@@ -174,6 +188,8 @@ class JijinhaoHistoricalPricesCollector(BaseCollector):
             records_found += stats.records_found
             records_written += stats.records_written
             skipped_existing += stats.skipped_existing
+            updated_existing += stats.updated_existing
+            revisions_written += stats.revisions_written
             conflicts_count += stats.conflicts_count
             raw_response_ids.extend(stats.raw_response_ids)
             all_errors.extend(stats.errors)
@@ -206,6 +222,8 @@ class JijinhaoHistoricalPricesCollector(BaseCollector):
             endpoint_alias=ENDPOINT_ALIAS,
             products_processed=products_processed,
             skipped_existing=skipped_existing,
+            updated_existing=updated_existing,
+            revisions_written=revisions_written,
             conflicts_count=conflicts_count,
         )
 
@@ -325,24 +343,82 @@ class JijinhaoHistoricalPricesCollector(BaseCollector):
                 if existing.source_record_hash == source_record_hash:
                     stats.skipped_existing += 1
                     continue
+                changed_fields, diff_json = build_historical_bar_diff(existing, row, raw_response, source_record_hash)
+                details = _revision_quality_details(
+                    product=product,
+                    product_code=instrument.product_code,
+                    existing=existing,
+                    incoming_bar=row,
+                    incoming_raw_response=raw_response,
+                    collector_run=collector_run,
+                    incoming_source_record_hash=source_record_hash,
+                    changed_fields=changed_fields,
+                    diff_json=diff_json,
+                )
+                max_bar_date = _max_bar_date(
+                    session,
+                    product_id=product.id,
+                    source_id=source.id,
+                    endpoint_alias=ENDPOINT_ALIAS,
+                    bar_timeframe=BAR_TIMEFRAME,
+                )
+                if existing.bar_date == max_bar_date:
+                    _write_revision(
+                        session,
+                        existing=existing,
+                        incoming_bar=row,
+                        incoming_raw_response=raw_response,
+                        collector_run=collector_run,
+                        revision_reason="mutable_latest_bar_update",
+                        incoming_source_record_hash=source_record_hash,
+                        changed_fields=changed_fields,
+                        diff_json=diff_json,
+                    )
+                    _apply_incoming_bar_update(
+                        existing,
+                        incoming_bar=row,
+                        incoming_raw_response=raw_response,
+                        collector_run=collector_run,
+                        incoming_source_record_hash=source_record_hash,
+                    )
+                    stats.updated_existing += 1
+                    stats.revisions_written += 1
+                    _write_quality_check(
+                        session,
+                        source_id=source.id,
+                        table_name="historical_price_bars",
+                        check_name="historical_latest_bar_updated",
+                        status="pass",
+                        severity="warning",
+                        details={**details, "policy_decision": "updated_latest_bar"},
+                        checked_at=fetched_at,
+                    )
+                    session.flush()
+                    continue
+                _write_revision(
+                    session,
+                    existing=existing,
+                    incoming_bar=row,
+                    incoming_raw_response=raw_response,
+                    collector_run=collector_run,
+                    revision_reason="immutable_old_bar_conflict",
+                    incoming_source_record_hash=source_record_hash,
+                    changed_fields=changed_fields,
+                    diff_json=diff_json,
+                )
                 stats.conflicts_count += 1
+                stats.revisions_written += 1
                 _write_quality_check(
                     session,
                     source_id=source.id,
                     table_name="historical_price_bars",
-                    check_name="historical_existing_bar_hash_changed",
+                    check_name="historical_old_bar_hash_changed",
                     status="fail",
                     severity="warning",
-                    details={
-                        "product_id": product.id,
-                        "product_code": instrument.product_code,
-                        "bar_date": row.bar_date.isoformat(),
-                        "existing_id": existing.id,
-                        "existing_hash": existing.source_record_hash,
-                        "new_hash": source_record_hash,
-                    },
+                    details={**details, "policy_decision": "rejected_old_bar_conflict"},
                     checked_at=fetched_at,
                 )
+                session.flush()
                 continue
 
             session.add(
@@ -544,6 +620,203 @@ def _find_existing_bar(
     )
 
 
+def _max_bar_date(
+    session: Session,
+    *,
+    product_id: int,
+    source_id: int,
+    endpoint_alias: str,
+    bar_timeframe: str,
+) -> date | None:
+    return session.scalar(
+        select(func.max(HistoricalPriceBar.bar_date)).where(
+            HistoricalPriceBar.product_id == product_id,
+            HistoricalPriceBar.source_id == source_id,
+            HistoricalPriceBar.endpoint_alias == endpoint_alias,
+            HistoricalPriceBar.bar_timeframe == bar_timeframe,
+        )
+    )
+
+
+def build_historical_bar_diff(
+    existing: HistoricalPriceBar,
+    incoming_bar: ParsedHistoricalBar,
+    incoming_raw_response: RawResponse,
+    incoming_source_record_hash: str,
+) -> tuple[list[str], dict[str, Any]]:
+    pairs: dict[str, tuple[Decimal | str | int | None, Decimal | str | int | None]] = {
+        "open_price": (existing.open_price, incoming_bar.open_price),
+        "high_price": (existing.high_price, incoming_bar.high_price),
+        "low_price": (existing.low_price, incoming_bar.low_price),
+        "close_price": (existing.close_price, incoming_bar.close_price),
+        "price": (existing.price, incoming_bar.price),
+        "volume": (existing.volume, incoming_bar.volume),
+        "source_record_hash": (existing.source_record_hash, incoming_source_record_hash),
+        "source_payload_hash": (existing.source_payload_hash, incoming_raw_response.sha256),
+    }
+    changed_fields: list[str] = []
+    diff_json: dict[str, Any] = {}
+    for field, (old_value, new_value) in pairs.items():
+        if _json_value(old_value) == _json_value(new_value):
+            continue
+        changed_fields.append(field)
+        diff_json[field] = {"old": _json_value(old_value), "new": _json_value(new_value)}
+        if isinstance(old_value, Decimal) and isinstance(new_value, Decimal):
+            diff_abs = new_value - old_value
+            diff_pct = diff_abs / old_value if old_value != 0 else None
+            diff_json[field]["diff_abs"] = _canonical_decimal(diff_abs)
+            diff_json[field]["diff_pct"] = _canonical_decimal(diff_pct)
+    return changed_fields, diff_json
+
+
+def _revision_quality_details(
+    *,
+    product: Product,
+    product_code: str,
+    existing: HistoricalPriceBar,
+    incoming_bar: ParsedHistoricalBar,
+    incoming_raw_response: RawResponse,
+    collector_run: CollectorRun,
+    incoming_source_record_hash: str,
+    changed_fields: list[str],
+    diff_json: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "product_id": product.id,
+        "product_code": product_code,
+        "bar_date": existing.bar_date.isoformat(),
+        "endpoint_alias": existing.endpoint_alias,
+        "bar_timeframe": existing.bar_timeframe,
+        "existing_id": existing.id,
+        "existing_source_record_hash": existing.source_record_hash,
+        "incoming_source_record_hash": incoming_source_record_hash,
+        "existing_raw_response_id": existing.raw_response_id,
+        "incoming_raw_response_id": incoming_raw_response.id,
+        "existing_collector_run_id": existing.collector_run_id,
+        "incoming_collector_run_id": collector_run.id,
+        "existing_values": _bar_values(existing),
+        "incoming_values": _incoming_values(incoming_bar),
+        "changed_fields": changed_fields,
+        "diff_json": diff_json,
+    }
+
+
+def _write_revision(
+    session: Session,
+    *,
+    existing: HistoricalPriceBar,
+    incoming_bar: ParsedHistoricalBar,
+    incoming_raw_response: RawResponse,
+    collector_run: CollectorRun,
+    revision_reason: str,
+    incoming_source_record_hash: str,
+    changed_fields: list[str],
+    diff_json: dict[str, Any],
+) -> None:
+    revision_number = _next_revision_number(session, existing.id)
+    session.add(
+        HistoricalPriceBarRevision(
+            historical_price_bar_id=existing.id,
+            product_id=existing.product_id,
+            source_id=existing.source_id,
+            raw_response_id=existing.raw_response_id,
+            collector_run_id=existing.collector_run_id,
+            revision_reason=revision_reason,
+            revision_number=revision_number,
+            previous_open=existing.open_price,
+            previous_high=existing.high_price,
+            previous_low=existing.low_price,
+            previous_close=existing.close_price,
+            previous_price=existing.price,
+            previous_volume=existing.volume,
+            previous_currency=existing.currency,
+            previous_unit=existing.unit,
+            previous_observed_at=existing.observed_at,
+            previous_published_at=existing.published_at,
+            previous_fetched_at=existing.fetched_at,
+            previous_source_record_hash=existing.source_record_hash,
+            previous_source_payload_hash=existing.source_payload_hash,
+            new_raw_response_id=incoming_raw_response.id,
+            new_collector_run_id=collector_run.id,
+            new_open=incoming_bar.open_price,
+            new_high=incoming_bar.high_price,
+            new_low=incoming_bar.low_price,
+            new_close=incoming_bar.close_price,
+            new_price=incoming_bar.price,
+            new_volume=incoming_bar.volume,
+            new_observed_at=incoming_bar.observed_at,
+            new_fetched_at=incoming_raw_response.fetched_at,
+            new_source_record_hash=incoming_source_record_hash,
+            new_source_payload_hash=incoming_raw_response.sha256,
+            changed_fields=changed_fields,
+            diff_json=diff_json,
+        )
+    )
+
+
+def _next_revision_number(session: Session, historical_price_bar_id: int) -> int:
+    current = session.scalar(
+        select(func.max(HistoricalPriceBarRevision.revision_number)).where(
+            HistoricalPriceBarRevision.historical_price_bar_id == historical_price_bar_id
+        )
+    )
+    return (current or 0) + 1
+
+
+def _apply_incoming_bar_update(
+    existing: HistoricalPriceBar,
+    *,
+    incoming_bar: ParsedHistoricalBar,
+    incoming_raw_response: RawResponse,
+    collector_run: CollectorRun,
+    incoming_source_record_hash: str,
+) -> None:
+    existing.raw_response_id = incoming_raw_response.id
+    existing.collector_run_id = collector_run.id
+    existing.open_price = incoming_bar.open_price
+    existing.high_price = incoming_bar.high_price
+    existing.low_price = incoming_bar.low_price
+    existing.close_price = incoming_bar.close_price
+    existing.price = incoming_bar.price
+    existing.volume = incoming_bar.volume
+    existing.observed_at = incoming_bar.observed_at
+    existing.published_at = None
+    existing.fetched_at = incoming_raw_response.fetched_at
+    existing.source_record_hash = incoming_source_record_hash
+    existing.source_payload_hash = incoming_raw_response.sha256
+    existing.updated_at = _to_utc(datetime.now(timezone.utc))
+
+
+def _bar_values(existing: HistoricalPriceBar) -> dict[str, Any]:
+    return {
+        "open_price": _json_value(existing.open_price),
+        "high_price": _json_value(existing.high_price),
+        "low_price": _json_value(existing.low_price),
+        "close_price": _json_value(existing.close_price),
+        "price": _json_value(existing.price),
+        "volume": _json_value(existing.volume),
+    }
+
+
+def _incoming_values(incoming_bar: ParsedHistoricalBar) -> dict[str, Any]:
+    return {
+        "open_price": _json_value(incoming_bar.open_price),
+        "high_price": _json_value(incoming_bar.high_price),
+        "low_price": _json_value(incoming_bar.low_price),
+        "close_price": _json_value(incoming_bar.close_price),
+        "price": _json_value(incoming_bar.price),
+        "volume": _json_value(incoming_bar.volume),
+    }
+
+
+def _json_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return _canonical_decimal(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
 def _write_response_checks(
     session: Session,
     *,
@@ -689,4 +962,3 @@ def _result_from_run(collector: JijinhaoHistoricalPricesCollector, collector_run
         error_message=collector_run.error_message,
         errors_count=errors_count,
     )
-
