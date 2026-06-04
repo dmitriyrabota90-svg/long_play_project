@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from app.config.settings import get_settings
+from app.exports.daily_features_export import export_daily_features
 from app.exports.manifest import write_manifest
+
+__all__ = ["create_empty_export_manifest", "export_daily_features"]
 
 
 def create_empty_export_manifest(export_dir: Path | str | None = None) -> dict[str, Any]:
@@ -27,4 +30,3 @@ def create_empty_export_manifest(export_dir: Path | str | None = None) -> dict[s
     manifest_path = write_manifest(target_dir / "dataset_manifest.json", manifest)
     manifest["manifest_path"] = str(manifest_path)
     return manifest
-

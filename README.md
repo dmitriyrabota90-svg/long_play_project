@@ -528,19 +528,28 @@ Files are never overwritten. The SHA-256 hash is calculated from the original by
 
 ## Dataset Export
 
-Create a skeleton export manifest:
+Export the current daily feature table as dataset v1:
 
 ```bash
-python scripts/export_dataset.py
+python scripts/export_dataset.py daily_features
+python scripts/export_dataset.py daily_features --from-date 2026-05-20 --to-date 2026-06-04
+python scripts/export_dataset.py daily_features --format csv
+python scripts/export_dataset.py daily_features --format parquet
+python scripts/export_dataset.py daily_features --format both
 ```
 
-This creates:
+The default format is CSV. Output files are written under:
 
 ```text
-data/exports/{timestamp}/dataset_manifest.json
+data/exports/daily_features_v1_YYYYMMDD_HHMMSS.csv
+data/exports/daily_features_v1_YYYYMMDD_HHMMSS_manifest.json
 ```
 
-Real CSV and Parquet exports will be added later.
+Export v1 uses `daily_product_features` as stored and joins `products` for
+`product_code` and `product_name`. It does not use `historical_price_bars`, does
+not create ML targets, and does not add news, weather, or benchmarks. Export
+payload files in `data/exports/` are runtime artifacts and must not be
+committed. See [docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
 
 ## Phase 3.2 Daily Features
 
@@ -799,6 +808,23 @@ python scripts/backup.py
 
 Future implementation should include PostgreSQL dumps, raw-data backups, export backups, checksum verification, and retention policy.
 
+## Phase 5.0 Daily Features Dataset Export
+
+Phase 5.0 adds controlled file export for `daily_product_features`:
+
+```bash
+python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+The export grain is one row per `product_code` and `feature_date`. The manifest
+records the Git commit, row count, column count, product list, date range,
+source-table notes, excluded sources, file sizes, and SHA-256 hashes. Historical
+bars and revision rows remain excluded from feature export v1.
+
+This is not ML model training and does not create targets.
+
 ## Next Phase
 
-The next phase is to harden the current-price collector in production: observe live failures, add source-specific schema-change checks, then decide whether to schedule it automatically.
+The next phase is to let collection continue for a few days, audit the exported
+feature dataset, and then decide whether the daily feature builder needs its own
+controlled scheduler.

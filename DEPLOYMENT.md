@@ -159,6 +159,57 @@ HAVING COUNT(*) > 1;
 
 There is no automatic feature scheduler in Phase 3.2. Features are built manually until the output is observed in production. This is not an ML model and does not add news, weather, ECB, or other sources.
 
+## Dataset Export Deployment
+
+Phase 5.0 exports `daily_product_features` as controlled dataset artifacts. It
+does not run collectors, change schedulers, run migrations, or train an ML
+model.
+
+Run a CSV export:
+
+```bash
+cd /data1/long_play_project
+docker compose run --rm app python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+Optional filters are inclusive:
+
+```bash
+docker compose run --rm app python scripts/export_dataset.py daily_features --from-date 2026-05-20 --to-date 2026-06-04
+```
+
+The command writes:
+
+```text
+data/exports/daily_features_v1_YYYYMMDD_HHMMSS.csv
+data/exports/daily_features_v1_YYYYMMDD_HHMMSS_manifest.json
+```
+
+These files are runtime artifacts and must not be committed. Validate the latest
+manifest and CSV after export:
+
+```bash
+latest_manifest=$(ls -1t data/exports/*manifest*.json | head -1)
+python -m json.tool "$latest_manifest" | sed -n "1,220p"
+
+latest_csv=$(ls -1t data/exports/*.csv | head -1)
+python - <<PY
+import csv
+from pathlib import Path
+p = Path("$latest_csv")
+with p.open("r", encoding="utf-8", newline="") as f:
+    reader = csv.reader(f)
+    header = next(reader)
+    rows = sum(1 for _ in reader)
+print({"file": str(p), "columns": len(header), "rows": rows})
+PY
+```
+
+Export v1 includes current snapshot and CBR FX features already materialized in
+`daily_product_features`. It excludes `historical_price_bars`,
+`historical_price_bar_revisions`, news, weather, benchmarks, sunflower products,
+and ML targets.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
