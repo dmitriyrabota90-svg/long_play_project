@@ -100,12 +100,23 @@ accidentally treat historical backfill as if it was available in the past.
 ## Run Locally
 
 ```bash
+python scripts/export_dataset.py --list
 python scripts/export_dataset.py daily_features
 python scripts/export_dataset.py daily_features --format csv
 python scripts/export_dataset.py daily_features --format parquet
 python scripts/export_dataset.py daily_features --format both
 python scripts/export_dataset.py daily_features --output-dir data/exports
 ```
+
+For reproducible manifests, pass the Git commit explicitly when exporting from
+an environment that does not include `.git`:
+
+```bash
+APP_GIT_COMMIT=$(git rev-parse HEAD) python scripts/export_dataset.py daily_features
+```
+
+If `APP_GIT_COMMIT` is not set, the exporter tries `git rev-parse HEAD`; if that
+also fails, the manifest records `git_commit` as `unknown`.
 
 Parquet requires `pyarrow` or `fastparquet`. The project includes `pyarrow`; if
 neither engine is available, the CLI exits with a clear error.
@@ -114,7 +125,8 @@ neither engine is available, the CLI exits with a clear error.
 
 ```bash
 cd /data1/long_play_project
-docker compose run --rm app python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+APP_GIT_COMMIT=$(git rev-parse HEAD) docker compose run --rm -e APP_GIT_COMMIT app \
+  python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
 ```
 
 Export payloads are runtime artifacts under `data/exports/` and must not be

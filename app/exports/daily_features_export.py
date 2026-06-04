@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import os
 import subprocess
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -403,6 +404,9 @@ def _validated_output_dir(*, output_dir: Path | str | None, settings: Settings) 
 
 
 def _git_commit() -> str:
+    env_commit = os.getenv("APP_GIT_COMMIT", "").strip()
+    if env_commit:
+        return env_commit
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],

@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 os.chdir(PROJECT_ROOT)
 
 from app.config.logging import setup_logging
-from app.exports.daily_features_export import DatasetExportError, export_daily_features
+from app.exports.daily_features_export import EXPORT_NAME, DatasetExportError, export_daily_features
 
 
 def _parse_date(value: str) -> date:
@@ -24,7 +24,8 @@ def _parse_date(value: str) -> date:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export dataset artifacts.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument("--list", action="store_true", help="List available dataset exports.")
+    subparsers = parser.add_subparsers(dest="command")
 
     daily = subparsers.add_parser("daily_features", help="Export daily_product_features v1.")
     daily.add_argument("--from-date", type=_parse_date, default=None, help="Inclusive start date YYYY-MM-DD.")
@@ -37,6 +38,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    if args.list:
+        print(EXPORT_NAME)
+        return
+    if args.command is None:
+        parser.error("a command is required unless --list is used")
     setup_logging()
     try:
         if args.command == "daily_features":

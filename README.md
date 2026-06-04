@@ -531,6 +531,7 @@ Files are never overwritten. The SHA-256 hash is calculated from the original by
 Export the current daily feature table as dataset v1:
 
 ```bash
+python scripts/export_dataset.py --list
 python scripts/export_dataset.py daily_features
 python scripts/export_dataset.py daily_features --from-date 2026-05-20 --to-date 2026-06-04
 python scripts/export_dataset.py daily_features --format csv
@@ -549,7 +550,9 @@ Export v1 uses `daily_product_features` as stored and joins `products` for
 `product_code` and `product_name`. It does not use `historical_price_bars`, does
 not create ML targets, and does not add news, weather, or benchmarks. Export
 payload files in `data/exports/` are runtime artifacts and must not be
-committed. See [docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
+committed. Set `APP_GIT_COMMIT=$(git rev-parse HEAD)` when exporting from
+Docker so the manifest records the deployed commit. See
+[docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
 
 ## Phase 3.2 Daily Features
 
@@ -813,7 +816,7 @@ Future implementation should include PostgreSQL dumps, raw-data backups, export 
 Phase 5.0 adds controlled file export for `daily_product_features`:
 
 ```bash
-python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+APP_GIT_COMMIT=$(git rev-parse HEAD) python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
 ```
 
 The export grain is one row per `product_code` and `feature_date`. The manifest

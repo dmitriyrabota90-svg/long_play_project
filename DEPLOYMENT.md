@@ -169,8 +169,14 @@ Run a CSV export:
 
 ```bash
 cd /data1/long_play_project
-docker compose run --rm app python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+docker compose run --rm app python scripts/export_dataset.py --list
+APP_GIT_COMMIT=$(git rev-parse HEAD) docker compose run --rm -e APP_GIT_COMMIT app \
+  python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
 ```
+
+`APP_GIT_COMMIT` is copied into the manifest. If it is not provided, the
+exporter falls back to `git rev-parse HEAD`, then to `unknown` when `.git` is not
+available inside the runtime environment.
 
 Optional filters are inclusive:
 

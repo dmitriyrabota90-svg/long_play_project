@@ -18,6 +18,7 @@ from app.db.models import Base, DailyProductFeature, Product
 from app.exports.daily_features_export import (
     DatasetExportValidationError,
     _ensure_parquet_available,
+    _git_commit,
     export_daily_features,
     load_daily_feature_rows,
     validate_daily_feature_rows,
@@ -173,6 +174,20 @@ def test_manifest_does_not_contain_database_url_or_secrets(tmp_path: Path) -> No
     assert "TELEGRAM_TOKEN" not in text
 
 
+def test_manifest_uses_app_git_commit_env(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("APP_GIT_COMMIT", "abc123")
+    SessionLocal = _session_factory()
+    export_dir = tmp_path / "exports"
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        _seed_feature(session, product=product, feature_date=date(2026, 6, 1))
+        result = export_daily_features(session=session, output_dir=export_dir, settings=_settings(export_dir))
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["git_commit"] == "abc123"
+    assert _git_commit() == "abc123"
+
+
 def test_parquet_unavailable_path_is_clear(monkeypatch) -> None:
     monkeypatch.setattr("app.exports.daily_features_export.importlib.util.find_spec", lambda _name: None)
     with pytest.raises(DatasetExportValidationError, match="Parquet export is not available"):
@@ -222,6 +237,18 @@ def test_export_dataset_cli_daily_features(tmp_path: Path) -> None:
     assert "csv_sha256=" in result.stdout
     assert "manifest_path=" in result.stdout
     assert list(export_dir.glob("daily_features_v1_*_manifest.json"))
+
+
+def test_export_dataset_cli_list() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/export_dataset.py", "--list"],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "daily_features"
 
 
 def _settings(export_dir: Path):
