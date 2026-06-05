@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import calendar
+import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from statistics import pstdev
 from typing import Any
@@ -17,6 +19,20 @@ from app.db.session import session_scope
 
 FEATURE_VERSION = "daily_features_v1"
 FX_PAIRS = ("CNY", "USD", "EUR")
+SEASONS_BY_MONTH = {
+    1: "winter",
+    2: "winter",
+    3: "spring",
+    4: "spring",
+    5: "spring",
+    6: "summer",
+    7: "summer",
+    8: "summer",
+    9: "autumn",
+    10: "autumn",
+    11: "autumn",
+    12: "winter",
+}
 NUMERIC_SCALES = {
     "price_last": 6,
     "price_first": 6,
@@ -80,6 +96,36 @@ class _FxAsOf:
     def fx_as_of_date(self) -> date | None:
         dates = [_to_utc(rate.observed_at).date() for rate in self.rates.values()]
         return max(dates) if dates else None
+
+
+def build_calendar_features(feature_date: date) -> dict[str, Any]:
+    """Return deterministic calendar features for one local feature date."""
+
+    day_of_year = feature_date.timetuple().tm_yday
+    days_in_year = 366 if calendar.isleap(feature_date.year) else 365
+    month = feature_date.month
+    next_day = feature_date + timedelta(days=1)
+    quarter = ((month - 1) // 3) + 1
+    angle_day = 2 * math.pi * day_of_year / days_in_year
+    angle_month = 2 * math.pi * month / 12
+
+    return {
+        "calendar_year": feature_date.year,
+        "calendar_month": month,
+        "calendar_quarter": quarter,
+        "calendar_week_of_year": feature_date.isocalendar().week,
+        "calendar_day_of_year": day_of_year,
+        "calendar_day_of_week": feature_date.isoweekday(),
+        "calendar_is_month_start": feature_date.day == 1,
+        "calendar_is_month_end": next_day.day == 1,
+        "calendar_is_quarter_start": month in {1, 4, 7, 10} and feature_date.day == 1,
+        "calendar_is_quarter_end": next_day.day == 1 and next_day.month in {1, 4, 7, 10},
+        "calendar_sin_day_of_year": math.sin(angle_day),
+        "calendar_cos_day_of_year": math.cos(angle_day),
+        "calendar_sin_month": math.sin(angle_month),
+        "calendar_cos_month": math.cos(angle_month),
+        "calendar_season": SEASONS_BY_MONTH[month],
+    }
 
 
 def build_daily_features(
@@ -264,6 +310,7 @@ def _feature_values(
         "price_rolling_std_7d": rolling_values["std_7d"],
         "fx_as_of_date": fx_as_of.fx_as_of_date,
     }
+    values.update(build_calendar_features(price_day.feature_date))
     for currency in FX_PAIRS:
         field = f"{currency.lower()}_rub"
         rate = fx_as_of.rates.get(currency)
@@ -385,6 +432,10 @@ def _values_equal(left: Any, right: Any) -> bool:
         return _to_utc(left) == _to_utc(right)
     if isinstance(left, Decimal) or isinstance(right, Decimal):
         return _quant(left) == _quant(right)
+    if isinstance(left, float) or isinstance(right, float):
+        if left is None or right is None:
+            return left is right
+        return math.isclose(float(left), float(right), rel_tol=0.0, abs_tol=1e-12)
     return left == right
 
 

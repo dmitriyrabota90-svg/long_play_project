@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config.settings import get_settings
 from app.db.models import Base, DailyProductFeature, Product
 from app.exports.daily_features_export import (
+    DAILY_FEATURE_COLUMNS,
     DatasetExportValidationError,
     _ensure_parquet_available,
     _git_commit,
@@ -23,6 +24,7 @@ from app.exports.daily_features_export import (
     load_daily_feature_rows,
     validate_daily_feature_rows,
 )
+from app.features.daily import build_calendar_features
 
 
 def _session_factory(database_url: str = "sqlite+pysqlite:///:memory:"):
@@ -46,6 +48,7 @@ def _seed_feature(
     price: str = "100.00",
 ) -> DailyProductFeature:
     now = datetime(2026, 6, 4, 10, tzinfo=timezone.utc)
+    calendar_values = build_calendar_features(feature_date)
     feature = DailyProductFeature(
         product_id=product.id,
         feature_date=feature_date,
@@ -61,6 +64,7 @@ def _seed_feature(
         usd_rub=Decimal("90.00000000"),
         eur_rub=Decimal("100.00000000"),
         fx_as_of_date=feature_date,
+        **calendar_values,
         created_at=now,
         updated_at=now,
     )
@@ -79,6 +83,10 @@ def test_export_query_returns_rows_from_sample_db() -> None:
     assert rows[0]["product_code"] == "rapeseed_oil"
     assert rows[0]["product_name"] == "Rapeseed Oil"
     assert rows[0]["feature_date"] == "2026-06-01"
+    assert rows[0]["calendar_year"] == 2026
+    assert rows[0]["calendar_month"] == 6
+    assert rows[0]["calendar_day_of_week"] == 1
+    assert rows[0]["calendar_season"] == "summer"
     assert "historical_price_bars" not in rows[0]
 
 
@@ -103,6 +111,10 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert result.row_count == 2
     assert manifest["row_count"] == len(rows) == 2
     assert manifest["column_count"] == len(header)
+    assert result.column_count == len(DAILY_FEATURE_COLUMNS) == 44
+    assert "calendar_year" in header
+    assert "calendar_season" in header
+    assert "calendar_sin_day_of_year" in manifest["columns"]
     assert manifest["sha256"]["csv"] == result.sha256["csv"]
     assert len(result.sha256["csv"]) == 64
     assert manifest["products"] == ["rapeseed_oil", "soybean_oil"]

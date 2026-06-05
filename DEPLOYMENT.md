@@ -177,6 +177,21 @@ does not run historical collectors, and does not export datasets.
 
 This is not an ML model and does not add news, weather, ECB, or other sources.
 
+### Calendar Feature Deployment
+
+Phase 6.0 adds deterministic calendar/seasonality columns to
+`daily_product_features` and the daily features export. After deploying Phase
+6.0 code, apply the migration and refresh features:
+
+```bash
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app python scripts/build_features.py daily
+```
+
+The refresh fills existing rows through the normal upsert path. Calendar
+features are derived only from `feature_date`; they do not call external APIs,
+run collectors, create ML targets, or change scheduler behavior.
+
 ## Dataset Export Deployment
 
 Phase 5.0 exports `daily_product_features` as controlled dataset artifacts. It
@@ -233,6 +248,9 @@ Export v1 includes current snapshot and CBR FX features already materialized in
 `daily_product_features`. It excludes `historical_price_bars`,
 `historical_price_bar_revisions`, news, weather, benchmarks, sunflower products,
 and ML targets.
+
+After Phase 6.0, export v1 also includes deterministic calendar/seasonality
+columns derived from `feature_date`.
 
 ## Price Instrument Discovery
 

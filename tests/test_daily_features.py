@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import math
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -12,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config.settings import get_settings
 from app.db.models import Base, DailyProductFeature, DataQualityCheck, FxRate, PriceObservation, Product, Source
-from app.features.daily import build_daily_features
+from app.features.daily import build_calendar_features, build_daily_features
 
 
 def _session_factory(database_url: str = "sqlite+pysqlite:///:memory:"):
@@ -88,6 +89,42 @@ def test_feature_date_uses_europe_moscow_timezone() -> None:
     assert feature.feature_date == date(2026, 5, 21)
 
 
+def test_build_calendar_features_basic_iso_and_cyclic_values() -> None:
+    feature_date = date(2026, 6, 1)
+    values = build_calendar_features(feature_date)
+    day_of_year = feature_date.timetuple().tm_yday
+
+    assert values["calendar_year"] == 2026
+    assert values["calendar_month"] == 6
+    assert values["calendar_quarter"] == 2
+    assert values["calendar_week_of_year"] == feature_date.isocalendar().week
+    assert values["calendar_day_of_year"] == day_of_year
+    assert values["calendar_day_of_week"] == 1
+    assert values["calendar_season"] == "summer"
+    assert math.isclose(values["calendar_sin_day_of_year"], math.sin(2 * math.pi * day_of_year / 365))
+    assert math.isclose(values["calendar_cos_day_of_year"], math.cos(2 * math.pi * day_of_year / 365))
+    assert math.isclose(values["calendar_sin_month"], math.sin(2 * math.pi * 6 / 12))
+    assert math.isclose(values["calendar_cos_month"], math.cos(2 * math.pi * 6 / 12))
+    for key in ("calendar_sin_day_of_year", "calendar_cos_day_of_year", "calendar_sin_month", "calendar_cos_month"):
+        assert -1 <= values[key] <= 1
+
+
+def test_build_calendar_features_leap_year_boundaries_and_seasons() -> None:
+    leap_end = build_calendar_features(date(2024, 12, 31))
+    quarter_start = build_calendar_features(date(2026, 4, 1))
+    season_by_month = {1: "winter", 2: "winter", 3: "spring", 4: "spring", 5: "spring", 6: "summer", 7: "summer", 8: "summer", 9: "autumn", 10: "autumn", 11: "autumn", 12: "winter"}
+
+    assert leap_end["calendar_day_of_year"] == 366
+    assert math.isclose(leap_end["calendar_sin_day_of_year"], math.sin(2 * math.pi * 366 / 366))
+    assert leap_end["calendar_is_month_end"] is True
+    assert leap_end["calendar_is_quarter_end"] is True
+    assert leap_end["calendar_season"] == "winter"
+    assert quarter_start["calendar_is_month_start"] is True
+    assert quarter_start["calendar_is_quarter_start"] is True
+    for month, season in season_by_month.items():
+        assert build_calendar_features(date(2026, month, 15))["calendar_season"] == season
+
+
 def test_daily_price_fields_and_intraday_delta() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
@@ -109,6 +146,9 @@ def test_daily_price_fields_and_intraday_delta() -> None:
     assert feature.price_observations_count == 2
     assert feature.price_intraday_delta_abs == Decimal("10.000000")
     assert feature.price_intraday_delta_pct == Decimal("0.10000000")
+    assert feature.calendar_year == 2026
+    assert feature.calendar_month == 5
+    assert feature.calendar_season == "spring"
 
 
 def test_price_delta_and_rolling_windows_require_full_window() -> None:
@@ -197,6 +237,31 @@ def test_repeated_build_upserts_without_duplicates_and_updates() -> None:
     assert third.rows_updated == 1
     assert count == 1
     assert feature.price_last == Decimal("100.000000")
+
+
+def test_existing_rows_update_calendar_fields() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 6, 1, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 6, 1, tzinfo=timezone.utc))
+
+        first = build_daily_features(session=session)
+        feature = session.scalar(select(DailyProductFeature))
+        feature.calendar_year = None
+        feature.calendar_season = None
+        second = build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+
+    assert first.rows_created == 1
+    assert second.rows_updated == 1
+    assert feature.calendar_year == 2026
+    assert feature.calendar_month == 6
+    assert feature.calendar_season == "summer"
+    assert feature.features_json["calendar_year"] == 2026
 
 
 def test_quality_checks_are_created() -> None:

@@ -27,6 +27,9 @@ The CSV includes:
 - `product_code`
 - `product_name`
 - `feature_date`
+- calendar and seasonality fields: year, month, quarter, ISO week, day of
+  year, ISO day of week, month/quarter boundary flags, cyclic day/month
+  encodings, and season
 - `feature_version`
 - `as_of_at`
 - daily price fields: first, last, min, max, observation count, 1-day deltas,
@@ -38,6 +41,11 @@ The CSV includes:
 
 `features_json` is not exported in v1 because the export is an explicit tabular
 schema.
+
+Calendar fields are deterministic and require no external API. Day of week uses
+ISO convention (`Monday=1`, `Sunday=7`). Cyclic fields use sine/cosine encodings
+for day of year and month. Seasons are `winter` for December-February, `spring`
+for March-May, `summer` for June-August, and `autumn` for September-November.
 
 ## Data Types
 

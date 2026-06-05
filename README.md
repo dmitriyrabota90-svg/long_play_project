@@ -592,6 +592,22 @@ HAVING COUNT(*) > 1;
 
 This is feature engineering only. It is not an ML model, and it does not add news, weather, ECB, or other external sources.
 
+### Calendar And Seasonality Features
+
+Phase 6.0 adds deterministic calendar features to `daily_product_features` and
+the daily features export. These fields include year, month, quarter, ISO week,
+day of year, ISO day of week (`Monday=1`, `Sunday=7`), month/quarter boundary
+flags, cyclic sine/cosine encodings for day of year and month, and
+`calendar_season` (`winter`, `spring`, `summer`, `autumn`).
+
+Calendar features are produced by the normal daily feature builder and require
+no external API. After deploying Phase 6.0, run Alembic and rebuild features:
+
+```bash
+alembic upgrade head
+python scripts/build_features.py daily
+```
+
 ### Daily Feature Scheduler
 
 Phase 5.2 adds an optional scheduler job for refreshing `daily_product_features`.
@@ -843,6 +859,10 @@ The export grain is one row per `product_code` and `feature_date`. The manifest
 records the Git commit, row count, column count, product list, date range,
 source-table notes, excluded sources, file sizes, and SHA-256 hashes. Historical
 bars and revision rows remain excluded from feature export v1.
+
+Phase 6.0 extends this export with deterministic calendar/seasonality columns.
+These are derived from `feature_date`; they do not require new external sources
+and are not model targets.
 
 This is not ML model training and does not create targets.
 
