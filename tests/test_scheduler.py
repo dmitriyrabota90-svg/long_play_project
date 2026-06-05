@@ -8,6 +8,7 @@ def test_scheduler_does_not_register_current_price_job_when_disabled(monkeypatch
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
     monkeypatch.delenv("CURRENT_PRICE_TEST_INTERVAL_SECONDS", raising=False)
     monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
     get_settings.cache_clear()
 
     scheduler = build_scheduler()
@@ -17,12 +18,16 @@ def test_scheduler_does_not_register_current_price_job_when_disabled(monkeypatch
     assert "daily_quality_check" in job_ids
     assert not any(job_id.startswith("current_price_source_") for job_id in job_ids)
     assert "current_price_source_test_interval" not in job_ids
+    assert "daily_feature_builder" not in job_ids
     get_settings.cache_clear()
 
 
 def test_scheduler_registers_current_price_jobs_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "true")
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULE_TIMES", "09:00,18:00")
+    monkeypatch.delenv("CURRENT_PRICE_TEST_INTERVAL_SECONDS", raising=False)
+    monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
     get_settings.cache_clear()
 
     scheduler = build_scheduler()
@@ -36,6 +41,8 @@ def test_scheduler_registers_current_price_jobs_when_enabled(monkeypatch) -> Non
 def test_scheduler_registers_test_interval_job_when_env_is_set(monkeypatch) -> None:
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
     monkeypatch.setenv("CURRENT_PRICE_TEST_INTERVAL_SECONDS", "60")
+    monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
     get_settings.cache_clear()
 
     scheduler = build_scheduler()
@@ -49,6 +56,7 @@ def test_scheduler_registers_test_interval_job_when_env_is_set(monkeypatch) -> N
 def test_scheduler_does_not_register_cbr_fx_job_by_default(monkeypatch) -> None:
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
     monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
     get_settings.cache_clear()
 
     scheduler = build_scheduler()
@@ -62,6 +70,7 @@ def test_scheduler_registers_cbr_fx_job_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
     monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "true")
     monkeypatch.setenv("CBR_FX_SCHEDULE_TIME", "10:00")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
     get_settings.cache_clear()
 
     scheduler = build_scheduler()
@@ -69,4 +78,34 @@ def test_scheduler_registers_cbr_fx_job_when_enabled(monkeypatch) -> None:
 
     assert "cbr_fx_daily" in job_ids
     assert not any(job_id.startswith("current_price_source_09") for job_id in job_ids)
+    get_settings.cache_clear()
+
+
+def test_scheduler_does_not_register_feature_builder_job_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
+    get_settings.cache_clear()
+
+    scheduler = build_scheduler()
+    job_ids = {job.id for job in scheduler.get_jobs()}
+
+    assert "daily_feature_builder" not in job_ids
+    get_settings.cache_clear()
+
+
+def test_scheduler_registers_feature_builder_job_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "true")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULE_TIME", "19:30")
+    get_settings.cache_clear()
+
+    scheduler = build_scheduler()
+    job = scheduler.get_job("daily_feature_builder")
+
+    assert job is not None
+    trigger_text = str(job.trigger)
+    assert "hour='19'" in trigger_text
+    assert "minute='30'" in trigger_text
     get_settings.cache_clear()

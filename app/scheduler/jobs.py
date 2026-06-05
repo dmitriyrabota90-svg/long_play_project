@@ -75,6 +75,27 @@ def cbr_fx_job(schedule_time: str | None = None) -> None:
         logger.exception("scheduler job failed job=cbr_fx schedule_time=%s", schedule_time)
 
 
+def daily_feature_builder_job() -> None:
+    from app.features.daily import build_daily_features
+
+    try:
+        logger.info("scheduler job started job=daily_feature_builder")
+        result = build_daily_features()
+        logger.info(
+            "scheduler job finished job=daily_feature_builder products_processed=%s dates_processed=%s "
+            "rows_created=%s rows_updated=%s rows_skipped=%s missing_fx_dates=%s warnings_count=%s",
+            result.products_processed,
+            result.dates_processed,
+            result.rows_created,
+            result.rows_updated,
+            result.rows_skipped,
+            result.missing_fx_dates,
+            result.warnings_count,
+        )
+    except Exception:
+        logger.exception("scheduler job failed job=daily_feature_builder")
+
+
 def current_price_source_test_interval_job() -> None:
     from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
 

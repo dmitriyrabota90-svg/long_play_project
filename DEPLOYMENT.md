@@ -124,12 +124,11 @@ HAVING COUNT(*) > 1;
 
 ## Daily Features Deployment
 
-Phase 3.2 adds manual daily feature building. It reads `price_observations` and CBR `fx_rates`, then upserts one row per `(product_id, feature_date)` into `daily_product_features`. `feature_date` uses `SCHEDULE_TIMEZONE`; FX uses the latest official CBR rate with `observed_at <= feature_date`, so weekends use the last available CBR date and never future FX.
+Phase 3.2 adds daily feature building. It reads `price_observations` and CBR `fx_rates`, then upserts one row per `(product_id, feature_date)` into `daily_product_features`. `feature_date` uses `SCHEDULE_TIMEZONE`; FX uses the latest official CBR rate with `observed_at <= feature_date`, so weekends use the last available CBR date and never future FX.
 
-After deploying code and applying migrations, build all currently available features:
+Build all currently available features manually when needed:
 
 ```bash
-docker compose run --rm app alembic upgrade head
 docker compose run --rm app python scripts/build_features.py daily
 ```
 
@@ -157,7 +156,26 @@ HAVING COUNT(*) > 1;
 "
 ```
 
-There is no automatic feature scheduler in Phase 3.2. Features are built manually until the output is observed in production. This is not an ML model and does not add news, weather, ECB, or other sources.
+Phase 5.2 adds an optional scheduler job for this derived-table refresh:
+
+```env
+FEATURE_BUILDER_SCHEDULER_ENABLED=false
+FEATURE_BUILDER_SCHEDULE_TIME=19:30
+```
+
+Enable it only after current-price and CBR FX scheduled runs are healthy:
+
+```env
+FEATURE_BUILDER_SCHEDULER_ENABLED=true
+FEATURE_BUILDER_SCHEDULE_TIME=19:30
+```
+
+The scheduler registers `daily_feature_builder` at the configured time in
+`SCHEDULE_TIMEZONE`. The recommended production time is `19:30`, after the
+18:00 current-price run and the 10:00 CBR FX run. It does not collect raw data,
+does not run historical collectors, and does not export datasets.
+
+This is not an ML model and does not add news, weather, ECB, or other sources.
 
 ## Dataset Export Deployment
 
@@ -423,6 +441,10 @@ Production `.env` should use:
 CURRENT_PRICE_SCHEDULER_ENABLED=true
 CURRENT_PRICE_SCHEDULE_TIMES=09:00,18:00
 CURRENT_PRICE_TEST_INTERVAL_SECONDS=
+CBR_FX_SCHEDULER_ENABLED=true
+CBR_FX_SCHEDULE_TIME=10:00
+FEATURE_BUILDER_SCHEDULER_ENABLED=true
+FEATURE_BUILDER_SCHEDULE_TIME=19:30
 ```
 
 Check scheduler registration:
@@ -431,7 +453,9 @@ Check scheduler registration:
 docker compose logs app --tail=200
 ```
 
-The logs should show `current_price_source_0900` and `current_price_source_1800`. The test interval job should not be present in normal production mode.
+The logs should show `current_price_source_0900`, `current_price_source_1800`,
+`cbr_fx_daily`, and, when enabled, `daily_feature_builder`. The test interval
+job should not be present in normal production mode.
 
 ## Test Scheduler Mode
 

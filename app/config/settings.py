@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     current_price_test_interval_seconds: int | None = Field(default=None, alias="CURRENT_PRICE_TEST_INTERVAL_SECONDS")
     cbr_fx_scheduler_enabled: bool = Field(default=False, alias="CBR_FX_SCHEDULER_ENABLED")
     cbr_fx_schedule_time: str = Field(default="10:00", alias="CBR_FX_SCHEDULE_TIME")
+    feature_builder_scheduler_enabled: bool = Field(default=False, alias="FEATURE_BUILDER_SCHEDULER_ENABLED")
+    feature_builder_schedule_time: str = Field(default="19:30", alias="FEATURE_BUILDER_SCHEDULE_TIME")
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     log_dir: Path = Field(default=Path("logs"), alias="LOG_DIR")
     log_max_bytes: int = Field(default=10_485_760, alias="LOG_MAX_BYTES")

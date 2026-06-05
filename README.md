@@ -92,6 +92,10 @@ SCHEDULE_TIMEZONE=Europe/Moscow
 CURRENT_PRICE_SCHEDULER_ENABLED=false
 CURRENT_PRICE_SCHEDULE_TIMES=09:00,18:00
 CURRENT_PRICE_TEST_INTERVAL_SECONDS=
+CBR_FX_SCHEDULER_ENABLED=false
+CBR_FX_SCHEDULE_TIME=10:00
+FEATURE_BUILDER_SCHEDULER_ENABLED=false
+FEATURE_BUILDER_SCHEDULE_TIME=19:30
 LOG_MAX_BYTES=10485760
 LOG_BACKUP_COUNT=10
 APP_VERSION=0.1.0
@@ -587,6 +591,22 @@ HAVING COUNT(*) > 1;
 ```
 
 This is feature engineering only. It is not an ML model, and it does not add news, weather, ECB, or other external sources.
+
+### Daily Feature Scheduler
+
+Phase 5.2 adds an optional scheduler job for refreshing `daily_product_features`.
+It is disabled by default:
+
+```env
+FEATURE_BUILDER_SCHEDULER_ENABLED=false
+FEATURE_BUILDER_SCHEDULE_TIME=19:30
+```
+
+When enabled, the scheduler registers `daily_feature_builder` at
+`FEATURE_BUILDER_SCHEDULE_TIME` in `SCHEDULE_TIMEZONE`. The recommended
+production time is `19:30`, after the 18:00 current-price run and the 10:00 CBR
+FX run. This job only refreshes derived feature rows; it does not collect raw
+data and does not export datasets.
 
 ## Adding a Collector
 

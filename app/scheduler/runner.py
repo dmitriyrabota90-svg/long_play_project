@@ -9,6 +9,7 @@ from app.scheduler.jobs import (
     cbr_fx_job,
     current_price_source_job,
     current_price_source_test_interval_job,
+    daily_feature_builder_job,
     daily_quality_check_job,
     health_check_job,
 )
@@ -63,6 +64,24 @@ def build_scheduler() -> BlockingScheduler:
         )
     else:
         logger.info("cbr_fx scheduler disabled by CBR_FX_SCHEDULER_ENABLED")
+
+    if settings.feature_builder_scheduler_enabled:
+        hour, minute = _parse_schedule_time(settings.feature_builder_schedule_time)
+        scheduler.add_job(
+            daily_feature_builder_job,
+            "cron",
+            hour=hour,
+            minute=minute,
+            id="daily_feature_builder",
+            replace_existing=True,
+        )
+        logger.info(
+            "registered scheduler job id=daily_feature_builder trigger=cron time=%s timezone=%s",
+            settings.feature_builder_schedule_time,
+            settings.schedule_timezone,
+        )
+    else:
+        logger.info("daily feature builder scheduler disabled by FEATURE_BUILDER_SCHEDULER_ENABLED")
     if settings.current_price_test_interval_seconds:
         if settings.current_price_test_interval_seconds <= 0:
             raise ValueError("CURRENT_PRICE_TEST_INTERVAL_SECONDS must be a positive integer")
