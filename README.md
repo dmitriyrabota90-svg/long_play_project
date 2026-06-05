@@ -558,6 +558,31 @@ committed. Set `APP_GIT_COMMIT=$(git rev-parse HEAD)` when exporting from
 Docker so the manifest records the deployed commit. See
 [docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
 
+## Phase 6.1A Energy Source Discovery
+
+Phase 6.1A is diagnostics-only source discovery for future energy/oil factors.
+It audits candidate sources such as FRED/EIA-derived CSV, EIA Open Data, and
+World Bank Pink Sheet without writing PostgreSQL rows, storing production raw
+responses, running collectors, changing schedulers, or creating ML targets.
+
+Run the static inventory:
+
+```bash
+python scripts/audit_energy_sources.py
+```
+
+Outputs are runtime diagnostics and must not be committed:
+
+```text
+diagnostics/energy_source_audit/ENERGY_SOURCE_AUDIT_REPORT.md
+diagnostics/energy_source_audit/energy_source_candidates.json
+```
+
+Current recommendation: prototype daily/weekly energy factors first from
+FRED/EIA-derived CSV series for Brent, WTI, Henry Hub natural gas, and US diesel
+proxy. EIA Open Data needs API-key policy and route discovery before production;
+unofficial finance/scraping endpoints are high risk.
+
 ## Phase 3.2 Daily Features
 
 Daily features turn raw daily price observations and official CBR FX rates into one row per product and local feature date. Dates are calculated in `SCHEDULE_TIMEZONE` (`Europe/Moscow` in production), and FX uses an as-of rule: for each feature date, the builder uses the latest USD/RUB, EUR/RUB, and CNY/RUB rate with `fx_rates.observed_at <= feature_date`. Weekend and holiday CBR gaps therefore use the last available official rate without looking into the future.
@@ -865,6 +890,20 @@ These are derived from `feature_date`; they do not require new external sources
 and are not model targets.
 
 This is not ML model training and does not create targets.
+
+## Phase 6.1A Energy/Oil Source Audit
+
+Phase 6.1A adds a diagnostics-only inventory for future energy/oil factors:
+
+```bash
+python scripts/audit_energy_sources.py
+```
+
+The command writes only `diagnostics/energy_source_audit/*`, does not touch
+PostgreSQL, does not use production `RawStore`, does not run collectors, and
+does not change scheduler settings. The first recommended future prototype is a
+FRED/EIA-derived CSV collector for Brent, WTI, Henry Hub natural gas, and US
+diesel proxy, after a separate schema design phase.
 
 ## Next Phase
 

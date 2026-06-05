@@ -252,6 +252,32 @@ and ML targets.
 After Phase 6.0, export v1 also includes deterministic calendar/seasonality
 columns derived from `feature_date`.
 
+## Energy Source Discovery Deployment
+
+Phase 6.1A is a diagnostics-only audit for future energy/oil factor sources. It
+does not run production collectors, write PostgreSQL rows, save production raw
+responses, apply migrations, change schedulers, or train ML models.
+
+Run it manually after deploying the tooling:
+
+```bash
+cd /data1/long_play_project
+docker compose run --rm app python scripts/audit_energy_sources.py
+```
+
+Outputs are runtime diagnostics:
+
+```text
+diagnostics/energy_source_audit/ENERGY_SOURCE_AUDIT_REPORT.md
+diagnostics/energy_source_audit/energy_source_candidates.json
+```
+
+Do not commit diagnostics artifacts. The recommended first future production
+prototype is FRED/EIA-derived CSV for Brent, WTI, Henry Hub natural gas, and US
+diesel proxy. EIA Open Data, World Bank Pink Sheet, Stooq, Nasdaq Data Link, and
+unofficial finance endpoints require separate schema/access/licensing review
+before any collector is added.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
