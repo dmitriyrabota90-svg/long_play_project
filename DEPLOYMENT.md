@@ -278,6 +278,25 @@ diesel proxy. EIA Open Data, World Bank Pink Sheet, Stooq, Nasdaq Data Link, and
 unofficial finance endpoints require separate schema/access/licensing review
 before any collector is added.
 
+## Energy Prices Schema Design
+
+Phase 6.1B adds only design artifacts for a future `energy_prices` table:
+
+```text
+docs/ENERGY_PRICES_DESIGN.md
+docs/sql_drafts/0008_energy_prices_draft.sql
+```
+
+The SQL file is a draft only and must not be applied manually. This phase does
+not run migrations, create the table, change SQLAlchemy models, write
+PostgreSQL rows, run collectors, or change scheduler settings.
+
+Expected next phases:
+
+- Phase 6.1C: schema migration.
+- Phase 6.1D: first controlled FRED energy collector.
+- Phase 6.1E: energy features/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

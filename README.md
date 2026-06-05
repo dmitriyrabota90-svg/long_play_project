@@ -583,6 +583,20 @@ FRED/EIA-derived CSV series for Brent, WTI, Henry Hub natural gas, and US diesel
 proxy. EIA Open Data needs API-key policy and route discovery before production;
 unofficial finance/scraping endpoints are high risk.
 
+## Phase 6.1B Energy Prices Schema Design
+
+Phase 6.1B is design-only for the future `energy_prices` table. It adds the
+proposal in [docs/ENERGY_PRICES_DESIGN.md](docs/ENERGY_PRICES_DESIGN.md) and a
+draft SQL file in `docs/sql_drafts/0008_energy_prices_draft.sql`.
+
+No migration is created in this phase, no SQLAlchemy model is added, no
+production collector is implemented, and no PostgreSQL rows are written. The
+proposed next steps are:
+
+- Phase 6.1C: non-destructive schema migration.
+- Phase 6.1D: first controlled/manual FRED energy collector.
+- Phase 6.1E: energy feature integration and export update.
+
 ## Phase 3.2 Daily Features
 
 Daily features turn raw daily price observations and official CBR FX rates into one row per product and local feature date. Dates are calculated in `SCHEDULE_TIMEZONE` (`Europe/Moscow` in production), and FX uses an as-of rule: for each feature date, the builder uses the latest USD/RUB, EUR/RUB, and CNY/RUB rate with `fx_rates.observed_at <= feature_date`. Weekend and holiday CBR gaps therefore use the last available official rate without looking into the future.
@@ -904,6 +918,11 @@ PostgreSQL, does not use production `RawStore`, does not run collectors, and
 does not change scheduler settings. The first recommended future prototype is a
 FRED/EIA-derived CSV collector for Brent, WTI, Henry Hub natural gas, and US
 diesel proxy, after a separate schema design phase.
+
+Phase 6.1B documents that schema design in
+[docs/ENERGY_PRICES_DESIGN.md](docs/ENERGY_PRICES_DESIGN.md). It is still
+design-only: the draft SQL is not an Alembic migration, `energy_prices` is not
+created yet, and daily feature export does not use energy data.
 
 ## Next Phase
 
