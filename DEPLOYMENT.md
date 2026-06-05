@@ -297,6 +297,32 @@ Expected next phases:
 - Phase 6.1D: first controlled FRED energy collector.
 - Phase 6.1E: energy features/export integration.
 
+## Energy Prices Schema Deployment
+
+Phase 6.1C adds the non-destructive Alembic revision `0008_energy_prices`.
+Deploy it like other schema-only migrations:
+
+```bash
+cd /data1/long_play_project
+git pull
+docker compose build app
+docker compose up -d app
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app python -m app.db.seed
+```
+
+Expected verification:
+
+```sql
+SELECT * FROM alembic_version;
+SELECT COUNT(*) AS energy_prices_count FROM energy_prices;
+SELECT code, name, is_active FROM sources WHERE code = 'fred_energy_prices';
+```
+
+`energy_prices_count` should be `0` until the future Phase 6.1D controlled FRED
+collector is implemented and run. This deployment must not run collectors,
+change schedulers, rebuild features, or export datasets.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

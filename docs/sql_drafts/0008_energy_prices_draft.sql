@@ -1,9 +1,10 @@
 -- DRAFT ONLY. DO NOT APPLY.
 -- Not an Alembic migration.
--- Phase 6.1B design draft for a future energy_prices table.
+-- Phase 6.1B design reference for energy_prices.
+-- Phase 6.1C implementation lives in migrations/versions/0008_energy_prices.py.
 
 CREATE TABLE energy_prices (
-    id BIGSERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     source_id INTEGER NOT NULL REFERENCES sources(id),
     raw_response_id INTEGER NOT NULL REFERENCES raw_responses(id),
     collector_run_id INTEGER NOT NULL REFERENCES collector_runs(id),
@@ -28,7 +29,7 @@ CREATE TABLE energy_prices (
     metadata_json JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_energy_prices_source_instrument_frequency_period
+    CONSTRAINT uq_energy_source_instr_freq_period
         UNIQUE (source_id, instrument_code, frequency, period_start, period_end),
     CONSTRAINT ck_energy_prices_period_order
         CHECK (period_end >= period_start),
@@ -36,23 +37,23 @@ CREATE TABLE energy_prices (
         CHECK (frequency IN ('daily', 'weekly', 'monthly'))
 );
 
-CREATE INDEX ix_energy_prices_source_instrument_period
+CREATE INDEX ix_energy_source_instr_period
     ON energy_prices (source_id, instrument_code, period_start, period_end);
 
-CREATE INDEX ix_energy_prices_instrument_observed
+CREATE INDEX ix_energy_instr_observed
     ON energy_prices (instrument_code, observed_at);
 
-CREATE INDEX ix_energy_prices_category_observed
+CREATE INDEX ix_energy_category_observed
     ON energy_prices (instrument_category, observed_at);
 
-CREATE INDEX ix_energy_prices_fetched_at
+CREATE INDEX ix_energy_fetched_at
     ON energy_prices (fetched_at);
 
-CREATE INDEX ix_energy_prices_raw_response_id
+CREATE INDEX ix_energy_raw_response_id
     ON energy_prices (raw_response_id);
 
-CREATE INDEX ix_energy_prices_collector_run_id
+CREATE INDEX ix_energy_collector_run_id
     ON energy_prices (collector_run_id);
 
-CREATE INDEX ix_energy_prices_source_record_hash
+CREATE INDEX ix_energy_source_record_hash
     ON energy_prices (source_record_hash);

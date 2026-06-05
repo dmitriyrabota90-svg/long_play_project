@@ -2,10 +2,11 @@
 
 ## Executive Summary
 
-Phase 6.1B is a design-only step for future energy and oil factor storage. It
-does not add an Alembic migration, does not change SQLAlchemy models, does not
-write PostgreSQL rows, does not implement a collector, and does not change any
-scheduler.
+Phase 6.1B was a design-only step for future energy and oil factor storage.
+Phase 6.1C implements schema-only support: SQLAlchemy metadata, an Alembic
+migration, source seed readiness, and operational reporting for an empty
+`energy_prices` table. It still does not write energy rows, does not implement a
+collector, and does not change any scheduler.
 
 The proposed table is `energy_prices`. It should store normalized energy-market
 observations from future sources such as FRED/EIA-derived CSV, World Bank Pink
@@ -139,10 +140,10 @@ Recommended unique constraint:
 UNIQUE(source_id, instrument_code, frequency, period_start, period_end)
 ```
 
-Recommended name:
+Implemented name:
 
 ```text
-uq_energy_prices_source_instrument_frequency_period
+uq_energy_source_instr_freq_period
 ```
 
 Rationale:
@@ -172,25 +173,25 @@ First collector idempotency policy:
 Recommended index names use short PostgreSQL-safe identifiers:
 
 ```text
-ix_energy_prices_source_instrument_period
+ix_energy_source_instr_period
   (source_id, instrument_code, period_start, period_end)
 
-ix_energy_prices_instrument_observed
+ix_energy_instr_observed
   (instrument_code, observed_at)
 
-ix_energy_prices_category_observed
+ix_energy_category_observed
   (instrument_category, observed_at)
 
-ix_energy_prices_fetched_at
+ix_energy_fetched_at
   (fetched_at)
 
-ix_energy_prices_raw_response_id
+ix_energy_raw_response_id
   (raw_response_id)
 
-ix_energy_prices_collector_run_id
+ix_energy_collector_run_id
   (collector_run_id)
 
-ix_energy_prices_source_record_hash
+ix_energy_source_record_hash
   (source_record_hash)
 ```
 
@@ -206,8 +207,9 @@ base_url: https://fred.stlouisfed.org/graph/fredgraph.csv
 is_active: true
 ```
 
-Phase 6.1B does not change `app/db/seed.py`. Seeding should happen in the
-schema/collector phase after the table design is accepted.
+Phase 6.1C adds this source to idempotent seed data. It does not add instrument
+rows because the project does not currently have an instrument config table for
+energy series.
 
 Future instrument config:
 
@@ -324,17 +326,28 @@ monthly parsing tests.
 EIA Open Data API should not be implemented until API-key storage, route
 selection, and rate-limit policy are agreed.
 
-## Migration Plan For Next Phase
+## Phase 6.1C Schema Implementation
 
-Phase 6.1C should:
+Phase 6.1C adds:
 
-1. Add SQLAlchemy model `EnergyPrice`.
-2. Add non-destructive Alembic migration creating only `energy_prices`.
-3. Add constraints and indexes from this design.
-4. Optionally add idempotent source seed `fred_energy_prices`.
-5. Keep the new table empty after migration.
-6. Update operational reports to show count/latest observed date without
-   treating an empty table as an error.
+- SQLAlchemy model `EnergyPrice`;
+- Alembic revision `0008_energy_prices`;
+- idempotent source seed `fred_energy_prices`;
+- operational report fields for empty `energy_prices`;
+- tests for metadata, migration revision, seed, and reporting.
+
+After migration, `energy_prices` is expected to exist with `COUNT(*) = 0`.
+No collector writes energy rows in Phase 6.1C.
+
+## Migration Plan
+
+Phase 6.1C implements the schema-only migration. Later schema changes should:
+
+1. Avoid changing existing collector tables unless an explicit integration phase
+   requires it.
+2. Add revisions/audit storage only after real energy source mutability is
+   observed.
+3. Keep `energy_prices` empty until Phase 6.1D controlled collector runs.
 
 ## Production Rollout Plan
 

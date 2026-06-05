@@ -50,6 +50,7 @@ SOURCES: tuple[SourceSeed, ...] = (
     SourceSeed("world_bank_pink_sheet", "World Bank Pink Sheet", "benchmark", "https://www.worldbank.org/"),
     SourceSeed("cbr_fx", "Central Bank of Russia FX", "fx", "https://www.cbr.ru/"),
     SourceSeed("ecb_fx", "European Central Bank FX", "fx", "https://www.ecb.europa.eu/"),
+    SourceSeed("fred_energy_prices", "FRED Energy Prices", "energy", "https://fred.stlouisfed.org/"),
     SourceSeed("eia_energy", "EIA energy data", "energy", "https://www.eia.gov/"),
     SourceSeed("usda_psd", "USDA FAS PSD", "fundamental", "https://apps.fas.usda.gov/psdonline/"),
     SourceSeed("gdelt_news", "GDELT news", "news", "https://www.gdeltproject.org/"),

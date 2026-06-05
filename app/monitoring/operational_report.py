@@ -14,6 +14,7 @@ from app.db.models import (
     CollectorRun,
     DailyProductFeature,
     DataQualityCheck,
+    EnergyPrice,
     FxRate,
     HistoricalPriceBar,
     HistoricalPriceBarRevision,
@@ -57,6 +58,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "price_observations": 0,
             "fx_rates": 0,
             "daily_product_features": 0,
+            "energy_prices": 0,
             "problematic_quality_checks": 0,
         },
         "last_runs": {
@@ -85,6 +87,13 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         "historical_price_bar_revisions": {
             "count": 0,
             "last_created_at": None,
+        },
+        "energy_prices": {
+            "count": 0,
+            "instruments_count": 0,
+            "last_period_start": None,
+            "last_observed_at": None,
+            "last_fetched_at": None,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -139,6 +148,9 @@ def _fill_db_report(
     report["last_24h"]["daily_product_features"] = session.scalar(
         select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.updated_at >= cutoff)
     )
+    report["last_24h"]["energy_prices"] = session.scalar(
+        select(func.count()).select_from(EnergyPrice).where(EnergyPrice.fetched_at >= cutoff)
+    )
     report["daily_product_features"]["count"] = session.scalar(select(func.count()).select_from(DailyProductFeature))
     last_feature_date = session.scalar(select(func.max(DailyProductFeature.feature_date)))
     report["daily_product_features"]["last_date"] = last_feature_date.isoformat() if last_feature_date else None
@@ -158,6 +170,22 @@ def _fill_db_report(
     last_revision_created_at = session.scalar(select(func.max(HistoricalPriceBarRevision.created_at)))
     report["historical_price_bar_revisions"]["last_created_at"] = (
         _to_utc(last_revision_created_at).isoformat() if last_revision_created_at else None
+    )
+    report["energy_prices"]["count"] = session.scalar(select(func.count()).select_from(EnergyPrice))
+    report["energy_prices"]["instruments_count"] = session.scalar(
+        select(func.count(func.distinct(EnergyPrice.instrument_code))).select_from(EnergyPrice)
+    )
+    last_energy_period_start = session.scalar(select(func.max(EnergyPrice.period_start)))
+    last_energy_observed_at = session.scalar(select(func.max(EnergyPrice.observed_at)))
+    last_energy_fetched_at = session.scalar(select(func.max(EnergyPrice.fetched_at)))
+    report["energy_prices"]["last_period_start"] = (
+        last_energy_period_start.isoformat() if last_energy_period_start else None
+    )
+    report["energy_prices"]["last_observed_at"] = (
+        _to_utc(last_energy_observed_at).isoformat() if last_energy_observed_at else None
+    )
+    report["energy_prices"]["last_fetched_at"] = (
+        _to_utc(last_energy_fetched_at).isoformat() if last_energy_fetched_at else None
     )
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(

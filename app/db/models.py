@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -245,6 +246,57 @@ class HistoricalPriceBarRevision(Base):
     collector_run: Mapped[CollectorRun] = relationship(foreign_keys=[collector_run_id])
     new_raw_response: Mapped[RawResponse] = relationship(foreign_keys=[new_raw_response_id])
     new_collector_run: Mapped[CollectorRun] = relationship(foreign_keys=[new_collector_run_id])
+
+
+class EnergyPrice(Base, TimestampMixin):
+    __tablename__ = "energy_prices"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "instrument_code",
+            "frequency",
+            "period_start",
+            "period_end",
+            name="uq_energy_source_instr_freq_period",
+        ),
+        CheckConstraint("period_end >= period_start", name="ck_energy_prices_period_order"),
+        CheckConstraint("frequency IN ('daily', 'weekly', 'monthly')", name="ck_energy_prices_frequency"),
+        Index("ix_energy_source_instr_period", "source_id", "instrument_code", "period_start", "period_end"),
+        Index("ix_energy_instr_observed", "instrument_code", "observed_at"),
+        Index("ix_energy_category_observed", "instrument_category", "observed_at"),
+        Index("ix_energy_fetched_at", "fetched_at"),
+        Index("ix_energy_raw_response_id", "raw_response_id"),
+        Index("ix_energy_collector_run_id", "collector_run_id"),
+        Index("ix_energy_source_record_hash", "source_record_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    instrument_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    instrument_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    instrument_category: Mapped[str] = mapped_column(String(100), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(32), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    normalized_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    normalized_currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    normalized_unit: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    source: Mapped[Source] = relationship()
+    raw_response: Mapped[RawResponse] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
 
 
 class FxRate(Base):

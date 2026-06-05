@@ -597,6 +597,17 @@ proposed next steps are:
 - Phase 6.1D: first controlled/manual FRED energy collector.
 - Phase 6.1E: energy feature integration and export update.
 
+## Phase 6.1C Energy Prices Schema
+
+Phase 6.1C creates schema-only support for `energy_prices`: SQLAlchemy metadata,
+Alembic revision `0008_energy_prices`, idempotent source seed
+`fred_energy_prices`, and operational report counts. The table is expected to be
+empty immediately after migration.
+
+This phase still does not implement a production energy collector, does not
+write energy rows, does not change schedulers, and does not add energy columns
+to `daily_product_features` or dataset export.
+
 ## Phase 3.2 Daily Features
 
 Daily features turn raw daily price observations and official CBR FX rates into one row per product and local feature date. Dates are calculated in `SCHEDULE_TIMEZONE` (`Europe/Moscow` in production), and FX uses an as-of rule: for each feature date, the builder uses the latest USD/RUB, EUR/RUB, and CNY/RUB rate with `fx_rates.observed_at <= feature_date`. Weekend and holiday CBR gaps therefore use the last available official rate without looking into the future.
@@ -923,6 +934,10 @@ Phase 6.1B documents that schema design in
 [docs/ENERGY_PRICES_DESIGN.md](docs/ENERGY_PRICES_DESIGN.md). It is still
 design-only: the draft SQL is not an Alembic migration, `energy_prices` is not
 created yet, and daily feature export does not use energy data.
+
+Phase 6.1C implements the empty `energy_prices` schema and the
+`fred_energy_prices` source seed only. The first controlled FRED collector is a
+later phase.
 
 ## Next Phase
 

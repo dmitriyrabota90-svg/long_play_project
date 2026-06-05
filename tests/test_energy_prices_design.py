@@ -21,7 +21,7 @@ def test_sql_draft_contains_table_and_unique_constraint() -> None:
 
     assert "DRAFT ONLY. DO NOT APPLY." in sql
     assert "CREATE TABLE energy_prices" in sql
-    assert "uq_energy_prices_source_instrument_frequency_period" in sql
+    assert "uq_energy_source_instr_freq_period" in sql
     assert "UNIQUE (source_id, instrument_code, frequency, period_start, period_end)" in sql
 
 
@@ -74,9 +74,10 @@ def test_design_doc_mentions_first_recommended_instruments() -> None:
         assert series_id in text
 
 
-def test_design_doc_is_design_only() -> None:
+def test_design_doc_marks_phase_61c_as_schema_only() -> None:
     text = DESIGN_DOC.read_text(encoding="utf-8")
 
-    assert "does not add an Alembic migration" in text
-    assert "does not change SQLAlchemy models" in text
-    assert "does not implement a collector" in text
+    assert "Phase 6.1C implements schema-only support" in text
+    assert "does not write energy rows" in text
+    assert "No collector writes energy rows in Phase 6.1C" in text
+    assert "does not change any scheduler" in text
