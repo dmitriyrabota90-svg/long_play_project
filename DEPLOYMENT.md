@@ -319,9 +319,69 @@ SELECT COUNT(*) AS energy_prices_count FROM energy_prices;
 SELECT code, name, is_active FROM sources WHERE code = 'fred_energy_prices';
 ```
 
-`energy_prices_count` should be `0` until the future Phase 6.1D controlled FRED
-collector is implemented and run. This deployment must not run collectors,
-change schedulers, rebuild features, or export datasets.
+`energy_prices_count` should be `0` until the Phase 6.1D controlled FRED
+collector is deployed and deliberately run. This schema deployment must not run
+collectors, change schedulers, rebuild features, or export datasets.
+
+## FRED Energy Prices Collector Deployment
+
+Phase 6.1D adds `fred_energy_prices`, a manual-only collector for bounded FRED
+CSV energy series. It uses source `fred_energy_prices`, stores raw CSV under
+`data/raw/fred_energy_prices/...`, creates `raw_responses`, and writes
+normalized rows to `energy_prices`. It has no scheduler.
+
+Deploy reviewed code as usual:
+
+```bash
+cd /data1/long_play_project
+git pull
+docker compose build app
+docker compose up -d app
+docker compose ps
+```
+
+Run the first controlled range:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py fred_energy_prices --from-date 2026-05-20 --to-date 2026-06-05
+```
+
+Run the same command once more to verify idempotency. The retry should report
+`records_written=0`, `skipped_existing>0`, `conflicts_count=0`, and
+`errors_count=0`.
+
+The collector currently supports:
+
+```text
+DCOILBRENTEU  Brent crude oil           daily   USD/barrel
+DCOILWTICO    WTI crude oil             daily   USD/barrel
+DHHNGSP       Henry Hub natural gas     daily   USD/MMBtu
+GASDESW       US diesel proxy           weekly  source_unit
+```
+
+Verify:
+
+```sql
+SELECT instrument_code, instrument_category, frequency, COUNT(*) AS rows_count,
+       MIN(period_start) AS first_period, MAX(period_start) AS last_period,
+       MIN(value) AS min_value, MAX(value) AS max_value
+FROM energy_prices
+GROUP BY instrument_code, instrument_category, frequency
+ORDER BY instrument_code;
+
+SELECT source_id, instrument_code, frequency, period_start, period_end, COUNT(*)
+FROM energy_prices
+GROUP BY source_id, instrument_code, frequency, period_start, period_end
+HAVING COUNT(*) > 1;
+
+SELECT COUNT(*) AS rows_without_raw_response
+FROM energy_prices
+WHERE raw_response_id IS NULL;
+```
+
+Do not run `current_price_source`, `cbr_fx`, `jijinhao_historical_prices`,
+feature rebuilds, migrations, or exports as part of this controlled energy
+collector verification. Do not add an energy scheduler in Phase 6.1D.
 
 ## Price Instrument Discovery
 

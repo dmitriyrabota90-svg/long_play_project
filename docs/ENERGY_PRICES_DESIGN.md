@@ -5,8 +5,9 @@
 Phase 6.1B was a design-only step for future energy and oil factor storage.
 Phase 6.1C implements schema-only support: SQLAlchemy metadata, an Alembic
 migration, source seed readiness, and operational reporting for an empty
-`energy_prices` table. It still does not write energy rows, does not implement a
-collector, and does not change any scheduler.
+`energy_prices` table. Phase 6.1D adds the first controlled/manual
+`fred_energy_prices` collector. It writes energy rows only when invoked manually
+and still does not add any scheduler or feature/export integration.
 
 The proposed table is `energy_prices`. It should store normalized energy-market
 observations from future sources such as FRED/EIA-derived CSV, World Bank Pink
@@ -215,10 +216,10 @@ Future instrument config:
 
 | instrument_code | external_id | name | category | unit | frequency |
 | --- | --- | --- | --- | --- | --- |
-| `brent_crude_oil` | `DCOILBRENTEU` | Crude Oil Prices: Brent - Europe | `crude_oil` | `USD/barrel` | daily |
-| `wti_crude_oil` | `DCOILWTICO` | Crude Oil Prices: West Texas Intermediate | `crude_oil` | `USD/barrel` | daily |
-| `henry_hub_natural_gas` | `DHHNGSP` | Henry Hub Natural Gas Spot Price | `natural_gas` | `USD/MMBtu` | daily |
-| `us_diesel_retail` | `GASDESW` | US diesel sales price proxy | `diesel` | source unit requires confirmation | weekly |
+| `DCOILBRENTEU` | `DCOILBRENTEU` | Crude Oil Prices: Brent - Europe | `crude_oil` | `USD/barrel` | daily |
+| `DCOILWTICO` | `DCOILWTICO` | Crude Oil Prices: West Texas Intermediate | `crude_oil` | `USD/barrel` | daily |
+| `DHHNGSP` | `DHHNGSP` | Henry Hub Natural Gas Spot Price | `natural_gas` | `USD/MMBtu` | daily |
+| `GASDESW` | `GASDESW` | US Diesel Proxy / FRED Series GASDESW | `diesel` | source unit requires confirmation | weekly |
 
 ## Raw Storage Design
 
@@ -337,7 +338,50 @@ Phase 6.1C adds:
 - tests for metadata, migration revision, seed, and reporting.
 
 After migration, `energy_prices` is expected to exist with `COUNT(*) = 0`.
-No collector writes energy rows in Phase 6.1C.
+Phase 6.1C does not write energy rows. No collector writes energy rows in Phase 6.1C; it is a schema-only phase and does not change any scheduler.
+
+## Phase 6.1D Manual FRED Collector
+
+Phase 6.1D implements `fred_energy_prices_collector` for the stable FRED CSV
+endpoint:
+
+```text
+https://fred.stlouisfed.org/graph/fredgraph.csv?id=SERIES_ID
+```
+
+The collector requests one CSV per configured series, uses an explicit timeout
+and user agent, saves raw payloads through the production `RawStore`, writes a
+`raw_responses` row, parses date/value CSV rows, skips FRED missing markers such
+as `.`, and inserts normalized `energy_prices` rows.
+
+Manual commands:
+
+```bash
+python scripts/run_collector.py fred_energy_prices --from-date 2026-05-20 --to-date 2026-06-05
+python scripts/run_collector.py fred_energy_prices --series DCOILBRENTEU --from-date 2026-05-20 --to-date 2026-06-05
+```
+
+The CLI output includes `series_requested`, `series_success`, `series_failed`,
+`records_found`, `records_written`, `skipped_existing`, `conflicts_count`,
+`errors_count`, selected instruments, and the date range.
+
+Idempotency follows the schema key:
+
+```text
+source_id + instrument_code + frequency + period_start + period_end
+```
+
+Same key and same `source_record_hash` is skipped. Same key with a changed hash
+writes `energy_existing_record_hash_changed`, increments `conflicts_count`, and
+does not overwrite in Phase 6.1D. No energy revisions table exists yet.
+
+Quality checks include raw-response presence, non-empty response, expected
+content type, CSV header validity, source rows present, parsed rows present,
+non-null value, positive value, source record hash presence, date range
+validity, and hash-conflict warnings.
+
+`daily_product_features` and dataset export v1 do not use `energy_prices` yet.
+Phase 6.1E should decide the feature/export integration mode and as-of policy.
 
 ## Migration Plan
 
@@ -347,7 +391,8 @@ Phase 6.1C implements the schema-only migration. Later schema changes should:
    requires it.
 2. Add revisions/audit storage only after real energy source mutability is
    observed.
-3. Keep `energy_prices` empty until Phase 6.1D controlled collector runs.
+3. Keep `energy_prices` writes limited to explicit controlled collector runs
+   until feature/export integration is designed.
 
 ## Production Rollout Plan
 

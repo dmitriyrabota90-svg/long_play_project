@@ -12,16 +12,17 @@ if str(PROJECT_ROOT) not in sys.path:
 os.chdir(PROJECT_ROOT)
 
 from app.config.logging import setup_logging
+from app.collectors.energy.fred_energy_prices import FredEnergyPricesCollector, is_known_series
 from app.collectors.fx.cbr_fx import CbrFxCollector
 from app.collectors.historical.jijinhao_historical_prices import JijinhaoHistoricalPricesCollector
 from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a collector by name.")
     parser.add_argument(
         "collector_name",
-        choices=["current_price_source", "cbr_fx", "jijinhao_historical_prices"],
+        choices=["current_price_source", "cbr_fx", "jijinhao_historical_prices", "fred_energy_prices"],
         help="Collector name to run",
     )
     parser.add_argument("--run-type", choices=["manual", "scheduled", "backfill"], default="manual")
@@ -30,11 +31,17 @@ def main() -> None:
         help="Required for scheduled runs. ISO datetime, for example 2026-05-12T09:00:00+00:00.",
     )
     parser.add_argument("--date", help="CBR FX rate date as YYYY-MM-DD. Only used by cbr_fx.")
-    parser.add_argument("--from-date", help="CBR FX backfill start date as YYYY-MM-DD. Only used by cbr_fx.")
-    parser.add_argument("--to-date", help="CBR FX backfill end date as YYYY-MM-DD. Only used by cbr_fx.")
+    parser.add_argument("--from-date", help="Inclusive start date as YYYY-MM-DD. Used by cbr_fx and fred_energy_prices.")
+    parser.add_argument("--to-date", help="Inclusive end date as YYYY-MM-DD. Used by cbr_fx and fred_energy_prices.")
     parser.add_argument("--endpoint", default="historys", help="Historical collector endpoint alias. Phase 4.6 supports only historys.")
     parser.add_argument("--product-code", help="Optional product code for jijinhao_historical_prices.")
     parser.add_argument("--days", type=int, default=30, help="Historical collector lookback window. Phase 4.6 max is 30.")
+    parser.add_argument("--series", help="Optional FRED series id for fred_energy_prices, for example DCOILBRENTEU.")
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
 
     setup_logging()
@@ -62,8 +69,10 @@ def main() -> None:
             parser.error("--from-date and --to-date must be provided together")
         if args.date:
             parser.error("--date cannot be combined with --from-date/--to-date")
-        if args.run_type != "manual":
+        if args.collector_name == "cbr_fx" and args.run_type != "manual":
             parser.error("--from-date/--to-date backfill only supports the default manual CLI mode")
+        if args.collector_name == "fred_energy_prices" and args.run_type == "scheduled":
+            parser.error("scheduled runs are not supported for fred_energy_prices")
         try:
             from_date = date.fromisoformat(args.from_date)
             to_date = date.fromisoformat(args.to_date)
@@ -78,10 +87,12 @@ def main() -> None:
         parser.error("--endpoint is only supported for jijinhao_historical_prices")
     if args.collector_name != "jijinhao_historical_prices" and args.days != 30:
         parser.error("--days is only supported for jijinhao_historical_prices")
+    if args.collector_name != "fred_energy_prices" and args.series:
+        parser.error("--series is only supported for fred_energy_prices")
 
     if args.collector_name == "current_price_source":
         if requested_date is not None or from_date is not None or to_date is not None:
-            parser.error("--date/--from-date/--to-date are only supported for cbr_fx")
+            parser.error("--date/--from-date/--to-date are only supported for cbr_fx and fred_energy_prices")
         if args.run_type == "backfill":
             parser.error("--run-type backfill is not supported for current_price_source")
         result = CurrentPriceSourceCollector().run(run_type=args.run_type, collection_slot=collection_slot)
@@ -97,7 +108,7 @@ def main() -> None:
                 collection_slot=collection_slot,
                 requested_date=requested_date,
             )
-    else:
+    elif args.collector_name == "jijinhao_historical_prices":
         if args.endpoint != "historys":
             parser.error(f"{args.endpoint} is not supported for production historical collector in Phase 4.6")
         if requested_date is not None or from_date is not None or to_date is not None or collection_slot is not None:
@@ -110,12 +121,34 @@ def main() -> None:
             run_type=args.run_type,
             endpoint_alias=args.endpoint,
         )
+    else:
+        if requested_date is not None or collection_slot is not None:
+            parser.error("--date and --collection-slot are not supported for fred_energy_prices")
+        if args.run_type == "scheduled":
+            parser.error("scheduled runs are not supported for fred_energy_prices")
+        if args.series and not is_known_series(args.series):
+            parser.error(f"unknown FRED energy series: {args.series}")
+        result = FredEnergyPricesCollector().run(
+            series_id=args.series,
+            from_date=from_date,
+            to_date=to_date,
+            run_type=args.run_type,
+        )
     print(f"run_id={result.run_id}")
     print(f"status={result.status}")
     if hasattr(result, "endpoint_alias"):
         print(f"endpoint_alias={result.endpoint_alias}")
     if hasattr(result, "products_processed"):
         print(f"products_processed={result.products_processed}")
+    if hasattr(result, "series_requested"):
+        print(f"series_requested={result.series_requested}")
+        print(f"series_success={result.series_success}")
+        print(f"series_failed={result.series_failed}")
+    if hasattr(result, "instruments"):
+        print(f"instruments={','.join(result.instruments)}")
+    if hasattr(result, "from_date"):
+        print(f"from_date={result.from_date}")
+        print(f"to_date={result.to_date}")
     if hasattr(result, "dates_requested"):
         print(f"dates_requested={result.dates_requested}")
         print(f"dates_success={result.dates_success}")

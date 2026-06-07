@@ -91,6 +91,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         "energy_prices": {
             "count": 0,
             "instruments_count": 0,
+            "first_period_start": None,
             "last_period_start": None,
             "last_observed_at": None,
             "last_fetched_at": None,
@@ -175,9 +176,13 @@ def _fill_db_report(
     report["energy_prices"]["instruments_count"] = session.scalar(
         select(func.count(func.distinct(EnergyPrice.instrument_code))).select_from(EnergyPrice)
     )
+    first_energy_period_start = session.scalar(select(func.min(EnergyPrice.period_start)))
     last_energy_period_start = session.scalar(select(func.max(EnergyPrice.period_start)))
     last_energy_observed_at = session.scalar(select(func.max(EnergyPrice.observed_at)))
     last_energy_fetched_at = session.scalar(select(func.max(EnergyPrice.fetched_at)))
+    report["energy_prices"]["first_period_start"] = (
+        first_energy_period_start.isoformat() if first_energy_period_start else None
+    )
     report["energy_prices"]["last_period_start"] = (
         last_energy_period_start.isoformat() if last_energy_period_start else None
     )

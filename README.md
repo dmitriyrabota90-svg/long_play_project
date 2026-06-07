@@ -608,6 +608,58 @@ This phase still does not implement a production energy collector, does not
 write energy rows, does not change schedulers, and does not add energy columns
 to `daily_product_features` or dataset export.
 
+## Phase 6.1D FRED Energy Prices Collector
+
+Phase 6.1D adds the first controlled/manual energy collector:
+`fred_energy_prices`. It fetches bounded FRED CSV series, stores raw CSV through
+the production `RawStore`, records `raw_responses`, and writes normalized rows
+to `energy_prices`. It does not add a scheduler and does not change
+`current_price_source`, `cbr_fx`, historical price collection, daily features,
+exports, ML targets, or migrations.
+
+Run all configured FRED series:
+
+```bash
+python scripts/run_collector.py fred_energy_prices --from-date 2026-05-20 --to-date 2026-06-05
+```
+
+Run one series:
+
+```bash
+python scripts/run_collector.py fred_energy_prices --series DCOILBRENTEU --from-date 2026-05-20 --to-date 2026-06-05
+```
+
+Configured series:
+
+- `DCOILBRENTEU`: Brent crude oil, daily, `USD/barrel`.
+- `DCOILWTICO`: WTI crude oil, daily, `USD/barrel`.
+- `DHHNGSP`: Henry Hub natural gas, daily, `USD/MMBtu`.
+- `GASDESW`: US diesel proxy, weekly, `source_unit`; source unit and exact
+  period semantics must be verified before feature integration.
+
+The collector skips FRED missing values such as `.`. Idempotency is by
+`source_id + instrument_code + frequency + period_start + period_end`. Same hash
+rows are counted as `skipped_existing`; changed hashes write
+`energy_existing_record_hash_changed` and are not overwritten in Phase 6.1D.
+
+Check data:
+
+```sql
+SELECT instrument_code, instrument_category, frequency, COUNT(*) AS rows_count,
+       MIN(period_start) AS first_period, MAX(period_start) AS last_period
+FROM energy_prices
+GROUP BY instrument_code, instrument_category, frequency
+ORDER BY instrument_code;
+
+SELECT source_id, instrument_code, frequency, period_start, period_end, COUNT(*)
+FROM energy_prices
+GROUP BY source_id, instrument_code, frequency, period_start, period_end
+HAVING COUNT(*) > 1;
+```
+
+Next step after controlled runs: Phase 6.1E should decide how energy factors
+join into features and exports without changing historical as-of semantics.
+
 ## Phase 3.2 Daily Features
 
 Daily features turn raw daily price observations and official CBR FX rates into one row per product and local feature date. Dates are calculated in `SCHEDULE_TIMEZONE` (`Europe/Moscow` in production), and FX uses an as-of rule: for each feature date, the builder uses the latest USD/RUB, EUR/RUB, and CNY/RUB rate with `fx_rates.observed_at <= feature_date`. Weekend and holiday CBR gaps therefore use the last available official rate without looking into the future.
