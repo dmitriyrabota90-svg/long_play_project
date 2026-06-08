@@ -330,6 +330,16 @@ CSV energy series. It uses source `fred_energy_prices`, stores raw CSV under
 `data/raw/fred_energy_prices/...`, creates `raw_responses`, and writes
 normalized rows to `energy_prices`. It has no scheduler.
 
+Timeouts are controlled by:
+
+```env
+FRED_ENERGY_TIMEOUT_SECONDS=30
+```
+
+The collector passes `cosd/coed` to FRED when a date range is supplied and makes
+only one retry for transient timeout/connection errors. Repeated failures should
+be treated as source/network instability, not as a reason to loop aggressively.
+
 Deploy reviewed code as usual:
 
 ```bash

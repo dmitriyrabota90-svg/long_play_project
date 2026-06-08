@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import time as monotonic_time
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
@@ -21,10 +22,14 @@ from app.collectors.energy.fred_energy_config import (
     HEADERS,
     PARSER_VERSION,
     REQUEST_TIMEOUT,
+    RETRY_DELAY_SECONDS,
     SOURCE_CODE,
+    TRANSIENT_RETRIES,
     FredEnergySeries,
     fred_csv_params,
+    fred_csv_url,
 )
+from app.config.settings import get_settings
 from app.db.models import CollectorRun, DataQualityCheck, EnergyPrice, RawResponse, Source
 from app.db.session import session_scope
 from app.storage.hashes import stable_json_hash
@@ -38,6 +43,10 @@ MISSING_VALUE_MARKERS = {"", ".", "nan", "NaN", "NA", "N/A", "null", "NULL"}
 
 class FredEnergyParseError(ValueError):
     """Raised when a FRED CSV response cannot be parsed safely."""
+
+
+class FredEnergyRequestError(RuntimeError):
+    """Raised when a FRED request exhausts the bounded retry policy."""
 
 
 class HttpClient(Protocol):
@@ -104,15 +113,21 @@ class FredEnergyPricesCollector(BaseCollector):
         series: tuple[FredEnergySeries, ...] = FRED_ENERGY_SERIES,
         http_client: HttpClient | None = None,
         raw_store: RawStore | None = None,
-        timeout: float = REQUEST_TIMEOUT,
+        timeout: float | None = None,
+        transient_retries: int = TRANSIENT_RETRIES,
+        retry_delay_seconds: float = RETRY_DELAY_SECONDS,
         clock: Any | None = None,
+        sleep: Any | None = None,
     ) -> None:
         super().__init__()
         self.series = series
         self.http_client = http_client or httpx.Client(follow_redirects=True)
         self.raw_store = raw_store or RawStore()
-        self.timeout = timeout
+        self.timeout = float(timeout if timeout is not None else get_settings().fred_energy_timeout_seconds)
+        self.transient_retries = transient_retries
+        self.retry_delay_seconds = retry_delay_seconds
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.sleep = sleep or monotonic_time.sleep
 
     def run(
         self,
@@ -299,18 +314,10 @@ class FredEnergyPricesCollector(BaseCollector):
             checked_at=checked_at,
         )
         try:
-            response = self.http_client.get(
-                ENDPOINT,
-                params=fred_csv_params(series.external_id),
-                headers=HEADERS,
-                timeout=self.timeout,
-            )
+            response, request_details = self._get_with_retry(series, from_date=from_date, to_date=to_date)
             fetched_at = _to_utc(self.clock())
-        except httpx.TimeoutException as exc:
-            stats.errors.append(f"{series.external_id}: timeout: {exc}")
-            return stats
-        except httpx.RequestError as exc:
-            stats.errors.append(f"{series.external_id}: connection error: {exc}")
+        except FredEnergyRequestError as exc:
+            stats.errors.append(str(exc))
             return stats
 
         raw_response = self._save_raw_response(session, source, collector_run, response, fetched_at)
@@ -333,7 +340,11 @@ class FredEnergyPricesCollector(BaseCollector):
             checked_at=fetched_at,
         )
         if response.status_code != 200:
-            stats.errors.append(f"{series.external_id}: HTTP status {response.status_code}")
+            stats.errors.append(
+                f"{series.external_id}: HTTP status {response.status_code}; "
+                f"url={request_details['url']}; elapsed_seconds={request_details['elapsed_seconds']}; "
+                f"timeout_seconds={self.timeout}; attempts={request_details['attempt']}"
+            )
             return stats
         if not rows:
             stats.errors.append(f"{series.external_id}: no energy rows parsed")
@@ -418,6 +429,72 @@ class FredEnergyPricesCollector(BaseCollector):
             stats.records_written += 1
             session.flush()
         return stats
+
+    def _get_with_retry(
+        self,
+        series: FredEnergySeries,
+        *,
+        from_date: date | None,
+        to_date: date | None,
+    ) -> tuple[httpx.Response, dict[str, Any]]:
+        params = fred_csv_params(series.external_id, from_date=from_date, to_date=to_date)
+        url = _request_url(series, from_date=from_date, to_date=to_date)
+        last_exc: httpx.RequestError | None = None
+        last_elapsed: float | None = None
+        last_attempt = 0
+        max_attempts = self.transient_retries + 1
+        for attempt in range(1, max_attempts + 1):
+            last_attempt = attempt
+            started = monotonic_time.monotonic()
+            try:
+                response = self.http_client.get(
+                    ENDPOINT,
+                    params=params,
+                    headers=HEADERS,
+                    timeout=self.timeout,
+                )
+                elapsed = round(monotonic_time.monotonic() - started, 3)
+                return response, {"url": url, "attempt": attempt, "elapsed_seconds": elapsed}
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                last_exc = exc
+                elapsed = round(monotonic_time.monotonic() - started, 3)
+                last_elapsed = elapsed
+                logger.warning(
+                    "FRED energy request failed series=%s attempt=%s/%s timeout=%s elapsed=%s error=%s",
+                    series.external_id,
+                    attempt,
+                    max_attempts,
+                    self.timeout,
+                    elapsed,
+                    exc,
+                )
+                if attempt < max_attempts:
+                    self.sleep(self.retry_delay_seconds)
+                    continue
+                raise FredEnergyRequestError(
+                    _request_error_message(
+                        series,
+                        exc,
+                        url=url,
+                        timeout=self.timeout,
+                        attempt=attempt,
+                        attempts=max_attempts,
+                        elapsed_seconds=elapsed,
+                    )
+                ) from exc
+        if last_exc is not None:
+            raise FredEnergyRequestError(
+                _request_error_message(
+                    series,
+                    last_exc,
+                    url=url,
+                    timeout=self.timeout,
+                    attempt=last_attempt,
+                    attempts=max_attempts,
+                    elapsed_seconds=last_elapsed,
+                )
+            ) from last_exc
+        raise RuntimeError("unreachable FRED retry state")
 
     def _save_raw_response(
         self,
@@ -770,6 +847,31 @@ def _response_url(response: httpx.Response) -> str:
         return ENDPOINT
 
 
+def _request_url(series: FredEnergySeries, *, from_date: date | None, to_date: date | None) -> str:
+    return fred_csv_url(series.external_id, from_date=from_date, to_date=to_date)
+
+
+def _request_error_message(
+    series: FredEnergySeries,
+    exc: Exception,
+    *,
+    url: str,
+    timeout: float,
+    attempt: int,
+    attempts: int,
+    elapsed_seconds: float | None,
+) -> str:
+    return (
+        f"{series.external_id}: request failed; "
+        f"url={url}; "
+        f"timeout_seconds={timeout}; "
+        f"attempt={attempt}/{attempts}; "
+        f"elapsed_seconds={elapsed_seconds}; "
+        f"error_type={type(exc).__name__}; "
+        f"error={str(exc)[:300]}"
+    )
+
+
 def _canonical_decimal(value: Decimal | None) -> str | None:
     if value is None:
         return None
@@ -843,4 +945,3 @@ def _result_from_run(
         from_date=from_date.isoformat() if from_date else None,
         to_date=to_date.isoformat() if to_date else None,
     )
-

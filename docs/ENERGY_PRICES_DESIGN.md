@@ -353,6 +353,11 @@ The collector requests one CSV per configured series, uses an explicit timeout
 and user agent, saves raw payloads through the production `RawStore`, writes a
 `raw_responses` row, parses date/value CSV rows, skips FRED missing markers such
 as `.`, and inserts normalized `energy_prices` rows.
+When an explicit date range is provided, the request includes FRED graph
+`cosd/coed` parameters to avoid fetching unnecessary history. Timeout is
+controlled by `FRED_ENERGY_TIMEOUT_SECONDS` with a default of 30 seconds. The
+collector makes one retry for timeout/connection errors and does not retry CSV
+parser failures.
 
 Manual commands:
 

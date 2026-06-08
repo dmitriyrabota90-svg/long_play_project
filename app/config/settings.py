@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     cbr_fx_schedule_time: str = Field(default="10:00", alias="CBR_FX_SCHEDULE_TIME")
     feature_builder_scheduler_enabled: bool = Field(default=False, alias="FEATURE_BUILDER_SCHEDULER_ENABLED")
     feature_builder_schedule_time: str = Field(default="19:30", alias="FEATURE_BUILDER_SCHEDULE_TIME")
+    fred_energy_timeout_seconds: float = Field(default=30.0, alias="FRED_ENERGY_TIMEOUT_SECONDS")
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     log_dir: Path = Field(default=Path("logs"), alias="LOG_DIR")
     log_max_bytes: int = Field(default=10_485_760, alias="LOG_MAX_BYTES")

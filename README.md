@@ -641,6 +641,11 @@ The collector skips FRED missing values such as `.`. Idempotency is by
 `source_id + instrument_code + frequency + period_start + period_end`. Same hash
 rows are counted as `skipped_existing`; changed hashes write
 `energy_existing_record_hash_changed` and are not overwritten in Phase 6.1D.
+When `--from-date/--to-date` is provided, the FRED request includes bounded
+`cosd/coed` parameters. Network hardening is intentionally conservative:
+`FRED_ENERGY_TIMEOUT_SECONDS` defaults to `30`, and the collector performs only
+one retry for transient timeout/connection errors before returning a clear
+per-series failure.
 
 Check data:
 

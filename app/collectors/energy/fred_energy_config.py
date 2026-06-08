@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+from urllib.parse import urlencode
 
 
 SOURCE_CODE = "fred_energy_prices"
 COLLECTOR_NAME = "fred_energy_prices_collector"
 PARSER_VERSION = "fred_energy_v1"
 ENDPOINT = "https://fred.stlouisfed.org/graph/fredgraph.csv"
-REQUEST_TIMEOUT = 20.0
+REQUEST_TIMEOUT = 30.0
+TRANSIENT_RETRIES = 1
+RETRY_DELAY_SECONDS = 1.0
 
 HEADERS = {
     "User-Agent": "commodity-dataset-builder/0.1 (+https://github.com/dmitriyrabota90-svg/long_play_project)",
@@ -75,10 +79,14 @@ FRED_ENERGY_SERIES_BY_ID: dict[str, FredEnergySeries] = {
 }
 
 
-def fred_csv_params(series_id: str) -> dict[str, str]:
-    return {"id": series_id}
+def fred_csv_params(series_id: str, *, from_date: date | None = None, to_date: date | None = None) -> dict[str, str]:
+    params = {"id": series_id}
+    if from_date is not None:
+        params["cosd"] = from_date.isoformat()
+    if to_date is not None:
+        params["coed"] = to_date.isoformat()
+    return params
 
 
-def fred_csv_url(series_id: str) -> str:
-    return f"{ENDPOINT}?id={series_id}"
-
+def fred_csv_url(series_id: str, *, from_date: date | None = None, to_date: date | None = None) -> str:
+    return f"{ENDPOINT}?{urlencode(fred_csv_params(series_id, from_date=from_date, to_date=to_date))}"

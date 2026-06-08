@@ -61,6 +61,24 @@ class FakeHttpClient:
         )
 
 
+class FlakyHttpClient:
+    def __init__(self, failures_before_success: int = 1) -> None:
+        self.failures_before_success = failures_before_success
+        self.calls = 0
+
+    def get(self, url: str, *, params: dict[str, str], headers: dict[str, str], timeout: float) -> httpx.Response:
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise httpx.ReadTimeout("synthetic timeout")
+        request = httpx.Request("GET", url, params=params)
+        return httpx.Response(
+            200,
+            content=b"observation_date,DCOILBRENTEU\n2026-05-20,64.12\n",
+            headers={"content-type": "text/csv"},
+            request=request,
+        )
+
+
 def test_series_config_contains_four_instruments() -> None:
     ids = {item.external_id for item in FRED_ENERGY_SERIES}
 
@@ -71,7 +89,16 @@ def test_series_config_contains_four_instruments() -> None:
 
 def test_url_generation_works() -> None:
     assert fred_csv_params("DCOILBRENTEU") == {"id": "DCOILBRENTEU"}
+    assert fred_csv_params("DCOILBRENTEU", from_date=date(2026, 5, 20), to_date=date(2026, 6, 5)) == {
+        "id": "DCOILBRENTEU",
+        "cosd": "2026-05-20",
+        "coed": "2026-06-05",
+    }
     assert fred_csv_url("DCOILBRENTEU") == f"{ENDPOINT}?id=DCOILBRENTEU"
+    assert (
+        fred_csv_url("DCOILBRENTEU", from_date=date(2026, 5, 20), to_date=date(2026, 6, 5))
+        == f"{ENDPOINT}?id=DCOILBRENTEU&cosd=2026-05-20&coed=2026-06-05"
+    )
 
 
 def test_csv_parser_parses_valid_csv_and_skips_missing_values() -> None:
@@ -158,7 +185,12 @@ def test_collector_inserts_energy_prices_with_raw_and_quality_checks(tmp_path: P
     assert rows[0].normalized_value == rows[0].value
     assert rows[0].source_payload_hash == raw_response.sha256
     assert rows[0].metadata_json["fred_series_id"] == "DCOILBRENTEU"
-    assert client.calls[0] == (ENDPOINT, fred_csv_params("DCOILBRENTEU"), HEADERS, REQUEST_TIMEOUT)
+    assert client.calls[0] == (
+        ENDPOINT,
+        fred_csv_params("DCOILBRENTEU", from_date=date(2026, 5, 20), to_date=date(2026, 5, 22)),
+        HEADERS,
+        REQUEST_TIMEOUT,
+    )
     assert "energy_raw_response_non_empty" in check_names
     assert "energy_csv_header_valid" in check_names
     assert "energy_value_positive" in check_names
@@ -224,6 +256,75 @@ def test_unknown_series_rejected() -> None:
 
     with pytest.raises(ValueError, match="unknown FRED energy series"):
         collector.run(series_id="BAD_SERIES")
+
+
+def test_timeout_config_applied_and_one_retry_succeeds(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    client = FlakyHttpClient(failures_before_success=1)
+    try:
+        result = FredEnergyPricesCollector(
+            series=(FRED_ENERGY_SERIES[0],),
+            http_client=client,
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            timeout=7,
+            retry_delay_seconds=0,
+            sleep=lambda _seconds: None,
+            clock=lambda: datetime(2026, 6, 5, 12, tzinfo=timezone.utc),
+        ).run(session, from_date=date(2026, 5, 20), to_date=date(2026, 5, 20))
+    finally:
+        cleanup()
+
+    assert client.calls == 2
+    assert result.status == "success"
+    assert result.records_written == 1
+
+
+def test_timeout_after_retry_has_detailed_error(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    client = FlakyHttpClient(failures_before_success=2)
+    try:
+        result = FredEnergyPricesCollector(
+            series=(FRED_ENERGY_SERIES[0],),
+            http_client=client,
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            timeout=7,
+            transient_retries=1,
+            retry_delay_seconds=0,
+            sleep=lambda _seconds: None,
+            clock=lambda: datetime(2026, 6, 5, 12, tzinfo=timezone.utc),
+        ).run(session, from_date=date(2026, 5, 20), to_date=date(2026, 5, 20))
+    finally:
+        cleanup()
+
+    assert client.calls == 2
+    assert result.status == "error"
+    assert result.errors_count == 1
+    assert "DCOILBRENTEU: request failed" in result.error_message
+    assert "timeout_seconds=7" in result.error_message
+    assert "attempt=2/2" in result.error_message
+    assert "error_type=ReadTimeout" in result.error_message
+    assert "url=https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU&cosd=2026-05-20&coed=2026-05-20" in result.error_message
+
+
+def test_parser_error_does_not_retry(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    client = FakeHttpClient({"DCOILBRENTEU": b"not,the,right,header\n1,2,3\n"})
+    try:
+        result = FredEnergyPricesCollector(
+            series=(FRED_ENERGY_SERIES[0],),
+            http_client=client,
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            retry_delay_seconds=0,
+            sleep=lambda _seconds: None,
+            clock=lambda: datetime(2026, 6, 5, 12, tzinfo=timezone.utc),
+        ).run(session, from_date=date(2026, 5, 20), to_date=date(2026, 5, 20))
+    finally:
+        cleanup()
+
+    assert len(client.calls) == 1
+    assert result.status == "error"
+    assert result.errors_count == 1
+    assert "no energy rows parsed" in result.error_message
 
 
 def test_one_bad_series_does_not_fail_whole_run(tmp_path: Path) -> None:
@@ -306,4 +407,3 @@ def build_seeded_session():
         engine.dispose()
 
     return session, cleanup
-
