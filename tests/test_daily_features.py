@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.config.settings import get_settings
-from app.db.models import Base, DailyProductFeature, DataQualityCheck, FxRate, PriceObservation, Product, Source
+from app.db.models import Base, DailyProductFeature, DataQualityCheck, EnergyPrice, FxRate, PriceObservation, Product, Source
 from app.features.daily import build_calendar_features, build_daily_features
 
 
@@ -70,6 +70,43 @@ def _seed_fx_set(session, *, source_id: int, observed_at: datetime, cny: str = "
     _fx(session, source_id=source_id, currency="CNY", observed_at=observed_at, rate=cny)
     _fx(session, source_id=source_id, currency="USD", observed_at=observed_at, rate=usd)
     _fx(session, source_id=source_id, currency="EUR", observed_at=observed_at, rate=eur)
+
+
+def _energy(
+    session,
+    *,
+    source_id: int,
+    instrument_code: str,
+    period_start: date,
+    value: str,
+    frequency: str = "daily",
+) -> None:
+    session.add(
+        EnergyPrice(
+            source_id=source_id,
+            raw_response_id=1,
+            collector_run_id=1,
+            instrument_code=instrument_code,
+            external_id=instrument_code,
+            instrument_name=instrument_code,
+            instrument_category="energy",
+            frequency=frequency,
+            period_start=period_start,
+            period_end=period_start,
+            observed_at=datetime.combine(period_start, datetime.min.time(), tzinfo=timezone.utc),
+            published_at=None,
+            fetched_at=datetime.combine(period_start, datetime.min.time(), tzinfo=timezone.utc),
+            value=Decimal(value),
+            currency="USD",
+            unit="source_unit",
+            normalized_value=Decimal(value),
+            normalized_currency="USD",
+            normalized_unit="source_unit",
+            source_record_hash=f"{instrument_code}-{period_start.isoformat()}-{value}",
+            source_payload_hash="a" * 64,
+            metadata_json=None,
+        )
+    )
 
 
 def test_feature_date_uses_europe_moscow_timezone() -> None:
@@ -212,6 +249,90 @@ def test_fx_delta_uses_previous_available_observed_at() -> None:
 
     assert feature.cny_rub_delta_abs_1d == Decimal("1.00000000")
     assert feature.cny_rub_delta_pct_1d == Decimal("0.10000000")
+
+
+def test_energy_features_use_as_of_without_future_leakage() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        energy_source = _seed_source(session, code="fred_energy_prices", source_type="energy")
+        _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 5, 22, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 22, tzinfo=timezone.utc))
+        _energy(session, source_id=energy_source.id, instrument_code="DCOILBRENTEU", period_start=date(2026, 5, 20), value="70")
+        _energy(session, source_id=energy_source.id, instrument_code="DCOILBRENTEU", period_start=date(2026, 5, 23), value="99")
+
+        result = build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+
+    assert result.warnings_count == 0
+    assert feature.energy_brent_usd_per_barrel == Decimal("70.00000000")
+    assert feature.energy_brent_as_of_date == date(2026, 5, 20)
+    assert feature.energy_as_of_date == date(2026, 5, 20)
+    assert "missing_energy_wti" in feature.energy_missing_flags
+
+
+def test_energy_features_populate_deltas_and_weekly_diesel_forward_fill() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        energy_source = _seed_source(session, code="fred_energy_prices", source_type="energy")
+        for day in (20, 27):
+            _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 5, day, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 20, tzinfo=timezone.utc))
+        for code, first, prior, current in (
+            ("DCOILBRENTEU", "70", "76", "77"),
+            ("DCOILWTICO", "60", "63", "65"),
+            ("DHHNGSP", "2", "2.5", "3"),
+        ):
+            _energy(session, source_id=energy_source.id, instrument_code=code, period_start=date(2026, 5, 20), value=first)
+            _energy(session, source_id=energy_source.id, instrument_code=code, period_start=date(2026, 5, 26), value=prior)
+            _energy(session, source_id=energy_source.id, instrument_code=code, period_start=date(2026, 5, 27), value=current)
+        _energy(session, source_id=energy_source.id, instrument_code="GASDESW", period_start=date(2026, 5, 20), value="3.5", frequency="weekly")
+        _energy(session, source_id=energy_source.id, instrument_code="GASDESW", period_start=date(2026, 5, 25), value="3.8", frequency="weekly")
+
+        build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature).where(DailyProductFeature.feature_date == date(2026, 5, 27)))
+
+    assert feature.energy_brent_usd_per_barrel == Decimal("77.00000000")
+    assert feature.energy_brent_delta_1d == Decimal("1.00000000")
+    assert feature.energy_brent_delta_7d == Decimal("7.00000000")
+    assert feature.energy_wti_delta_1d == Decimal("2.00000000")
+    assert feature.energy_wti_delta_7d == Decimal("5.00000000")
+    assert feature.energy_henry_hub_delta_1d == Decimal("0.50000000")
+    assert feature.energy_henry_hub_delta_7d == Decimal("1.00000000")
+    assert feature.energy_diesel_proxy_value == Decimal("3.80000000")
+    assert feature.energy_diesel_as_of_date == date(2026, 5, 25)
+    assert feature.energy_diesel_proxy_delta_7d == Decimal("0.30000000")
+    assert feature.energy_missing_flags is None
+
+
+def test_energy_missing_flags_when_current_values_are_unavailable() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        energy_source = _seed_source(session, code="fred_energy_prices", source_type="energy")
+        _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 5, 20, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 20, tzinfo=timezone.utc))
+        _energy(session, source_id=energy_source.id, instrument_code="DCOILBRENTEU", period_start=date(2026, 5, 20), value="70")
+
+        build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+
+    assert feature.energy_brent_usd_per_barrel == Decimal("70.00000000")
+    assert feature.energy_wti_usd_per_barrel is None
+    assert feature.energy_henry_hub_usd_mmbtu is None
+    assert feature.energy_diesel_proxy_value is None
+    assert feature.energy_missing_flags == "missing_energy_wti,missing_energy_henry_hub,missing_energy_diesel"
+    assert feature.features_json["energy_missing_flags"] == feature.energy_missing_flags
 
 
 def test_repeated_build_upserts_without_duplicates_and_updates() -> None:

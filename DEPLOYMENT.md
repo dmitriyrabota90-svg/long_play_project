@@ -393,6 +393,59 @@ Do not run `current_price_source`, `cbr_fx`, `jijinhao_historical_prices`,
 feature rebuilds, migrations, or exports as part of this controlled energy
 collector verification. Do not add an energy scheduler in Phase 6.1D.
 
+## Energy Features Deployment
+
+Phase 6.1E adds nullable energy feature columns to `daily_product_features`
+through Alembic revision `0009_energy_features`. The migration does not move
+data and does not run collectors. Deploy reviewed code, then apply the migration:
+
+```bash
+docker compose run --rm app alembic upgrade head
+```
+
+Rebuild daily features manually after the migration:
+
+```bash
+docker compose run --rm app python scripts/build_features.py daily
+```
+
+The feature builder uses only existing rows in `energy_prices`. For every
+feature date it selects the latest FRED row with
+`energy_prices.period_start <= feature_date`, so future energy values are not
+used. Weekly diesel is forward-filled by the same rule. Missing energy values are
+stored in `energy_missing_flags`; this is not a scheduler or health failure.
+
+Check fill rates and leakage:
+
+```sql
+SELECT COUNT(*) AS rows_total,
+       COUNT(energy_brent_usd_per_barrel) AS brent_filled,
+       COUNT(energy_wti_usd_per_barrel) AS wti_filled,
+       COUNT(energy_henry_hub_usd_mmbtu) AS henry_filled,
+       COUNT(energy_diesel_proxy_value) AS diesel_filled,
+       COUNT(energy_missing_flags) AS missing_flags_filled
+FROM daily_product_features;
+
+SELECT product_id, feature_date, energy_brent_as_of_date, energy_wti_as_of_date,
+       energy_henry_hub_as_of_date, energy_diesel_as_of_date
+FROM daily_product_features
+WHERE energy_brent_as_of_date > feature_date
+   OR energy_wti_as_of_date > feature_date
+   OR energy_henry_hub_as_of_date > feature_date
+   OR energy_diesel_as_of_date > feature_date;
+```
+
+Export v1 includes the energy columns after the rebuild:
+
+```bash
+APP_GIT_COMMIT=$(git rev-parse HEAD) docker compose run --rm -e APP_GIT_COMMIT app \
+  python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+Do not run energy collectors, current-price collectors, CBR FX, historical
+collectors, or feature scheduler changes as part of this migration unless a
+separate controlled step explicitly asks for it.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

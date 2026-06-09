@@ -52,6 +52,11 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["historical_price_bars"]["last_partial_run"] is None
     assert report["historical_price_bar_revisions"]["count"] == 0
     assert report["historical_price_bar_revisions"]["last_created_at"] is None
+    assert report["daily_product_features"]["energy_coverage"]["rows_with_brent"] == 0
+    assert report["daily_product_features"]["energy_coverage"]["rows_with_wti"] == 0
+    assert report["daily_product_features"]["energy_coverage"]["rows_with_henry_hub"] == 0
+    assert report["daily_product_features"]["energy_coverage"]["rows_with_diesel"] == 0
+    assert report["daily_product_features"]["energy_coverage"]["latest_energy_feature_date"] is None
     assert report["energy_prices"]["count"] == 0
     assert report["energy_prices"]["instruments_count"] == 0
     assert report["energy_prices"]["first_period_start"] is None

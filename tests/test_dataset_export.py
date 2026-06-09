@@ -111,10 +111,14 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert result.row_count == 2
     assert manifest["row_count"] == len(rows) == 2
     assert manifest["column_count"] == len(header)
-    assert result.column_count == len(DAILY_FEATURE_COLUMNS) == 44
+    assert result.column_count == len(DAILY_FEATURE_COLUMNS)
+    assert result.column_count > 44
     assert "calendar_year" in header
     assert "calendar_season" in header
+    assert "energy_brent_usd_per_barrel" in header
+    assert "energy_diesel_proxy_delta_7d" in header
     assert "calendar_sin_day_of_year" in manifest["columns"]
+    assert "energy_wti_delta_7d" in manifest["columns"]
     assert manifest["sha256"]["csv"] == result.sha256["csv"]
     assert len(result.sha256["csv"]) == 64
     assert manifest["products"] == ["rapeseed_oil", "soybean_oil"]

@@ -13,12 +13,54 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
-from app.db.models import DailyProductFeature, DataQualityCheck, FxRate, PriceObservation, Product
+from app.db.models import DailyProductFeature, DataQualityCheck, EnergyPrice, FxRate, PriceObservation, Product, Source
 from app.db.session import session_scope
 
 
 FEATURE_VERSION = "daily_features_v1"
 FX_PAIRS = ("CNY", "USD", "EUR")
+FRED_ENERGY_SOURCE_CODE = "fred_energy_prices"
+ENERGY_FEATURE_SPECS = {
+    "brent": {
+        "instrument_code": "DCOILBRENTEU",
+        "value_field": "energy_brent_usd_per_barrel",
+        "as_of_field": "energy_brent_as_of_date",
+        "missing_flag": "missing_energy_brent",
+        "delta_fields": {
+            1: "energy_brent_delta_1d",
+            7: "energy_brent_delta_7d",
+        },
+    },
+    "wti": {
+        "instrument_code": "DCOILWTICO",
+        "value_field": "energy_wti_usd_per_barrel",
+        "as_of_field": "energy_wti_as_of_date",
+        "missing_flag": "missing_energy_wti",
+        "delta_fields": {
+            1: "energy_wti_delta_1d",
+            7: "energy_wti_delta_7d",
+        },
+    },
+    "henry_hub": {
+        "instrument_code": "DHHNGSP",
+        "value_field": "energy_henry_hub_usd_mmbtu",
+        "as_of_field": "energy_henry_hub_as_of_date",
+        "missing_flag": "missing_energy_henry_hub",
+        "delta_fields": {
+            1: "energy_henry_hub_delta_1d",
+            7: "energy_henry_hub_delta_7d",
+        },
+    },
+    "diesel": {
+        "instrument_code": "GASDESW",
+        "value_field": "energy_diesel_proxy_value",
+        "as_of_field": "energy_diesel_as_of_date",
+        "missing_flag": "missing_energy_diesel",
+        "delta_fields": {
+            7: "energy_diesel_proxy_delta_7d",
+        },
+    },
+}
 SEASONS_BY_MONTH = {
     1: "winter",
     2: "winter",
@@ -54,6 +96,17 @@ NUMERIC_SCALES = {
     "usd_rub_delta_pct_1d": 8,
     "eur_rub_delta_abs_1d": 8,
     "eur_rub_delta_pct_1d": 8,
+    "energy_brent_usd_per_barrel": 8,
+    "energy_wti_usd_per_barrel": 8,
+    "energy_henry_hub_usd_mmbtu": 8,
+    "energy_diesel_proxy_value": 8,
+    "energy_brent_delta_1d": 8,
+    "energy_brent_delta_7d": 8,
+    "energy_wti_delta_1d": 8,
+    "energy_wti_delta_7d": 8,
+    "energy_henry_hub_delta_1d": 8,
+    "energy_henry_hub_delta_7d": 8,
+    "energy_diesel_proxy_delta_7d": 8,
 }
 
 
@@ -161,6 +214,7 @@ def _build_daily_features_with_session(
     dates_processed = len({key[1] for key in price_days})
     daily_last_by_product = _daily_last_prices(session, to_date=end, local_tz=local_tz)
     fx_rates = _load_fx_rates(session, to_date=end)
+    energy_prices = _load_energy_prices(session, to_date=end)
 
     rows_created = 0
     rows_updated = 0
@@ -174,6 +228,7 @@ def _build_daily_features_with_session(
             price_day=price_day,
             daily_last_by_product=daily_last_by_product,
             fx_rates=fx_rates,
+            energy_prices=energy_prices,
         )
         if warning_names:
             missing_fx_dates.add(feature_date.isoformat())
@@ -273,11 +328,32 @@ def _load_fx_rates(session: Session, *, to_date: date) -> dict[str, list[FxRate]
     return by_currency
 
 
+def _load_energy_prices(session: Session, *, to_date: date) -> dict[str, list[EnergyPrice]]:
+    source_id = session.scalar(select(Source.id).where(Source.code == FRED_ENERGY_SOURCE_CODE).limit(1))
+    instrument_codes = [str(spec["instrument_code"]) for spec in ENERGY_FEATURE_SPECS.values()]
+    by_instrument: dict[str, list[EnergyPrice]] = {instrument_code: [] for instrument_code in instrument_codes}
+    if source_id is None:
+        return by_instrument
+    prices = session.scalars(
+        select(EnergyPrice)
+        .where(
+            EnergyPrice.source_id == source_id,
+            EnergyPrice.instrument_code.in_(instrument_codes),
+            EnergyPrice.period_start <= to_date,
+        )
+        .order_by(EnergyPrice.instrument_code, EnergyPrice.period_start, EnergyPrice.fetched_at, EnergyPrice.id)
+    ).all()
+    for price in prices:
+        by_instrument.setdefault(price.instrument_code, []).append(price)
+    return by_instrument
+
+
 def _feature_values(
     *,
     price_day: _PriceDay,
     daily_last_by_product: dict[int, list[tuple[date, Decimal]]],
     fx_rates: dict[str, list[FxRate]],
+    energy_prices: dict[str, list[EnergyPrice]],
 ) -> tuple[dict[str, Any], list[str]]:
     ordered = price_day.ordered
     prices = [item.price for item in ordered]
@@ -325,10 +401,56 @@ def _feature_values(
         values[field] = rate.rate
         values[f"{field}_delta_abs_1d"] = delta_abs
         values[f"{field}_delta_pct_1d"] = _pct(delta_abs, previous_rate.rate) if delta_abs is not None else None
+    values.update(_energy_feature_values(energy_prices, price_day.feature_date))
 
     values = _normalize_feature_values(values)
     values["features_json"] = _features_json(values)
     return values, warnings
+
+
+def _energy_feature_values(
+    energy_prices: dict[str, list[EnergyPrice]],
+    feature_date: date,
+) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "energy_as_of_date": None,
+        "energy_missing_flags": None,
+    }
+    for spec in ENERGY_FEATURE_SPECS.values():
+        values[str(spec["value_field"])] = None
+        values[str(spec["as_of_field"])] = None
+        for delta_field in dict(spec["delta_fields"]).values():
+            values[str(delta_field)] = None
+
+    as_of_dates: list[date] = []
+    missing_flags: list[str] = []
+    for spec in ENERGY_FEATURE_SPECS.values():
+        instrument_code = str(spec["instrument_code"])
+        current = _energy_as_of(energy_prices.get(instrument_code, []), feature_date)
+        if current is None:
+            missing_flags.append(str(spec["missing_flag"]))
+            continue
+        current_value = _energy_value(current)
+        values[str(spec["value_field"])] = current_value
+        values[str(spec["as_of_field"])] = current.period_start
+        as_of_dates.append(current.period_start)
+        for days, delta_field in dict(spec["delta_fields"]).items():
+            previous = _energy_as_of(energy_prices.get(instrument_code, []), feature_date - timedelta(days=int(days)))
+            previous_value = _energy_value(previous) if previous is not None else None
+            values[str(delta_field)] = current_value - previous_value if previous_value is not None else None
+
+    values["energy_as_of_date"] = max(as_of_dates) if as_of_dates else None
+    values["energy_missing_flags"] = ",".join(missing_flags) if missing_flags else None
+    return values
+
+
+def _energy_as_of(items: list[EnergyPrice], feature_date: date) -> EnergyPrice | None:
+    eligible = [item for item in items if item.period_start <= feature_date]
+    return eligible[-1] if eligible else None
+
+
+def _energy_value(item: EnergyPrice) -> Decimal:
+    return item.normalized_value if item.normalized_value is not None else item.value
 
 
 def _previous_price(items: list[tuple[date, Decimal]], feature_date: date) -> Decimal | None:
@@ -376,6 +498,28 @@ def _write_feature_quality_checks(
     _write_check(session, "daily_feature_fx_cny_present", "pass" if values["cny_rub"] is not None else "warning", "warning" if values["cny_rub"] is None else "info", details, checked_at)
     no_future_fx = values["fx_as_of_date"] is None or values["fx_as_of_date"] <= feature_date
     _write_check(session, "daily_feature_no_future_fx", "pass" if no_future_fx else "error", "error" if not no_future_fx else "info", {**details, "fx_as_of_date": values["fx_as_of_date"].isoformat() if values["fx_as_of_date"] else None}, checked_at)
+    energy_as_of_dates = [
+        values.get("energy_brent_as_of_date"),
+        values.get("energy_wti_as_of_date"),
+        values.get("energy_henry_hub_as_of_date"),
+        values.get("energy_diesel_as_of_date"),
+    ]
+    no_future_energy = all(item is None or item <= feature_date for item in energy_as_of_dates)
+    _write_check(
+        session,
+        "daily_feature_no_future_energy",
+        "pass" if no_future_energy else "error",
+        "error" if not no_future_energy else "info",
+        {
+            **details,
+            "energy_brent_as_of_date": values["energy_brent_as_of_date"].isoformat() if values.get("energy_brent_as_of_date") else None,
+            "energy_wti_as_of_date": values["energy_wti_as_of_date"].isoformat() if values.get("energy_wti_as_of_date") else None,
+            "energy_henry_hub_as_of_date": values["energy_henry_hub_as_of_date"].isoformat() if values.get("energy_henry_hub_as_of_date") else None,
+            "energy_diesel_as_of_date": values["energy_diesel_as_of_date"].isoformat() if values.get("energy_diesel_as_of_date") else None,
+            "energy_missing_flags": values.get("energy_missing_flags"),
+        },
+        checked_at,
+    )
     no_future_price = _to_utc(values["as_of_at"]).date() <= feature_date
     _write_check(session, "daily_feature_no_future_price", "pass" if no_future_price else "error", "error" if not no_future_price else "info", {**details, "as_of_at": values["as_of_at"].isoformat()}, checked_at)
     duplicate_count = session.scalar(

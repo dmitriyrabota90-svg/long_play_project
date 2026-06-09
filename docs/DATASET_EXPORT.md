@@ -36,6 +36,9 @@ The CSV includes:
   intraday deltas, and rolling 3-day/7-day features
 - CBR FX fields: `cny_rub`, `usd_rub`, `eur_rub`, their 1-day deltas, and
   `fx_as_of_date`
+- FRED energy fields: Brent, WTI, Henry Hub, and diesel proxy values; 1-day and
+  7-day deltas where supported; per-series energy as-of dates; and
+  `energy_missing_flags`
 - `created_at`
 - `updated_at`
 
@@ -78,6 +81,7 @@ Export v1 includes only sources already materialized into
 
 - `current_price_source` snapshots through the daily feature builder
 - CBR FX rates through the daily feature builder
+- FRED energy prices through the daily feature builder
 
 ## Sources Excluded
 
@@ -94,14 +98,18 @@ Export v1 intentionally excludes:
 ## As-Of And Leakage Policy
 
 Export v1 uses `daily_product_features` exactly as stored. The current feature
-builder uses current snapshot prices and CBR FX with its existing as-of logic.
-Historical bars are not consumed by daily features yet, so the export cannot
-accidentally treat historical backfill as if it was available in the past.
+builder uses current snapshot prices, CBR FX, and FRED energy prices with as-of
+logic. Energy values use the latest `energy_prices.period_start <= feature_date`;
+weekly diesel is forward-filled by the same rule. Historical bars are not
+consumed by daily features yet, so the export cannot accidentally treat
+historical backfill as if it was available in the past.
 
 ## Known Limitations
 
 - No labels or ML targets are included.
 - Historical OHLC bars are excluded from features v1.
+- Energy features depend on the currently collected FRED window; missing current
+  series are recorded in `energy_missing_flags`.
 - News, weather, benchmarks, and sunflower products are not implemented.
 - This is a controlled file export, not a public API or dashboard.
 

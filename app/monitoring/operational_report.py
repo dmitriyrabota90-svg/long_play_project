@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
@@ -75,6 +75,13 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "last_date": None,
             "last_24h": 0,
             "missing_recent_features": [],
+            "energy_coverage": {
+                "rows_with_brent": 0,
+                "rows_with_wti": 0,
+                "rows_with_henry_hub": 0,
+                "rows_with_diesel": 0,
+                "latest_energy_feature_date": None,
+            },
         },
         "historical_price_bars": {
             "count": 0,
@@ -157,6 +164,31 @@ def _fill_db_report(
     report["daily_product_features"]["last_date"] = last_feature_date.isoformat() if last_feature_date else None
     report["daily_product_features"]["last_24h"] = report["last_24h"]["daily_product_features"]
     report["daily_product_features"]["missing_recent_features"] = _missing_recent_features(session, cutoff=cutoff)
+    latest_energy_feature_date = session.scalar(
+        select(func.max(DailyProductFeature.feature_date)).where(
+            or_(
+                DailyProductFeature.energy_brent_usd_per_barrel.is_not(None),
+                DailyProductFeature.energy_wti_usd_per_barrel.is_not(None),
+                DailyProductFeature.energy_henry_hub_usd_mmbtu.is_not(None),
+                DailyProductFeature.energy_diesel_proxy_value.is_not(None),
+            )
+        )
+    )
+    report["daily_product_features"]["energy_coverage"] = {
+        "rows_with_brent": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.energy_brent_usd_per_barrel.is_not(None))
+        ),
+        "rows_with_wti": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.energy_wti_usd_per_barrel.is_not(None))
+        ),
+        "rows_with_henry_hub": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.energy_henry_hub_usd_mmbtu.is_not(None))
+        ),
+        "rows_with_diesel": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.energy_diesel_proxy_value.is_not(None))
+        ),
+        "latest_energy_feature_date": latest_energy_feature_date.isoformat() if latest_energy_feature_date else None,
+    }
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
     last_historical_bar_date = session.scalar(select(func.max(HistoricalPriceBar.bar_date)))
     last_historical_created_at = session.scalar(select(func.max(HistoricalPriceBar.created_at)))

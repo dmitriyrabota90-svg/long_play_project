@@ -662,8 +662,32 @@ GROUP BY source_id, instrument_code, frequency, period_start, period_end
 HAVING COUNT(*) > 1;
 ```
 
-Next step after controlled runs: Phase 6.1E should decide how energy factors
-join into features and exports without changing historical as-of semantics.
+## Phase 6.1E Energy Features And Export Integration
+
+Phase 6.1E adds nullable energy columns to `daily_product_features` through
+Alembic revision `0009_energy_features` and extends the daily feature builder
+and export v1. It uses only already-collected `energy_prices`; it does not run
+energy collectors, change schedulers, add ML targets, or use historical bars.
+
+Energy as-of logic is conservative: for each feature date, the builder uses the
+latest FRED row with `energy_prices.period_start <= feature_date`. Brent, WTI,
+and Henry Hub get current values plus 1-day and 7-day deltas. The weekly diesel
+proxy is forward-filled by the same as-of rule and gets a 7-day delta. Missing
+current energy series are recorded in `energy_missing_flags`; missing deltas
+remain `NULL`.
+
+After deploying and applying the migration, rebuild daily features manually:
+
+```bash
+python scripts/build_features.py daily
+```
+
+Export v1 then includes the energy columns in CSV/Parquet output and in the
+manifest `columns` / `column_count` fields:
+
+```bash
+APP_GIT_COMMIT=$(git rev-parse HEAD) python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
 
 ## Phase 3.2 Daily Features
 
@@ -995,6 +1019,12 @@ created yet, and daily feature export does not use energy data.
 Phase 6.1C implements the empty `energy_prices` schema and the
 `fred_energy_prices` source seed only. The first controlled FRED collector is a
 later phase.
+
+Phase 6.1D implements the manual-only `fred_energy_prices` collector. Phase
+6.1E integrates those collected rows into `daily_product_features` and export v1
+with strict `period_start <= feature_date` as-of logic. It does not add an
+energy scheduler, does not rebuild features automatically, and does not create
+ML targets.
 
 ## Next Phase
 
