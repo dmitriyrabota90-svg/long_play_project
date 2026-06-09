@@ -12,6 +12,7 @@ from app.collectors.prices.current_price_config import CURRENT_PRICE_INSTRUMENTS
 from app.config.settings import get_settings
 from app.db.models import (
     CollectorRun,
+    CommodityBenchmark,
     DailyProductFeature,
     DataQualityCheck,
     EnergyPrice,
@@ -98,6 +99,14 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         "energy_prices": {
             "count": 0,
             "instruments_count": 0,
+            "first_period_start": None,
+            "last_period_start": None,
+            "last_observed_at": None,
+            "last_fetched_at": None,
+        },
+        "commodity_benchmarks": {
+            "count": 0,
+            "benchmarks_count": 0,
             "first_period_start": None,
             "last_period_start": None,
             "last_observed_at": None,
@@ -223,6 +232,26 @@ def _fill_db_report(
     )
     report["energy_prices"]["last_fetched_at"] = (
         _to_utc(last_energy_fetched_at).isoformat() if last_energy_fetched_at else None
+    )
+    report["commodity_benchmarks"]["count"] = session.scalar(select(func.count()).select_from(CommodityBenchmark))
+    report["commodity_benchmarks"]["benchmarks_count"] = session.scalar(
+        select(func.count(func.distinct(CommodityBenchmark.benchmark_code))).select_from(CommodityBenchmark)
+    )
+    first_benchmark_period_start = session.scalar(select(func.min(CommodityBenchmark.period_start)))
+    last_benchmark_period_start = session.scalar(select(func.max(CommodityBenchmark.period_start)))
+    last_benchmark_observed_at = session.scalar(select(func.max(CommodityBenchmark.observed_at)))
+    last_benchmark_fetched_at = session.scalar(select(func.max(CommodityBenchmark.fetched_at)))
+    report["commodity_benchmarks"]["first_period_start"] = (
+        first_benchmark_period_start.isoformat() if first_benchmark_period_start else None
+    )
+    report["commodity_benchmarks"]["last_period_start"] = (
+        last_benchmark_period_start.isoformat() if last_benchmark_period_start else None
+    )
+    report["commodity_benchmarks"]["last_observed_at"] = (
+        _to_utc(last_benchmark_observed_at).isoformat() if last_benchmark_observed_at else None
+    )
+    report["commodity_benchmarks"]["last_fetched_at"] = (
+        _to_utc(last_benchmark_fetched_at).isoformat() if last_benchmark_fetched_at else None
     )
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(

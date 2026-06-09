@@ -1,7 +1,7 @@
 -- DRAFT ONLY. DO NOT APPLY.
 -- Not an Alembic migration.
 -- Phase 6.2B design reference for commodity_benchmarks.
--- Phase 6.2C should implement this only after review.
+-- Phase 6.2C implementation lives in migrations/versions/0010_commodity_benchmarks.py.
 
 CREATE TABLE commodity_benchmarks (
     id INTEGER PRIMARY KEY,
@@ -31,34 +31,34 @@ CREATE TABLE commodity_benchmarks (
     metadata_json JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_commodity_bench_source_code_freq_period
+    CONSTRAINT uq_comm_bench_source_code_freq_period
         UNIQUE (source_id, benchmark_code, frequency, period_start, period_end),
-    CONSTRAINT ck_commodity_benchmarks_period_order
+    CONSTRAINT ck_comm_bench_period_order
         CHECK (period_end >= period_start),
-    CONSTRAINT ck_commodity_benchmarks_frequency
+    CONSTRAINT ck_comm_bench_frequency
         CHECK (frequency IN ('daily', 'weekly', 'monthly'))
 );
 
-CREATE INDEX ix_commodity_bench_source_benchmark_period
+CREATE INDEX ix_comm_bench_source_code_period
     ON commodity_benchmarks (source_id, benchmark_code, period_start, period_end);
 
-CREATE INDEX ix_commodity_bench_benchmark_observed
+CREATE INDEX ix_comm_bench_code_observed
     ON commodity_benchmarks (benchmark_code, observed_at);
 
-CREATE INDEX ix_commodity_bench_category_observed
+CREATE INDEX ix_comm_bench_category_observed
     ON commodity_benchmarks (benchmark_category, observed_at);
 
-CREATE INDEX ix_commodity_bench_family_observed
+CREATE INDEX ix_comm_bench_family_observed
     ON commodity_benchmarks (commodity_family, observed_at);
 
-CREATE INDEX ix_commodity_bench_fetched_at
+CREATE INDEX ix_comm_bench_fetched_at
     ON commodity_benchmarks (fetched_at);
 
-CREATE INDEX ix_commodity_bench_raw_response_id
+CREATE INDEX ix_comm_bench_raw_response_id
     ON commodity_benchmarks (raw_response_id);
 
-CREATE INDEX ix_commodity_bench_collector_run_id
+CREATE INDEX ix_comm_bench_collector_run_id
     ON commodity_benchmarks (collector_run_id);
 
-CREATE INDEX ix_commodity_bench_source_record_hash
+CREATE INDEX ix_comm_bench_source_record_hash
     ON commodity_benchmarks (source_record_hash);

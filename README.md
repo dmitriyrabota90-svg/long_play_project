@@ -1052,6 +1052,13 @@ DB writes, no ML, and no targets. Planned next steps are Phase 6.2C schema
 implementation, Phase 6.2D a controlled World Bank Pink Sheet collector, and
 Phase 6.2E benchmark feature/export integration.
 
+Phase 6.2C implements schema-only support for `commodity_benchmarks`: SQLAlchemy
+metadata, Alembic revision `0010_commodity_benchmarks`, idempotent source seeds
+for `world_bank_pink_sheet` and `fao_price_indices`, and operational report
+counts for an empty table. It still does not implement a benchmark collector,
+does not write benchmark rows, does not change schedulers, and does not add ML
+targets.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported

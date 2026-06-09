@@ -21,7 +21,7 @@ def test_sql_draft_contains_table_and_unique_constraint() -> None:
 
     assert "DRAFT ONLY. DO NOT APPLY." in sql
     assert "CREATE TABLE commodity_benchmarks" in sql
-    assert "uq_commodity_bench_source_code_freq_period" in sql
+    assert "uq_comm_bench_source_code_freq_period" in sql
     assert "UNIQUE (source_id, benchmark_code, frequency, period_start, period_end)" in sql
 
 

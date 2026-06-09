@@ -6,6 +6,11 @@ Phase 6.2B is a design-only step for a future `commodity_benchmarks`
 storage layer. It does not add an Alembic migration, does not change
 SQLAlchemy models, does not write PostgreSQL rows, does not implement a
 collector, does not change schedulers, and does not add ML targets.
+Phase 6.2C implements schema-only support: SQLAlchemy metadata, Alembic
+revision `0010_commodity_benchmarks`, idempotent source seed readiness, and
+operational reporting for an empty `commodity_benchmarks` table. The initial
+schema already had a small `commodity_benchmarks` skeleton; Phase 6.2C expands
+that existing table non-destructively instead of recreating it.
 
 The proposed table is `commodity_benchmarks`. It should store global benchmark
 prices and indices from sources such as World Bank Pink Sheet and FAO Food Price
@@ -267,6 +272,7 @@ preserving meaning, for example `ix_cmd_bench_src_code_period`.
 ## Source Seeding Design
 
 Phase 6.2B does not change seed data.
+Phase 6.2C adds idempotent seeds for the first two benchmark source candidates.
 
 Future source seed candidates:
 
@@ -336,9 +342,9 @@ Exports must not include benchmark-derived targets in this phase family.
 ## Non-Goals
 
 - No migration in Phase 6.2B.
-- No SQLAlchemy model changes.
-- No collector.
-- No DB writes.
-- No scheduler changes.
+- No collector writes benchmark rows in Phase 6.2C.
+- No DB writes in Phase 6.2B.
+- No benchmark data rows in Phase 6.2C.
+- No scheduler changes in Phase 6.2C.
 - No ML model.
 - No targets.

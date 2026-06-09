@@ -478,6 +478,15 @@ change production. The next deployable step should be Phase 6.2C schema-only
 implementation, followed later by Phase 6.2D controlled World Bank Pink Sheet
 collection and Phase 6.2E benchmark feature/export integration.
 
+Phase 6.2C adds Alembic revision `0010_commodity_benchmarks`, the
+`CommodityBenchmark` SQLAlchemy model, idempotent `world_bank_pink_sheet` and
+`fao_price_indices` source seeds, and operational report counts. The initial
+schema already included a small `commodity_benchmarks` skeleton table; this
+migration expands it to the reviewed benchmark schema. After a later approved
+deploy, the table should still be empty until a controlled collector is run. Do
+not run benchmark collectors in Phase 6.2C; Phase 6.2D is the future controlled
+World Bank collector.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

@@ -63,6 +63,12 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["energy_prices"]["last_period_start"] is None
     assert report["energy_prices"]["last_observed_at"] is None
     assert report["energy_prices"]["last_fetched_at"] is None
+    assert report["commodity_benchmarks"]["count"] == 0
+    assert report["commodity_benchmarks"]["benchmarks_count"] == 0
+    assert report["commodity_benchmarks"]["first_period_start"] is None
+    assert report["commodity_benchmarks"]["last_period_start"] is None
+    assert report["commodity_benchmarks"]["last_observed_at"] is None
+    assert report["commodity_benchmarks"]["last_fetched_at"] is None
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:
