@@ -1026,6 +1026,23 @@ with strict `period_start <= feature_date` as-of logic. It does not add an
 energy scheduler, does not rebuild features automatically, and does not create
 ML targets.
 
+## Phase 6.2A Commodity Benchmark Source Audit
+
+Phase 6.2A is a local diagnostics-only inventory for future global commodity
+benchmark sources such as World Bank Pink Sheet, FAO indices, USDA/WASDE/PSD,
+and selected FRED commodity proxies.
+
+```bash
+python scripts/audit_commodity_benchmarks.py
+```
+
+The command writes only `diagnostics/commodity_benchmark_audit/*`. It does not
+write PostgreSQL rows, does not use production `RawStore`, does not run
+collectors, does not change schedulers, and does not require production deploy.
+Current recommendation: design a `commodity_benchmarks` schema first, then
+prototype World Bank Pink Sheet as the first controlled monthly benchmark
+collector.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported

@@ -446,6 +446,26 @@ Do not run energy collectors, current-price collectors, CBR FX, historical
 collectors, or feature scheduler changes as part of this migration unless a
 separate controlled step explicitly asks for it.
 
+## Commodity Benchmark Source Audit
+
+Phase 6.2A is local-only discovery for future global commodity benchmark
+sources. It creates diagnostics artifacts only:
+
+```bash
+python scripts/audit_commodity_benchmarks.py
+```
+
+Outputs:
+
+```text
+diagnostics/commodity_benchmark_audit/COMMODITY_BENCHMARK_AUDIT_REPORT.md
+diagnostics/commodity_benchmark_audit/commodity_benchmark_candidates.json
+```
+
+This phase does not write PostgreSQL rows, does not run collectors, does not add
+migrations, does not change schedulers, and does not require production deploy.
+The recommended next phase is schema design for `commodity_benchmarks`.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
