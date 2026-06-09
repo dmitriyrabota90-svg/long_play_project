@@ -12,6 +12,8 @@ if str(PROJECT_ROOT) not in sys.path:
 os.chdir(PROJECT_ROOT)
 
 from app.config.logging import setup_logging
+from app.collectors.benchmarks.world_bank_pink_sheet import WorldBankPinkSheetCollector
+from app.collectors.benchmarks.world_bank_pink_sheet_config import is_known_benchmark
 from app.collectors.energy.fred_energy_prices import FredEnergyPricesCollector, is_known_series
 from app.collectors.fx.cbr_fx import CbrFxCollector
 from app.collectors.historical.jijinhao_historical_prices import JijinhaoHistoricalPricesCollector
@@ -22,7 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a collector by name.")
     parser.add_argument(
         "collector_name",
-        choices=["current_price_source", "cbr_fx", "jijinhao_historical_prices", "fred_energy_prices"],
+        choices=[
+            "current_price_source",
+            "cbr_fx",
+            "jijinhao_historical_prices",
+            "fred_energy_prices",
+            "world_bank_pink_sheet",
+        ],
         help="Collector name to run",
     )
     parser.add_argument("--run-type", choices=["manual", "scheduled", "backfill"], default="manual")
@@ -37,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--product-code", help="Optional product code for jijinhao_historical_prices.")
     parser.add_argument("--days", type=int, default=30, help="Historical collector lookback window. Phase 4.6 max is 30.")
     parser.add_argument("--series", help="Optional FRED series id for fred_energy_prices, for example DCOILBRENTEU.")
+    parser.add_argument("--benchmark", help="Optional World Bank Pink Sheet benchmark code.")
     return parser
 
 
@@ -71,8 +80,8 @@ def main() -> None:
             parser.error("--date cannot be combined with --from-date/--to-date")
         if args.collector_name == "cbr_fx" and args.run_type != "manual":
             parser.error("--from-date/--to-date backfill only supports the default manual CLI mode")
-        if args.collector_name == "fred_energy_prices" and args.run_type == "scheduled":
-            parser.error("scheduled runs are not supported for fred_energy_prices")
+        if args.collector_name in {"fred_energy_prices", "world_bank_pink_sheet"} and args.run_type == "scheduled":
+            parser.error(f"scheduled runs are not supported for {args.collector_name}")
         try:
             from_date = date.fromisoformat(args.from_date)
             to_date = date.fromisoformat(args.to_date)
@@ -89,10 +98,15 @@ def main() -> None:
         parser.error("--days is only supported for jijinhao_historical_prices")
     if args.collector_name != "fred_energy_prices" and args.series:
         parser.error("--series is only supported for fred_energy_prices")
+    if args.collector_name != "world_bank_pink_sheet" and args.benchmark:
+        parser.error("--benchmark is only supported for world_bank_pink_sheet")
 
     if args.collector_name == "current_price_source":
         if requested_date is not None or from_date is not None or to_date is not None:
-            parser.error("--date/--from-date/--to-date are only supported for cbr_fx and fred_energy_prices")
+            parser.error(
+                "--date/--from-date/--to-date are only supported for cbr_fx, "
+                "fred_energy_prices, and world_bank_pink_sheet"
+            )
         if args.run_type == "backfill":
             parser.error("--run-type backfill is not supported for current_price_source")
         result = CurrentPriceSourceCollector().run(run_type=args.run_type, collection_slot=collection_slot)
@@ -121,7 +135,7 @@ def main() -> None:
             run_type=args.run_type,
             endpoint_alias=args.endpoint,
         )
-    else:
+    elif args.collector_name == "fred_energy_prices":
         if requested_date is not None or collection_slot is not None:
             parser.error("--date and --collection-slot are not supported for fred_energy_prices")
         if args.run_type == "scheduled":
@@ -130,6 +144,19 @@ def main() -> None:
             parser.error(f"unknown FRED energy series: {args.series}")
         result = FredEnergyPricesCollector().run(
             series_id=args.series,
+            from_date=from_date,
+            to_date=to_date,
+            run_type=args.run_type,
+        )
+    else:
+        if requested_date is not None or collection_slot is not None:
+            parser.error("--date and --collection-slot are not supported for world_bank_pink_sheet")
+        if args.run_type != "manual":
+            parser.error("world_bank_pink_sheet is manual-only in Phase 6.2D")
+        if args.benchmark and not is_known_benchmark(args.benchmark):
+            parser.error(f"unknown World Bank Pink Sheet benchmark: {args.benchmark}")
+        result = WorldBankPinkSheetCollector().run(
+            benchmark_code=args.benchmark,
             from_date=from_date,
             to_date=to_date,
             run_type=args.run_type,
@@ -144,6 +171,12 @@ def main() -> None:
         print(f"series_requested={result.series_requested}")
         print(f"series_success={result.series_success}")
         print(f"series_failed={result.series_failed}")
+    if hasattr(result, "benchmarks_requested"):
+        print(f"benchmarks_requested={result.benchmarks_requested}")
+        print(f"benchmarks_success={result.benchmarks_success}")
+        print(f"benchmarks_failed={result.benchmarks_failed}")
+    if hasattr(result, "benchmarks"):
+        print(f"benchmarks={','.join(result.benchmarks)}")
     if hasattr(result, "instruments"):
         print(f"instruments={','.join(result.instruments)}")
     if hasattr(result, "from_date"):

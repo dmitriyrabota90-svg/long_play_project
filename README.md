@@ -1059,6 +1059,25 @@ counts for an empty table. It still does not implement a benchmark collector,
 does not write benchmark rows, does not change schedulers, and does not add ML
 targets.
 
+Phase 6.2D adds the first manual-only `world_bank_pink_sheet` collector. It
+downloads the official World Bank Pink Sheet monthly historical XLSX, stores the
+raw workbook through `RawStore`, writes `raw_responses`, and inserts normalized
+monthly rows into `commodity_benchmarks`.
+
+```bash
+python scripts/run_collector.py world_bank_pink_sheet
+python scripts/run_collector.py world_bank_pink_sheet --benchmark world_bank_soybean_oil --from-date 2024-01-01 --to-date 2026-06-01
+```
+
+Supported benchmark codes are `world_bank_soybean_oil`, `world_bank_soybeans`,
+`world_bank_palm_oil`, `world_bank_maize`, `world_bank_wheat`, and
+`world_bank_fertilizer_index`. Date filters use `period_start`; monthly
+`observed_at` is the calendar month end. The collector is idempotent by
+`source_id + benchmark_code + frequency + period_start + period_end`; same-hash
+rows are skipped, changed hashes create a warning and are not overwritten in
+Phase 6.2D. No benchmark scheduler is registered, daily features do not use
+benchmark rows yet, and no ML targets are created.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported

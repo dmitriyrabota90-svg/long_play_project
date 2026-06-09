@@ -11,6 +11,9 @@ revision `0010_commodity_benchmarks`, idempotent source seed readiness, and
 operational reporting for an empty `commodity_benchmarks` table. The initial
 schema already had a small `commodity_benchmarks` skeleton; Phase 6.2C expands
 that existing table non-destructively instead of recreating it.
+Phase 6.2D adds the first controlled/manual collector for World Bank Pink Sheet.
+It writes benchmark rows only when invoked manually, does not register a
+scheduler, and does not feed `daily_product_features` yet.
 
 The proposed table is `commodity_benchmarks`. It should store global benchmark
 prices and indices from sources such as World Bank Pink Sheet and FAO Food Price
@@ -294,6 +297,54 @@ is_active: true
 frequency: monthly, stored in source metadata if a metadata field exists later
 ```
 
+## Phase 6.2D Collector Policy
+
+Collector CLI:
+
+```bash
+python scripts/run_collector.py world_bank_pink_sheet
+python scripts/run_collector.py world_bank_pink_sheet --benchmark world_bank_soybean_oil --from-date 2024-01-01 --to-date 2026-06-01
+```
+
+The first source file is the official World Bank Pink Sheet monthly historical
+XLSX (`CMO-Historical-Data-Monthly.xlsx`). The collector downloads that workbook
+once per run, saves it through production `RawStore`, creates a `raw_responses`
+row, and parses the configured monthly benchmark columns.
+
+Initial benchmark codes:
+
+- `world_bank_soybean_oil`: Monthly Prices / Soybean oil / USD per metric ton.
+- `world_bank_soybeans`: Monthly Prices / Soybeans / USD per metric ton.
+- `world_bank_palm_oil`: Monthly Prices / Palm oil / USD per metric ton.
+- `world_bank_maize`: Monthly Prices / Maize / USD per metric ton.
+- `world_bank_wheat`: Monthly Prices / Wheat, US SRW / USD per metric ton.
+- `world_bank_fertilizer_index`: Monthly Indices / Fertilizers / 2010=100.
+
+Monthly semantics:
+
+- `period_start`: first calendar day of the source month.
+- `period_end`: last calendar day of the source month.
+- `observed_at`: `period_end` at midnight UTC.
+- `published_at`: `NULL` until the source provides a machine-readable
+  publication timestamp.
+- `--from-date` / `--to-date`: filter by `period_start`.
+
+Idempotency:
+
+- business key: `source_id + benchmark_code + frequency + period_start + period_end`;
+- source hash fields: `source_code`, `benchmark_code`, `frequency`,
+  `period_start`, `period_end`, `value`, `currency`, and `unit`;
+- same key and same hash: skip;
+- same key but changed hash: write
+  `commodity_benchmark_existing_record_hash_changed` and do not overwrite in
+  Phase 6.2D.
+
+The collector writes quality checks for source mapping, raw response presence,
+non-empty response, content type, parsed rows, benchmark mapping, positive
+values, source hashes, raw linkage, date range, and hash conflicts. Benchmark
+rows are not used by feature builders or exports until Phase 6.2E adds explicit
+as-of logic.
+
 ## Future Feature Integration
 
 Do not change `daily_product_features` in Phase 6.2B.
@@ -345,6 +396,6 @@ Exports must not include benchmark-derived targets in this phase family.
 - No collector writes benchmark rows in Phase 6.2C.
 - No DB writes in Phase 6.2B.
 - No benchmark data rows in Phase 6.2C.
-- No scheduler changes in Phase 6.2C.
+- No scheduler changes in Phase 6.2C or Phase 6.2D.
 - No ML model.
 - No targets.

@@ -487,6 +487,25 @@ deploy, the table should still be empty until a controlled collector is run. Do
 not run benchmark collectors in Phase 6.2C; Phase 6.2D is the future controlled
 World Bank collector.
 
+Phase 6.2D implements that controlled `world_bank_pink_sheet` collector. It is
+manual-only and has no scheduler. It downloads the official World Bank Pink
+Sheet monthly XLSX, stores raw evidence in `data/raw/world_bank_pink_sheet/...`,
+writes one `raw_responses` row per run, and writes normalized monthly benchmark
+rows into `commodity_benchmarks`.
+
+```bash
+docker compose run --rm app python scripts/run_collector.py world_bank_pink_sheet --benchmark world_bank_soybean_oil --from-date 2024-01-01 --to-date 2026-06-01
+docker compose run --rm app python scripts/run_collector.py world_bank_pink_sheet --from-date 2024-01-01 --to-date 2026-06-01
+```
+
+Supported benchmark codes are `world_bank_soybean_oil`, `world_bank_soybeans`,
+`world_bank_palm_oil`, `world_bank_maize`, `world_bank_wheat`, and
+`world_bank_fertilizer_index`. Re-running the same source data skips existing
+rows; changed values for an existing business key produce
+`commodity_benchmark_existing_record_hash_changed` and are not overwritten in
+Phase 6.2D. Do not add a benchmark scheduler or integrate benchmarks into daily
+features until Phase 6.2E.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
