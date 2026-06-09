@@ -1043,6 +1043,15 @@ Current recommendation: design a `commodity_benchmarks` schema first, then
 prototype World Bank Pink Sheet as the first controlled monthly benchmark
 collector.
 
+Phase 6.2B documents that schema design in
+[docs/COMMODITY_BENCHMARKS_DESIGN.md](docs/COMMODITY_BENCHMARKS_DESIGN.md) and
+adds a draft SQL file at
+`docs/sql_drafts/0010_commodity_benchmarks_draft.sql`. It is design-only: no
+migration, no SQLAlchemy model changes, no collector, no scheduler changes, no
+DB writes, no ML, and no targets. Planned next steps are Phase 6.2C schema
+implementation, Phase 6.2D a controlled World Bank Pink Sheet collector, and
+Phase 6.2E benchmark feature/export integration.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported

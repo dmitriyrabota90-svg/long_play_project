@@ -466,6 +466,18 @@ This phase does not write PostgreSQL rows, does not run collectors, does not add
 migrations, does not change schedulers, and does not require production deploy.
 The recommended next phase is schema design for `commodity_benchmarks`.
 
+Phase 6.2B is that design-only step. It adds:
+
+```text
+docs/COMMODITY_BENCHMARKS_DESIGN.md
+docs/sql_drafts/0010_commodity_benchmarks_draft.sql
+```
+
+Do not apply the SQL draft manually. It is not an Alembic migration and does not
+change production. The next deployable step should be Phase 6.2C schema-only
+implementation, followed later by Phase 6.2D controlled World Bank Pink Sheet
+collection and Phase 6.2E benchmark feature/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
