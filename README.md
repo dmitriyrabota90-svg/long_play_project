@@ -1101,6 +1101,33 @@ python scripts/build_features.py daily
 APP_GIT_COMMIT=$(git rev-parse HEAD) python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
 ```
 
+## Phase 6.3A Weather Source And Region Audit
+
+Phase 6.3A is a local diagnostics-only inventory for future weather features
+for soybean and rapeseed/canola product families.
+
+```bash
+python scripts/audit_weather_sources.py
+```
+
+The command writes only:
+
+```text
+diagnostics/weather_source_audit/WEATHER_SOURCE_AUDIT_REPORT.md
+diagnostics/weather_source_audit/weather_source_candidates.json
+```
+
+It does not write PostgreSQL rows, does not use production `RawStore`, does not
+run collectors, does not add migrations, does not change schedulers, and does
+not create ML targets. The first recommended source for a later controlled
+prototype is Open-Meteo Historical Weather API with high-priority centroid
+regions for Brazil, US, Argentina, Canada, and Ukraine/Black Sea crop-weather
+signals.
+
+Planned next steps are Phase 6.3B weather schema design, Phase 6.3C schema
+implementation, Phase 6.3D first controlled weather collector, and Phase 6.3E
+weather feature/export integration.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported

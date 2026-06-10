@@ -565,6 +565,29 @@ Do not run current-price collectors, CBR FX, historical collectors, benchmark
 collectors, or scheduler changes as part of this migration unless a separate
 controlled step explicitly asks for it.
 
+## Weather Source And Region Audit
+
+Phase 6.3A is local-only discovery for future weather regions and source
+candidates. It creates diagnostics artifacts only:
+
+```bash
+python scripts/audit_weather_sources.py
+```
+
+Outputs:
+
+```text
+diagnostics/weather_source_audit/WEATHER_SOURCE_AUDIT_REPORT.md
+diagnostics/weather_source_audit/weather_source_candidates.json
+```
+
+This phase does not write PostgreSQL rows, does not run collectors, does not add
+migrations, does not change schedulers, does not use production `RawStore`, and
+does not require production deploy. The recommended next phase is weather schema
+design for `weather_regions`, `weather_observations`, and future weather-derived
+daily feature tables. Later phases should implement schema, then a controlled
+Open-Meteo prototype, then feature/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
