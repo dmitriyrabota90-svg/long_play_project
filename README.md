@@ -17,17 +17,22 @@ Implemented in this skeleton:
 - Immutable raw storage helper.
 - Hash helpers.
 - Idempotent seed data for products and sources.
-- Safe scheduler skeleton with health and quality-check placeholder jobs.
+- Safe scheduler with controlled jobs for approved collectors.
 - `current_price_source` collector for the first current-price instruments.
+- CBR FX collector.
+- Manual Jijinhao historical price collector for `historys`.
+- Manual FRED energy collector.
+- Manual World Bank Pink Sheet commodity benchmark collector.
+- Daily feature builder with price, FX, calendar, energy, and benchmark features.
 - Health-check helper.
-- Dataset export manifest skeleton.
+- Dataset export v1 with manifest and SHA-256 checks.
 - CLI scripts.
 - Minimal pytest tests.
 
 Not implemented yet:
 
-- News, weather, FX, benchmark, and fundamental collectors.
-- Feature builder logic.
+- News, weather, sunflower product, and fundamental collectors.
+- Automatic schedulers for historical, energy, and benchmark collectors.
 - Dataset target calculation.
 - ML model training.
 - FastAPI or any web service.
@@ -552,10 +557,11 @@ data/exports/daily_features_v1_YYYYMMDD_HHMMSS_manifest.json
 
 Export v1 uses `daily_product_features` as stored and joins `products` for
 `product_code` and `product_name`. It does not use `historical_price_bars`, does
-not create ML targets, and does not add news, weather, or benchmarks. Export
-payload files in `data/exports/` are runtime artifacts and must not be
-committed. Set `APP_GIT_COMMIT=$(git rev-parse HEAD)` when exporting from
-Docker so the manifest records the deployed commit. See
+not create ML targets, and does not add news or weather. After Phase 6.2E,
+export v1 includes World Bank benchmark feature columns already materialized in
+`daily_product_features`. Export payload files in `data/exports/` are runtime
+artifacts and must not be committed. Set `APP_GIT_COMMIT=$(git rev-parse HEAD)`
+when exporting from Docker so the manifest records the deployed commit. See
 [docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
 
 ## Phase 6.1A Energy Source Discovery
@@ -1075,8 +1081,25 @@ Supported benchmark codes are `world_bank_soybean_oil`, `world_bank_soybeans`,
 `observed_at` is the calendar month end. The collector is idempotent by
 `source_id + benchmark_code + frequency + period_start + period_end`; same-hash
 rows are skipped, changed hashes create a warning and are not overwritten in
-Phase 6.2D. No benchmark scheduler is registered, daily features do not use
-benchmark rows yet, and no ML targets are created.
+Phase 6.2D. No benchmark scheduler is registered, and no ML targets are
+created.
+
+Phase 6.2E integrates the collected World Bank benchmark rows into
+`daily_product_features` and export v1 through nullable columns. The feature
+builder forward-fills the latest monthly benchmark row with
+`commodity_benchmarks.period_start <= feature_date`, creates 1-month and
+3-month deltas using calendar-month lookbacks, records per-series as-of dates,
+and writes `benchmark_missing_flags` when a configured series is unavailable.
+This phase adds Alembic revision `0011_benchmark_features`, but it does not run
+benchmark collectors, add a benchmark scheduler, rebuild features
+automatically, or create ML targets.
+
+After deploying and applying the migration, rebuild features manually:
+
+```bash
+python scripts/build_features.py daily
+APP_GIT_COMMIT=$(git rev-parse HEAD) python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
 
 ## Next Phase
 

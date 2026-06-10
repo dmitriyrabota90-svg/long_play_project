@@ -13,13 +13,23 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
-from app.db.models import DailyProductFeature, DataQualityCheck, EnergyPrice, FxRate, PriceObservation, Product, Source
+from app.db.models import (
+    CommodityBenchmark,
+    DailyProductFeature,
+    DataQualityCheck,
+    EnergyPrice,
+    FxRate,
+    PriceObservation,
+    Product,
+    Source,
+)
 from app.db.session import session_scope
 
 
 FEATURE_VERSION = "daily_features_v1"
 FX_PAIRS = ("CNY", "USD", "EUR")
 FRED_ENERGY_SOURCE_CODE = "fred_energy_prices"
+WORLD_BANK_BENCHMARK_SOURCE_CODE = "world_bank_pink_sheet"
 ENERGY_FEATURE_SPECS = {
     "brent": {
         "instrument_code": "DCOILBRENTEU",
@@ -58,6 +68,53 @@ ENERGY_FEATURE_SPECS = {
         "missing_flag": "missing_energy_diesel",
         "delta_fields": {
             7: "energy_diesel_proxy_delta_7d",
+        },
+    },
+}
+BENCHMARK_FEATURE_SPECS = {
+    "soybean_oil": {
+        "benchmark_code": "world_bank_soybean_oil",
+        "value_field": "benchmark_soybean_oil_value",
+        "as_of_field": "benchmark_soybean_oil_as_of_date",
+        "missing_flag": "missing_benchmark_soybean_oil",
+        "delta_fields": {1: "benchmark_soybean_oil_delta_1m", 3: "benchmark_soybean_oil_delta_3m"},
+    },
+    "soybeans": {
+        "benchmark_code": "world_bank_soybeans",
+        "value_field": "benchmark_soybeans_value",
+        "as_of_field": "benchmark_soybeans_as_of_date",
+        "missing_flag": "missing_benchmark_soybeans",
+        "delta_fields": {1: "benchmark_soybeans_delta_1m", 3: "benchmark_soybeans_delta_3m"},
+    },
+    "palm_oil": {
+        "benchmark_code": "world_bank_palm_oil",
+        "value_field": "benchmark_palm_oil_value",
+        "as_of_field": "benchmark_palm_oil_as_of_date",
+        "missing_flag": "missing_benchmark_palm_oil",
+        "delta_fields": {1: "benchmark_palm_oil_delta_1m", 3: "benchmark_palm_oil_delta_3m"},
+    },
+    "maize": {
+        "benchmark_code": "world_bank_maize",
+        "value_field": "benchmark_maize_value",
+        "as_of_field": "benchmark_maize_as_of_date",
+        "missing_flag": "missing_benchmark_maize",
+        "delta_fields": {1: "benchmark_maize_delta_1m", 3: "benchmark_maize_delta_3m"},
+    },
+    "wheat": {
+        "benchmark_code": "world_bank_wheat",
+        "value_field": "benchmark_wheat_value",
+        "as_of_field": "benchmark_wheat_as_of_date",
+        "missing_flag": "missing_benchmark_wheat",
+        "delta_fields": {1: "benchmark_wheat_delta_1m", 3: "benchmark_wheat_delta_3m"},
+    },
+    "fertilizer_index": {
+        "benchmark_code": "world_bank_fertilizer_index",
+        "value_field": "benchmark_fertilizer_index_value",
+        "as_of_field": "benchmark_fertilizer_index_as_of_date",
+        "missing_flag": "missing_benchmark_fertilizer_index",
+        "delta_fields": {
+            1: "benchmark_fertilizer_index_delta_1m",
+            3: "benchmark_fertilizer_index_delta_3m",
         },
     },
 }
@@ -107,6 +164,24 @@ NUMERIC_SCALES = {
     "energy_henry_hub_delta_1d": 8,
     "energy_henry_hub_delta_7d": 8,
     "energy_diesel_proxy_delta_7d": 8,
+    "benchmark_soybean_oil_value": 8,
+    "benchmark_soybeans_value": 8,
+    "benchmark_palm_oil_value": 8,
+    "benchmark_maize_value": 8,
+    "benchmark_wheat_value": 8,
+    "benchmark_fertilizer_index_value": 8,
+    "benchmark_soybean_oil_delta_1m": 8,
+    "benchmark_soybean_oil_delta_3m": 8,
+    "benchmark_soybeans_delta_1m": 8,
+    "benchmark_soybeans_delta_3m": 8,
+    "benchmark_palm_oil_delta_1m": 8,
+    "benchmark_palm_oil_delta_3m": 8,
+    "benchmark_maize_delta_1m": 8,
+    "benchmark_maize_delta_3m": 8,
+    "benchmark_wheat_delta_1m": 8,
+    "benchmark_wheat_delta_3m": 8,
+    "benchmark_fertilizer_index_delta_1m": 8,
+    "benchmark_fertilizer_index_delta_3m": 8,
 }
 
 
@@ -215,6 +290,7 @@ def _build_daily_features_with_session(
     daily_last_by_product = _daily_last_prices(session, to_date=end, local_tz=local_tz)
     fx_rates = _load_fx_rates(session, to_date=end)
     energy_prices = _load_energy_prices(session, to_date=end)
+    benchmark_prices = _load_commodity_benchmarks(session, to_date=end)
 
     rows_created = 0
     rows_updated = 0
@@ -229,6 +305,7 @@ def _build_daily_features_with_session(
             daily_last_by_product=daily_last_by_product,
             fx_rates=fx_rates,
             energy_prices=energy_prices,
+            benchmark_prices=benchmark_prices,
         )
         if warning_names:
             missing_fx_dates.add(feature_date.isoformat())
@@ -348,12 +425,33 @@ def _load_energy_prices(session: Session, *, to_date: date) -> dict[str, list[En
     return by_instrument
 
 
+def _load_commodity_benchmarks(session: Session, *, to_date: date) -> dict[str, list[CommodityBenchmark]]:
+    source_id = session.scalar(select(Source.id).where(Source.code == WORLD_BANK_BENCHMARK_SOURCE_CODE).limit(1))
+    benchmark_codes = [str(spec["benchmark_code"]) for spec in BENCHMARK_FEATURE_SPECS.values()]
+    by_code: dict[str, list[CommodityBenchmark]] = {benchmark_code: [] for benchmark_code in benchmark_codes}
+    if source_id is None:
+        return by_code
+    rows = session.scalars(
+        select(CommodityBenchmark)
+        .where(
+            CommodityBenchmark.source_id == source_id,
+            CommodityBenchmark.benchmark_code.in_(benchmark_codes),
+            CommodityBenchmark.period_start <= to_date,
+        )
+        .order_by(CommodityBenchmark.benchmark_code, CommodityBenchmark.period_start, CommodityBenchmark.fetched_at, CommodityBenchmark.id)
+    ).all()
+    for row in rows:
+        by_code.setdefault(row.benchmark_code, []).append(row)
+    return by_code
+
+
 def _feature_values(
     *,
     price_day: _PriceDay,
     daily_last_by_product: dict[int, list[tuple[date, Decimal]]],
     fx_rates: dict[str, list[FxRate]],
     energy_prices: dict[str, list[EnergyPrice]],
+    benchmark_prices: dict[str, list[CommodityBenchmark]],
 ) -> tuple[dict[str, Any], list[str]]:
     ordered = price_day.ordered
     prices = [item.price for item in ordered]
@@ -402,6 +500,7 @@ def _feature_values(
         values[f"{field}_delta_abs_1d"] = delta_abs
         values[f"{field}_delta_pct_1d"] = _pct(delta_abs, previous_rate.rate) if delta_abs is not None else None
     values.update(_energy_feature_values(energy_prices, price_day.feature_date))
+    values.update(_benchmark_feature_values(benchmark_prices, price_day.feature_date))
 
     values = _normalize_feature_values(values)
     values["features_json"] = _features_json(values)
@@ -451,6 +550,62 @@ def _energy_as_of(items: list[EnergyPrice], feature_date: date) -> EnergyPrice |
 
 def _energy_value(item: EnergyPrice) -> Decimal:
     return item.normalized_value if item.normalized_value is not None else item.value
+
+
+def _benchmark_feature_values(
+    benchmark_prices: dict[str, list[CommodityBenchmark]],
+    feature_date: date,
+) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "benchmark_as_of_date": None,
+        "benchmark_missing_flags": None,
+    }
+    for spec in BENCHMARK_FEATURE_SPECS.values():
+        values[str(spec["value_field"])] = None
+        values[str(spec["as_of_field"])] = None
+        for delta_field in dict(spec["delta_fields"]).values():
+            values[str(delta_field)] = None
+
+    as_of_dates: list[date] = []
+    missing_flags: list[str] = []
+    for spec in BENCHMARK_FEATURE_SPECS.values():
+        benchmark_code = str(spec["benchmark_code"])
+        current = _benchmark_as_of(benchmark_prices.get(benchmark_code, []), feature_date)
+        if current is None:
+            missing_flags.append(str(spec["missing_flag"]))
+            continue
+        current_value = _benchmark_value(current)
+        values[str(spec["value_field"])] = current_value
+        values[str(spec["as_of_field"])] = current.period_start
+        as_of_dates.append(current.period_start)
+        for months, delta_field in dict(spec["delta_fields"]).items():
+            previous = _benchmark_as_of(
+                benchmark_prices.get(benchmark_code, []),
+                _subtract_months(feature_date, int(months)),
+            )
+            previous_value = _benchmark_value(previous) if previous is not None else None
+            values[str(delta_field)] = current_value - previous_value if previous_value is not None else None
+
+    values["benchmark_as_of_date"] = max(as_of_dates) if as_of_dates else None
+    values["benchmark_missing_flags"] = ",".join(missing_flags) if missing_flags else None
+    return values
+
+
+def _benchmark_as_of(items: list[CommodityBenchmark], feature_date: date) -> CommodityBenchmark | None:
+    eligible = [item for item in items if item.period_start <= feature_date]
+    return eligible[-1] if eligible else None
+
+
+def _benchmark_value(item: CommodityBenchmark) -> Decimal:
+    return item.normalized_value if item.normalized_value is not None else item.value
+
+
+def _subtract_months(value: date, months: int) -> date:
+    month_index = value.year * 12 + value.month - 1 - months
+    year = month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
 
 
 def _previous_price(items: list[tuple[date, Decimal]], feature_date: date) -> Decimal | None:
@@ -517,6 +672,44 @@ def _write_feature_quality_checks(
             "energy_henry_hub_as_of_date": values["energy_henry_hub_as_of_date"].isoformat() if values.get("energy_henry_hub_as_of_date") else None,
             "energy_diesel_as_of_date": values["energy_diesel_as_of_date"].isoformat() if values.get("energy_diesel_as_of_date") else None,
             "energy_missing_flags": values.get("energy_missing_flags"),
+        },
+        checked_at,
+    )
+    benchmark_as_of_dates = [
+        values.get("benchmark_soybean_oil_as_of_date"),
+        values.get("benchmark_soybeans_as_of_date"),
+        values.get("benchmark_palm_oil_as_of_date"),
+        values.get("benchmark_maize_as_of_date"),
+        values.get("benchmark_wheat_as_of_date"),
+        values.get("benchmark_fertilizer_index_as_of_date"),
+    ]
+    no_future_benchmark = all(item is None or item <= feature_date for item in benchmark_as_of_dates)
+    _write_check(
+        session,
+        "daily_feature_no_future_benchmark",
+        "pass" if no_future_benchmark else "error",
+        "error" if not no_future_benchmark else "info",
+        {
+            **details,
+            "benchmark_soybean_oil_as_of_date": values["benchmark_soybean_oil_as_of_date"].isoformat()
+            if values.get("benchmark_soybean_oil_as_of_date")
+            else None,
+            "benchmark_soybeans_as_of_date": values["benchmark_soybeans_as_of_date"].isoformat()
+            if values.get("benchmark_soybeans_as_of_date")
+            else None,
+            "benchmark_palm_oil_as_of_date": values["benchmark_palm_oil_as_of_date"].isoformat()
+            if values.get("benchmark_palm_oil_as_of_date")
+            else None,
+            "benchmark_maize_as_of_date": values["benchmark_maize_as_of_date"].isoformat()
+            if values.get("benchmark_maize_as_of_date")
+            else None,
+            "benchmark_wheat_as_of_date": values["benchmark_wheat_as_of_date"].isoformat()
+            if values.get("benchmark_wheat_as_of_date")
+            else None,
+            "benchmark_fertilizer_index_as_of_date": values["benchmark_fertilizer_index_as_of_date"].isoformat()
+            if values.get("benchmark_fertilizer_index_as_of_date")
+            else None,
+            "benchmark_missing_flags": values.get("benchmark_missing_flags"),
         },
         checked_at,
     )

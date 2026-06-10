@@ -64,6 +64,10 @@ def _seed_feature(
         usd_rub=Decimal("90.00000000"),
         eur_rub=Decimal("100.00000000"),
         fx_as_of_date=feature_date,
+        benchmark_soybean_oil_value=Decimal("1000.00000000"),
+        benchmark_soybean_oil_as_of_date=feature_date,
+        benchmark_as_of_date=feature_date,
+        benchmark_missing_flags="missing_benchmark_soybeans",
         **calendar_values,
         created_at=now,
         updated_at=now,
@@ -87,6 +91,8 @@ def test_export_query_returns_rows_from_sample_db() -> None:
     assert rows[0]["calendar_month"] == 6
     assert rows[0]["calendar_day_of_week"] == 1
     assert rows[0]["calendar_season"] == "summer"
+    assert rows[0]["benchmark_soybean_oil_value"] == "1000.00000000"
+    assert rows[0]["benchmark_soybean_oil_as_of_date"] == "2026-06-01"
     assert "historical_price_bars" not in rows[0]
 
 
@@ -117,8 +123,14 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "calendar_season" in header
     assert "energy_brent_usd_per_barrel" in header
     assert "energy_diesel_proxy_delta_7d" in header
+    assert "benchmark_soybean_oil_value" in header
+    assert "benchmark_fertilizer_index_delta_3m" in header
     assert "calendar_sin_day_of_year" in manifest["columns"]
     assert "energy_wti_delta_7d" in manifest["columns"]
+    assert "benchmark_as_of_date" in manifest["columns"]
+    assert "commodity_benchmarks" in manifest["source_tables"]
+    assert "World Bank Pink Sheet commodity benchmarks through the feature builder" in manifest["included_sources"]
+    assert "commodity_benchmarks" not in manifest["excluded_sources"]
     assert manifest["sha256"]["csv"] == result.sha256["csv"]
     assert len(result.sha256["csv"]) == 64
     assert manifest["products"] == ["rapeseed_oil", "soybean_oil"]

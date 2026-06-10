@@ -341,45 +341,65 @@ Idempotency:
 
 The collector writes quality checks for source mapping, raw response presence,
 non-empty response, content type, parsed rows, benchmark mapping, positive
-values, source hashes, raw linkage, date range, and hash conflicts. Benchmark
-rows are not used by feature builders or exports until Phase 6.2E adds explicit
-as-of logic.
+values, source hashes, raw linkage, date range, and hash conflicts. Phase 6.2E
+adds explicit feature/export integration for the first World Bank benchmark
+series.
 
-## Future Feature Integration
+## Phase 6.2E Feature Integration
 
-Do not change `daily_product_features` in Phase 6.2B.
+Phase 6.2E adds nullable benchmark columns to `daily_product_features` through
+Alembic revision `0011_benchmark_features`. The feature builder uses only
+existing rows from `commodity_benchmarks`; it does not run benchmark collectors,
+register schedulers, or create ML targets.
 
-Future feature examples:
+Implemented World Bank benchmark feature columns:
 
 - `benchmark_soybean_oil_value`
 - `benchmark_soybean_oil_delta_1m`
 - `benchmark_soybean_oil_delta_3m`
 - `benchmark_soybeans_value`
+- `benchmark_soybeans_delta_1m`
+- `benchmark_soybeans_delta_3m`
 - `benchmark_palm_oil_value`
+- `benchmark_palm_oil_delta_1m`
+- `benchmark_palm_oil_delta_3m`
 - `benchmark_maize_value`
+- `benchmark_maize_delta_1m`
+- `benchmark_maize_delta_3m`
 - `benchmark_wheat_value`
-- `benchmark_fertilizer_index`
-- `fao_vegetable_oils_index`
-- `fao_cereals_index`
+- `benchmark_wheat_delta_1m`
+- `benchmark_wheat_delta_3m`
+- `benchmark_fertilizer_index_value`
+- `benchmark_fertilizer_index_delta_1m`
+- `benchmark_fertilizer_index_delta_3m`
 - `benchmark_as_of_date`
+- per-benchmark `*_as_of_date` fields
 - `benchmark_missing_flags`
+
+FAO vegetable oils and cereals index features remain future candidates and are
+not included in Phase 6.2E.
 
 Rules:
 
-- monthly values may be forward-filled only after the value is available under
-  the chosen as-of mode;
+- monthly World Bank values are forward-filled with
+  `commodity_benchmarks.period_start <= feature_date`;
+- 1-month and 3-month deltas use calendar-month lookbacks and the same as-of
+  rule;
 - missing benchmark series should produce explicit missing flags;
 - no future leakage;
 - unit and index-base metadata must be documented in the export data dictionary.
 
-## Future Export Integration
+Phase 6.2E intentionally uses `period_start` as the conservative available-date
+gate for this dataset-builder phase. Future export modes may add stricter
+`published_at` or `fetched_at` cutoffs if real-time publication simulation is
+needed.
 
-Dataset export should include benchmark columns only after:
+## Phase 6.2E Export Integration
 
-- schema is implemented;
-- at least one controlled collector is working;
-- feature builder has explicit benchmark as-of logic;
-- export manifest lists benchmark source tables and limitations.
+Dataset export v1 now includes benchmark columns only as stored in
+`daily_product_features`. The manifest lists `commodity_benchmarks` as a source
+table, describes the benchmark as-of policy, and keeps historical bars,
+revisions, news, weather, sunflower products, and ML outputs excluded.
 
 Exports must not include benchmark-derived targets in this phase family.
 
@@ -397,5 +417,7 @@ Exports must not include benchmark-derived targets in this phase family.
 - No DB writes in Phase 6.2B.
 - No benchmark data rows in Phase 6.2C.
 - No scheduler changes in Phase 6.2C or Phase 6.2D.
+- No scheduler changes in Phase 6.2E.
+- No benchmark collector runs are required by Phase 6.2E itself.
 - No ML model.
 - No targets.

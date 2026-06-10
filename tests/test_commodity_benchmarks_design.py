@@ -78,12 +78,14 @@ def test_design_doc_mentions_as_of_and_leakage_policy() -> None:
     assert "must not be used for feature dates before it was available" in text
 
 
-def test_design_doc_mentions_future_feature_integration() -> None:
+def test_design_doc_mentions_phase_62e_feature_integration() -> None:
     text = DESIGN_DOC.read_text(encoding="utf-8")
 
-    assert "Future Feature Integration" in text
+    assert "Phase 6.2E Feature Integration" in text
     assert "benchmark_soybean_oil_value" in text
+    assert "benchmark_fertilizer_index_delta_3m" in text
     assert "benchmark_missing_flags" in text
+    assert "commodity_benchmarks.period_start <= feature_date" in text
     assert "no future leakage" in text
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import calendar
 import math
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -12,7 +13,17 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.config.settings import get_settings
-from app.db.models import Base, DailyProductFeature, DataQualityCheck, EnergyPrice, FxRate, PriceObservation, Product, Source
+from app.db.models import (
+    Base,
+    CommodityBenchmark,
+    DailyProductFeature,
+    DataQualityCheck,
+    EnergyPrice,
+    FxRate,
+    PriceObservation,
+    Product,
+    Source,
+)
 from app.features.daily import build_calendar_features, build_daily_features
 
 
@@ -104,6 +115,47 @@ def _energy(
             normalized_unit="source_unit",
             source_record_hash=f"{instrument_code}-{period_start.isoformat()}-{value}",
             source_payload_hash="a" * 64,
+            metadata_json=None,
+        )
+    )
+
+
+def _benchmark(
+    session,
+    *,
+    source_id: int,
+    benchmark_code: str,
+    period_start: date,
+    value: str,
+    currency: str | None = "USD",
+    unit: str = "source_unit",
+) -> None:
+    period_end = date(period_start.year, period_start.month, calendar.monthrange(period_start.year, period_start.month)[1])
+    session.add(
+        CommodityBenchmark(
+            source_id=source_id,
+            raw_response_id=1,
+            collector_run_id=1,
+            benchmark_code=benchmark_code,
+            external_id=benchmark_code,
+            benchmark_name=benchmark_code,
+            benchmark_category="test_benchmark",
+            commodity_family="test_family",
+            geography="global",
+            frequency="monthly",
+            period_start=period_start,
+            period_end=period_end,
+            observed_at=datetime.combine(period_end, datetime.min.time(), tzinfo=timezone.utc),
+            published_at=None,
+            fetched_at=datetime.combine(period_end, datetime.min.time(), tzinfo=timezone.utc),
+            value=Decimal(value),
+            currency=currency,
+            unit=unit,
+            normalized_value=Decimal(value),
+            normalized_currency=currency,
+            normalized_unit=unit,
+            source_record_hash=f"{benchmark_code}-{period_start.isoformat()}-{value}",
+            source_payload_hash="b" * 64,
             metadata_json=None,
         )
     )
@@ -335,6 +387,107 @@ def test_energy_missing_flags_when_current_values_are_unavailable() -> None:
     assert feature.features_json["energy_missing_flags"] == feature.energy_missing_flags
 
 
+def test_benchmark_features_use_as_of_without_future_leakage() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        benchmark_source = _seed_source(session, code="world_bank_pink_sheet", source_type="commodity_benchmark")
+        _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 5, 22, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 22, tzinfo=timezone.utc))
+        _benchmark(session, source_id=benchmark_source.id, benchmark_code="world_bank_soybean_oil", period_start=date(2026, 5, 1), value="1000")
+        _benchmark(session, source_id=benchmark_source.id, benchmark_code="world_bank_soybean_oil", period_start=date(2026, 6, 1), value="9999")
+
+        result = build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+        check = session.scalar(
+            select(DataQualityCheck)
+            .where(DataQualityCheck.check_name == "daily_feature_no_future_benchmark")
+            .limit(1)
+        )
+
+    assert result.warnings_count == 0
+    assert feature.benchmark_soybean_oil_value == Decimal("1000.00000000")
+    assert feature.benchmark_soybean_oil_as_of_date == date(2026, 5, 1)
+    assert feature.benchmark_as_of_date == date(2026, 5, 1)
+    assert feature.benchmark_soybean_oil_delta_1m is None
+    assert "missing_benchmark_soybeans" in feature.benchmark_missing_flags
+    assert feature.features_json["benchmark_soybean_oil_as_of_date"] == "2026-05-01"
+    assert check.status == "pass"
+    assert check.details_json["benchmark_soybean_oil_as_of_date"] == "2026-05-01"
+
+
+def test_benchmark_features_forward_fill_and_monthly_deltas() -> None:
+    SessionLocal = _session_factory()
+    benchmark_cases = (
+        ("world_bank_soybean_oil", "benchmark_soybean_oil", "80", "95", "100"),
+        ("world_bank_soybeans", "benchmark_soybeans", "400", "430", "450"),
+        ("world_bank_palm_oil", "benchmark_palm_oil", "700", "720", "740"),
+        ("world_bank_maize", "benchmark_maize", "180", "190", "200"),
+        ("world_bank_wheat", "benchmark_wheat", "220", "240", "250"),
+        ("world_bank_fertilizer_index", "benchmark_fertilizer_index", "100", "110", "120"),
+    )
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        benchmark_source = _seed_source(session, code="world_bank_pink_sheet", source_type="commodity_benchmark")
+        for day in (20, 27):
+            _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 5, day, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 20, tzinfo=timezone.utc))
+        for benchmark_code, _field_prefix, feb, apr, may in benchmark_cases:
+            _benchmark(session, source_id=benchmark_source.id, benchmark_code=benchmark_code, period_start=date(2026, 2, 1), value=feb)
+            _benchmark(session, source_id=benchmark_source.id, benchmark_code=benchmark_code, period_start=date(2026, 4, 1), value=apr)
+            _benchmark(session, source_id=benchmark_source.id, benchmark_code=benchmark_code, period_start=date(2026, 5, 1), value=may)
+
+        build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature).where(DailyProductFeature.feature_date == date(2026, 5, 27)))
+
+    assert feature.benchmark_missing_flags is None
+    assert feature.benchmark_as_of_date == date(2026, 5, 1)
+    assert feature.benchmark_soybean_oil_value == Decimal("100.00000000")
+    assert feature.benchmark_soybean_oil_delta_1m == Decimal("5.00000000")
+    assert feature.benchmark_soybean_oil_delta_3m == Decimal("20.00000000")
+    assert feature.benchmark_soybeans_delta_1m == Decimal("20.00000000")
+    assert feature.benchmark_soybeans_delta_3m == Decimal("50.00000000")
+    assert feature.benchmark_palm_oil_delta_1m == Decimal("20.00000000")
+    assert feature.benchmark_maize_delta_3m == Decimal("20.00000000")
+    assert feature.benchmark_wheat_delta_1m == Decimal("10.00000000")
+    assert feature.benchmark_fertilizer_index_delta_3m == Decimal("20.00000000")
+    assert feature.features_json["benchmark_missing_flags"] is None
+
+
+def test_benchmark_missing_flags_when_current_values_are_unavailable() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session)
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        benchmark_source = _seed_source(session, code="world_bank_pink_sheet", source_type="commodity_benchmark")
+        _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 5, 20, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 5, 20, tzinfo=timezone.utc))
+        _benchmark(session, source_id=benchmark_source.id, benchmark_code="world_bank_soybean_oil", period_start=date(2026, 5, 1), value="1000")
+
+        build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+
+    assert feature.benchmark_soybean_oil_value == Decimal("1000.00000000")
+    assert feature.benchmark_soybeans_value is None
+    assert feature.benchmark_palm_oil_value is None
+    assert feature.benchmark_missing_flags == (
+        "missing_benchmark_soybeans,"
+        "missing_benchmark_palm_oil,"
+        "missing_benchmark_maize,"
+        "missing_benchmark_wheat,"
+        "missing_benchmark_fertilizer_index"
+    )
+    assert feature.features_json["benchmark_missing_flags"] == feature.benchmark_missing_flags
+
+
 def test_repeated_build_upserts_without_duplicates_and_updates() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
@@ -400,6 +553,7 @@ def test_quality_checks_are_created() -> None:
 
     assert "daily_feature_price_present" in check_names
     assert "daily_feature_no_future_fx" in check_names
+    assert "daily_feature_no_future_benchmark" in check_names
     assert "daily_feature_unique_product_date" in check_names
 
 

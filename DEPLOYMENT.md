@@ -244,10 +244,10 @@ print({"file": str(p), "columns": len(header), "rows": rows})
 PY
 ```
 
-Export v1 includes current snapshot and CBR FX features already materialized in
-`daily_product_features`. It excludes `historical_price_bars`,
-`historical_price_bar_revisions`, news, weather, benchmarks, sunflower products,
-and ML targets.
+Export v1 includes current snapshot, CBR FX, FRED energy, and World Bank
+benchmark features already materialized in `daily_product_features`. It excludes
+`historical_price_bars`, `historical_price_bar_revisions`, news, weather,
+sunflower products, and ML targets.
 
 After Phase 6.0, export v1 also includes deterministic calendar/seasonality
 columns derived from `feature_date`.
@@ -503,8 +503,67 @@ Supported benchmark codes are `world_bank_soybean_oil`, `world_bank_soybeans`,
 `world_bank_fertilizer_index`. Re-running the same source data skips existing
 rows; changed values for an existing business key produce
 `commodity_benchmark_existing_record_hash_changed` and are not overwritten in
-Phase 6.2D. Do not add a benchmark scheduler or integrate benchmarks into daily
-features until Phase 6.2E.
+Phase 6.2D. Phase 6.2D itself does not add a benchmark scheduler, daily feature
+integration, or ML targets.
+
+Phase 6.2E adds nullable World Bank benchmark columns to
+`daily_product_features` through Alembic revision `0011_benchmark_features`.
+The migration does not run collectors and does not move existing data. Deploy
+reviewed code, then apply the migration:
+
+```bash
+docker compose run --rm app alembic upgrade head
+```
+
+Rebuild daily features manually after the migration:
+
+```bash
+docker compose run --rm app python scripts/build_features.py daily
+```
+
+The feature builder uses only existing rows in `commodity_benchmarks`. For every
+feature date it selects the latest monthly World Bank row with
+`commodity_benchmarks.period_start <= feature_date`, forward-fills values, and
+computes 1-month and 3-month deltas by calendar month. Missing configured
+benchmark series are stored in `benchmark_missing_flags`; this is not a
+scheduler or health failure.
+
+Check benchmark fill rates and leakage:
+
+```sql
+SELECT COUNT(*) AS rows_total,
+       COUNT(benchmark_soybean_oil_value) AS soybean_oil_filled,
+       COUNT(benchmark_soybeans_value) AS soybeans_filled,
+       COUNT(benchmark_palm_oil_value) AS palm_oil_filled,
+       COUNT(benchmark_maize_value) AS maize_filled,
+       COUNT(benchmark_wheat_value) AS wheat_filled,
+       COUNT(benchmark_fertilizer_index_value) AS fertilizer_filled,
+       COUNT(benchmark_missing_flags) AS missing_flags_filled
+FROM daily_product_features;
+
+SELECT product_id, feature_date, benchmark_soybean_oil_as_of_date,
+       benchmark_soybeans_as_of_date, benchmark_palm_oil_as_of_date,
+       benchmark_maize_as_of_date, benchmark_wheat_as_of_date,
+       benchmark_fertilizer_index_as_of_date
+FROM daily_product_features
+WHERE benchmark_soybean_oil_as_of_date > feature_date
+   OR benchmark_soybeans_as_of_date > feature_date
+   OR benchmark_palm_oil_as_of_date > feature_date
+   OR benchmark_maize_as_of_date > feature_date
+   OR benchmark_wheat_as_of_date > feature_date
+   OR benchmark_fertilizer_index_as_of_date > feature_date;
+```
+
+Export v1 includes benchmark columns after the rebuild:
+
+```bash
+APP_GIT_COMMIT=$(git rev-parse HEAD) docker compose run --rm -e APP_GIT_COMMIT app \
+  python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+Do not run current-price collectors, CBR FX, historical collectors, benchmark
+collectors, or scheduler changes as part of this migration unless a separate
+controlled step explicitly asks for it.
 
 ## Price Instrument Discovery
 

@@ -83,6 +83,15 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
                 "rows_with_diesel": 0,
                 "latest_energy_feature_date": None,
             },
+            "benchmark_coverage": {
+                "rows_with_soybean_oil_benchmark": 0,
+                "rows_with_soybeans_benchmark": 0,
+                "rows_with_palm_oil_benchmark": 0,
+                "rows_with_maize_benchmark": 0,
+                "rows_with_wheat_benchmark": 0,
+                "rows_with_fertilizer_benchmark": 0,
+                "latest_benchmark_feature_date": None,
+            },
         },
         "historical_price_bars": {
             "count": 0,
@@ -197,6 +206,39 @@ def _fill_db_report(
             select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.energy_diesel_proxy_value.is_not(None))
         ),
         "latest_energy_feature_date": latest_energy_feature_date.isoformat() if latest_energy_feature_date else None,
+    }
+    latest_benchmark_feature_date = session.scalar(
+        select(func.max(DailyProductFeature.feature_date)).where(
+            or_(
+                DailyProductFeature.benchmark_soybean_oil_value.is_not(None),
+                DailyProductFeature.benchmark_soybeans_value.is_not(None),
+                DailyProductFeature.benchmark_palm_oil_value.is_not(None),
+                DailyProductFeature.benchmark_maize_value.is_not(None),
+                DailyProductFeature.benchmark_wheat_value.is_not(None),
+                DailyProductFeature.benchmark_fertilizer_index_value.is_not(None),
+            )
+        )
+    )
+    report["daily_product_features"]["benchmark_coverage"] = {
+        "rows_with_soybean_oil_benchmark": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_soybean_oil_value.is_not(None))
+        ),
+        "rows_with_soybeans_benchmark": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_soybeans_value.is_not(None))
+        ),
+        "rows_with_palm_oil_benchmark": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_palm_oil_value.is_not(None))
+        ),
+        "rows_with_maize_benchmark": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_maize_value.is_not(None))
+        ),
+        "rows_with_wheat_benchmark": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_wheat_value.is_not(None))
+        ),
+        "rows_with_fertilizer_benchmark": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_fertilizer_index_value.is_not(None))
+        ),
+        "latest_benchmark_feature_date": latest_benchmark_feature_date.isoformat() if latest_benchmark_feature_date else None,
     }
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
     last_historical_bar_date = session.scalar(select(func.max(HistoricalPriceBar.bar_date)))

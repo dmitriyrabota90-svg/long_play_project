@@ -12,6 +12,7 @@ Export v1 reads:
 
 - `daily_product_features`
 - `products`
+- `commodity_benchmarks` through the feature builder
 
 It does not write PostgreSQL metadata in Phase 5.0. The JSON manifest beside
 the export file is the export metadata source.
@@ -39,6 +40,9 @@ The CSV includes:
 - FRED energy fields: Brent, WTI, Henry Hub, and diesel proxy values; 1-day and
   7-day deltas where supported; per-series energy as-of dates; and
   `energy_missing_flags`
+- World Bank benchmark fields: soybean oil, soybeans, palm oil, maize, wheat,
+  and fertilizer index values; 1-month and 3-month deltas; per-benchmark
+  as-of dates; `benchmark_as_of_date`; and `benchmark_missing_flags`
 - `created_at`
 - `updated_at`
 
@@ -82,6 +86,7 @@ Export v1 includes only sources already materialized into
 - `current_price_source` snapshots through the daily feature builder
 - CBR FX rates through the daily feature builder
 - FRED energy prices through the daily feature builder
+- World Bank Pink Sheet commodity benchmarks through the daily feature builder
 
 ## Sources Excluded
 
@@ -91,18 +96,20 @@ Export v1 intentionally excludes:
 - `historical_price_bar_revisions`
 - news
 - weather
-- commodity benchmarks
 - sunflower products
 - ML targets and model outputs
 
 ## As-Of And Leakage Policy
 
 Export v1 uses `daily_product_features` exactly as stored. The current feature
-builder uses current snapshot prices, CBR FX, and FRED energy prices with as-of
-logic. Energy values use the latest `energy_prices.period_start <= feature_date`;
-weekly diesel is forward-filled by the same rule. Historical bars are not
-consumed by daily features yet, so the export cannot accidentally treat
-historical backfill as if it was available in the past.
+builder uses current snapshot prices, CBR FX, FRED energy prices, and World Bank
+benchmark rows with as-of logic. Energy values use the latest
+`energy_prices.period_start <= feature_date`; weekly diesel is forward-filled by
+the same rule. World Bank benchmark values use the latest
+`commodity_benchmarks.period_start <= feature_date`, are forward-filled as
+monthly context features, and include explicit per-series as-of dates. Historical
+bars are not consumed by daily features yet, so the export cannot accidentally
+treat historical backfill as if it was available in the past.
 
 ## Known Limitations
 
@@ -110,7 +117,9 @@ historical backfill as if it was available in the past.
 - Historical OHLC bars are excluded from features v1.
 - Energy features depend on the currently collected FRED window; missing current
   series are recorded in `energy_missing_flags`.
-- News, weather, benchmarks, and sunflower products are not implemented.
+- Benchmark features are monthly and forward-filled by `period_start`; future
+  export modes may add stricter `published_at` or `fetched_at` cutoffs.
+- News, weather, and sunflower products are not implemented.
 - This is a controlled file export, not a public API or dashboard.
 
 ## Run Locally
