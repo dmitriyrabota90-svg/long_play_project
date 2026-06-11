@@ -960,6 +960,27 @@ reports, and a checked `daily_features` export. Phase 6.6B does not run
 collectors, does not add scheduler jobs, does not add ML, and does not add
 targets.
 
+Phase 6.7A is local-only supply-demand / production-stocks source discovery for
+future official balance features. It uses a static curated registry, performs no
+HTTP requests, and writes only diagnostics artifacts:
+
+```bash
+python scripts/audit_supply_demand_sources.py
+```
+
+Outputs:
+
+```text
+diagnostics/supply_demand_source_audit/SUPPLY_DEMAND_SOURCE_AUDIT_REPORT.md
+diagnostics/supply_demand_source_audit/supply_demand_source_candidates.json
+```
+
+The recommended first source to investigate is USDA PSD / FAS PSD Online, with a
+bounded soybean/rapeseed oilseed-oil-meal prototype. Phase 6.7A does not need
+server deploy, migrations, production DB writes, collector runs, scheduler
+changes, ML, or targets. The next step is Phase 6.7B schema/as-of design before
+any production supply-demand collector.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

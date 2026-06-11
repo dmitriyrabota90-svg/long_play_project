@@ -1480,10 +1480,38 @@ diagnostics/dataset_readiness/dataset_readiness_audit.json
 
 Diagnostics artifacts are runtime files and should not be committed.
 
+## Phase 6.7A Supply-Demand Source Audit
+
+Phase 6.7A is local-only diagnostics and source discovery for future
+supply-demand, production, stocks, area, yield, crush, and official balance
+features. It does not run collectors, does not write PostgreSQL rows, does not
+create migrations, does not change schedulers, and does not add ML targets.
+
+Run the local audit:
+
+```bash
+python scripts/audit_supply_demand_sources.py
+```
+
+The script uses a static curated registry and performs no HTTP requests. It
+writes diagnostics only:
+
+```text
+diagnostics/supply_demand_source_audit/SUPPLY_DEMAND_SOURCE_AUDIT_REPORT.md
+diagnostics/supply_demand_source_audit/supply_demand_source_candidates.json
+```
+
+The current recommended first source to investigate is USDA PSD / FAS PSD
+Online, with a bounded oilseed/oil/meal prototype for soybeans, soybean oil,
+soybean meal, rapeseed/canola, rapeseed oil, and rapeseed meal. FAOSTAT is a
+reasonable annual context prototype later; WASDE, NASS, AMIS, Eurostat, IGC,
+CONAB, Argentina, and Canada sources require source-specific manual checks or
+licensing decisions before production automation.
+
+Diagnostics artifacts are runtime files and should not be committed.
+
 ## Next Phase
 
-If the server is available, the next recommended phase is Phase 6.6A server
-batch: deploy latest local code, apply pending migrations, run controlled
-derived builders, validate reports, and produce a checked production export
-snapshot. If the server is still unavailable, continue with local-only Phase
-6.7A supply-demand / production-stocks source discovery.
+After Phase 6.7A, the next local design phase is Phase 6.7B: design the
+supply-demand balance schema, release/vintage model, revision policy, and
+as-of-safe daily feature path before any production collector or migration.
