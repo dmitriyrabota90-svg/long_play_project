@@ -855,6 +855,30 @@ Export v1 now includes nullable product-level news/event columns. Missing or
 partial coverage is normal early in rollout and is recorded through
 `news_missing_flags`.
 
+## Trade Import Export Source Audit
+
+Phase 6.5A is local-only discovery/design for future trade/import-export
+sources and HS/source-code mappings. It creates diagnostics artifacts only:
+
+```bash
+python scripts/audit_trade_sources.py
+```
+
+Outputs:
+
+```text
+diagnostics/trade_source_audit/TRADE_SOURCE_AUDIT_REPORT.md
+diagnostics/trade_source_audit/trade_source_candidates.json
+```
+
+This phase does not write PostgreSQL rows, does not run collectors, does not add
+migrations, does not change schedulers, does not use production `RawStore`, and
+does not require production deploy. It also does not add ML targets. The
+recommended next phase is Phase 6.5B trade/import-export schema design for
+future `trade_commodity_codes`, `trade_flows`, and trade feature tables. Later
+phases should implement schema, then a controlled narrow UN Comtrade prototype,
+then trade feature/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

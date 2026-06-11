@@ -35,7 +35,7 @@ Implemented in this skeleton:
 Not implemented yet:
 
 - Sunflower product and fundamental collectors.
-- Trade/import-export collectors and source discovery.
+- Trade/import-export collectors.
 - Automatic schedulers for historical, energy, benchmark, and weather collectors.
 - Dataset target calculation.
 - ML model training.
@@ -1353,8 +1353,35 @@ daily product builder copies those fields into nullable `daily_product_features`
 columns only when `news_as_of_date <= feature_date`; otherwise it leaves values
 empty and records `news_missing_flags`.
 
+## Phase 6.5A Trade Import Export Source Audit
+
+Phase 6.5A is a local diagnostics-only inventory for future trade/import-export
+features. It maps initial HS codes for soybean, soybean oil, soybean meal,
+rapeseed/canola seed, rapeseed oil, rapeseed meal, and context commodities, and
+evaluates candidate sources such as UN Comtrade, FAOSTAT, USDA FAS/GATS/PSD,
+World Bank WITS, ITC Trade Map, Eurostat Comext, and national customs/stat
+agencies.
+
+```bash
+python scripts/audit_trade_sources.py
+```
+
+Outputs:
+
+```text
+diagnostics/trade_source_audit/TRADE_SOURCE_AUDIT_REPORT.md
+diagnostics/trade_source_audit/trade_source_candidates.json
+```
+
+This phase writes diagnostics only. It does not write PostgreSQL rows, does not
+create a collector, does not use production `RawStore`, does not add migrations,
+does not change schedulers, does not add ML targets, and performs no live API
+probing. Current recommendation: use UN Comtrade as the first bounded prototype
+candidate after schema design, with FAOSTAT as slower annual context and
+USDA/FAS routes needing manual verification.
+
 ## Next Phase
 
-The next phase is Phase 6.5A: trade/import-export source discovery and design,
-local-only. It should not add collectors or production writes until source and
-schema choices are reviewed.
+The next phase is Phase 6.5B: trade/import-export schema design. It should not
+add collectors or production writes until source and schema choices are
+reviewed.
