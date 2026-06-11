@@ -588,6 +588,18 @@ design for `weather_regions`, `weather_observations`, and future weather-derived
 daily feature tables. Later phases should implement schema, then a controlled
 Open-Meteo prototype, then feature/export integration.
 
+Phase 6.3B is that design-only step. It adds:
+
+```text
+docs/WEATHER_DATA_DESIGN.md
+docs/sql_drafts/0012_weather_schema_draft.sql
+```
+
+Do not apply the SQL draft manually. It is not an Alembic migration and does not
+change production. The next deployable step should be Phase 6.3C schema-only
+implementation, followed later by Phase 6.3D controlled Open-Meteo collection
+and Phase 6.3E weather feature/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

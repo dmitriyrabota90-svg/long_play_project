@@ -1128,6 +1128,14 @@ Planned next steps are Phase 6.3B weather schema design, Phase 6.3C schema
 implementation, Phase 6.3D first controlled weather collector, and Phase 6.3E
 weather feature/export integration.
 
+Phase 6.3B documents the future weather schema in
+[docs/WEATHER_DATA_DESIGN.md](docs/WEATHER_DATA_DESIGN.md) and adds a draft SQL
+file at `docs/sql_drafts/0012_weather_schema_draft.sql`. It is design-only: no
+Alembic migration, no SQLAlchemy model changes, no collector, no scheduler
+changes, no DB writes, no ML, and no targets. Planned next steps are Phase 6.3C
+schema-only implementation, Phase 6.3D a controlled Open-Meteo weather
+collector, and Phase 6.3E weather feature/export integration.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported
