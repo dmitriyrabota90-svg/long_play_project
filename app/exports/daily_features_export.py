@@ -109,6 +109,23 @@ DAILY_FEATURE_COLUMNS = [
     "benchmark_wheat_as_of_date",
     "benchmark_fertilizer_index_as_of_date",
     "benchmark_missing_flags",
+    "weather_temperature_7d_mean_weighted",
+    "weather_temperature_30d_mean_weighted",
+    "weather_temperature_min_7d_weighted",
+    "weather_temperature_max_7d_weighted",
+    "weather_precipitation_7d_sum_weighted",
+    "weather_precipitation_14d_sum_weighted",
+    "weather_precipitation_30d_sum_weighted",
+    "weather_heat_stress_days_7d_weighted",
+    "weather_heat_stress_days_30d_weighted",
+    "weather_frost_days_7d_weighted",
+    "weather_frost_days_30d_weighted",
+    "weather_drought_proxy_30d_weighted",
+    "weather_growing_degree_days_7d_weighted",
+    "weather_growing_degree_days_30d_weighted",
+    "weather_as_of_date",
+    "weather_regions_used",
+    "weather_missing_flags",
     "created_at",
     "updated_at",
 ]
@@ -365,6 +382,23 @@ def _row_from_feature(feature: DailyProductFeature, product: Product) -> dict[st
         "benchmark_wheat_as_of_date": feature.benchmark_wheat_as_of_date,
         "benchmark_fertilizer_index_as_of_date": feature.benchmark_fertilizer_index_as_of_date,
         "benchmark_missing_flags": feature.benchmark_missing_flags,
+        "weather_temperature_7d_mean_weighted": feature.weather_temperature_7d_mean_weighted,
+        "weather_temperature_30d_mean_weighted": feature.weather_temperature_30d_mean_weighted,
+        "weather_temperature_min_7d_weighted": feature.weather_temperature_min_7d_weighted,
+        "weather_temperature_max_7d_weighted": feature.weather_temperature_max_7d_weighted,
+        "weather_precipitation_7d_sum_weighted": feature.weather_precipitation_7d_sum_weighted,
+        "weather_precipitation_14d_sum_weighted": feature.weather_precipitation_14d_sum_weighted,
+        "weather_precipitation_30d_sum_weighted": feature.weather_precipitation_30d_sum_weighted,
+        "weather_heat_stress_days_7d_weighted": feature.weather_heat_stress_days_7d_weighted,
+        "weather_heat_stress_days_30d_weighted": feature.weather_heat_stress_days_30d_weighted,
+        "weather_frost_days_7d_weighted": feature.weather_frost_days_7d_weighted,
+        "weather_frost_days_30d_weighted": feature.weather_frost_days_30d_weighted,
+        "weather_drought_proxy_30d_weighted": feature.weather_drought_proxy_30d_weighted,
+        "weather_growing_degree_days_7d_weighted": feature.weather_growing_degree_days_7d_weighted,
+        "weather_growing_degree_days_30d_weighted": feature.weather_growing_degree_days_30d_weighted,
+        "weather_as_of_date": feature.weather_as_of_date,
+        "weather_regions_used": feature.weather_regions_used,
+        "weather_missing_flags": feature.weather_missing_flags,
         "created_at": feature.created_at,
         "updated_at": feature.updated_at,
     }
@@ -424,7 +458,13 @@ def _build_manifest(
         "export_version": EXPORT_VERSION,
         "created_at": created_at.isoformat(),
         "git_commit": _git_commit(),
-        "source_tables": ["daily_product_features", "products", "commodity_benchmarks"],
+        "source_tables": [
+            "daily_product_features",
+            "products",
+            "commodity_benchmarks",
+            "weather_daily_features",
+            "product_weather_region_weights",
+        ],
         "row_count": len(rows),
         "column_count": len(DAILY_FEATURE_COLUMNS),
         "columns": DAILY_FEATURE_COLUMNS,
@@ -437,11 +477,14 @@ def _build_manifest(
         "database_snapshot_note": "Export generated from the current PostgreSQL snapshot at run time.",
         "as_of_policy": (
             "Export v1 uses daily_product_features as stored. Current snapshot prices, CBR FX, FRED energy, "
-            "and World Bank commodity benchmarks are used according to the current feature builder logic."
+            "World Bank commodity benchmarks, and Open-Meteo-derived product weather features are used according "
+            "to the current feature builder logic."
         ),
         "leakage_note": (
             "Historical bars are not used in daily features v1. World Bank benchmark features use "
-            "period_start <= feature_date in Phase 6.2E. ML targets and future-looking labels are not included."
+            "period_start <= feature_date in Phase 6.2E. Product weather features use region-level "
+            "weather_daily_features with feature_date <= product feature_date and weather_as_of_date <= "
+            "product feature_date. ML targets and future-looking labels are not included."
         ),
         "included_sources": [
             "daily_product_features",
@@ -449,12 +492,12 @@ def _build_manifest(
             "CBR FX rates through the feature builder",
             "FRED energy prices through the feature builder",
             "World Bank Pink Sheet commodity benchmarks through the feature builder",
+            "Open-Meteo region weather aggregates through product_weather_region_weights",
         ],
         "excluded_sources": [
             "historical_price_bars",
             "historical_price_bar_revisions",
             "news_items",
-            "weather_observations",
             "dataset targets",
             "sunflower products",
             "ML model outputs",
@@ -464,8 +507,10 @@ def _build_manifest(
             "Daily features currently do not use historical_price_bars.",
             "World Bank benchmark features are monthly and forward-filled by period_start.",
             "Phase 6.2E benchmark as-of logic uses period_start <= feature_date; future export modes may add published_at/fetched_at cutoffs.",
+            "Weather features use first-version equal product-region weights and centroid region proxies.",
+            "Weather missing flags identify partial or absent regional coverage.",
             "Only products present in daily_product_features are exported.",
-            "News, weather, sunflower products, and ML outputs are not implemented in export v1.",
+            "News, sunflower products, ML targets, and ML outputs are not implemented in export v1.",
         ],
     }
 

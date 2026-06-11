@@ -23,7 +23,8 @@ Implemented in this skeleton:
 - Manual Jijinhao historical price collector for `historys`.
 - Manual FRED energy collector.
 - Manual World Bank Pink Sheet commodity benchmark collector.
-- Daily feature builder with price, FX, calendar, energy, and benchmark features.
+- Manual Open-Meteo historical weather collector and weather feature builders.
+- Daily feature builder with price, FX, calendar, energy, benchmark, and weather features.
 - Health-check helper.
 - Dataset export v1 with manifest and SHA-256 checks.
 - CLI scripts.
@@ -31,8 +32,8 @@ Implemented in this skeleton:
 
 Not implemented yet:
 
-- News, weather, sunflower product, and fundamental collectors.
-- Automatic schedulers for historical, energy, and benchmark collectors.
+- News, sunflower product, and fundamental collectors.
+- Automatic schedulers for historical, energy, benchmark, and weather collectors.
 - Dataset target calculation.
 - ML model training.
 - FastAPI or any web service.
@@ -557,12 +558,12 @@ data/exports/daily_features_v1_YYYYMMDD_HHMMSS_manifest.json
 
 Export v1 uses `daily_product_features` as stored and joins `products` for
 `product_code` and `product_name`. It does not use `historical_price_bars`, does
-not create ML targets, and does not add news or weather. After Phase 6.2E,
-export v1 includes World Bank benchmark feature columns already materialized in
-`daily_product_features`. Export payload files in `data/exports/` are runtime
-artifacts and must not be committed. Set `APP_GIT_COMMIT=$(git rev-parse HEAD)`
-when exporting from Docker so the manifest records the deployed commit. See
-[docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
+not create ML targets, and does not add news. Export v1 includes World Bank
+benchmark feature columns and Phase 6.3F product-level weather feature columns
+already materialized in `daily_product_features`. Export payload files in
+`data/exports/` are runtime artifacts and must not be committed. Set
+`APP_GIT_COMMIT=$(git rev-parse HEAD)` when exporting from Docker so the
+manifest records the deployed commit. See [docs/DATASET_EXPORT.md](docs/DATASET_EXPORT.md).
 
 ## Phase 6.1A Energy Source Discovery
 
@@ -1195,7 +1196,35 @@ at `temperature_2m_min <= 0C`, first-version drought proxy as
 regions and `5C` for rapeseed/canola regions. Incomplete early windows are
 recorded in `missing_flags`.
 
+Phase 6.3F integrates region-level weather aggregates into product-level
+`daily_product_features` and the `daily_features` export. It adds Alembic
+revision `0013_product_weather_features` with nullable product-weather columns,
+idempotent equal-weight `product_weather_region_weights` seeds for soybean and
+rapeseed/canola products, and leakage-safe weighted aggregation in
+`python scripts/build_features.py daily`.
+
+```bash
+python -m app.db.seed
+python scripts/build_features.py weather_daily
+python scripts/build_features.py daily
+APP_GIT_COMMIT=$(git rev-parse HEAD) python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+The first version maps soybean products to Brazil, US, and Argentina soybean
+regions, and rapeseed/canola products to Canada, France, and Ukraine/Black Sea
+regions. Weights are equal within each product family and marked with
+`role=production_weather_proxy`. The daily feature builder uses only active
+weights effective for the product `feature_date`, only
+`weather_daily_features.feature_date <= feature_date`, and only weather rows
+whose `weather_as_of_date <= feature_date`. Missing or partial regional
+coverage is recorded in `weather_missing_flags`; product weather columns remain
+nullable.
+
+Phase 6.3F is still not an ML phase. It does not add targets, does not add a
+weather scheduler, does not run weather collectors automatically, and does not
+change current price, FX, energy, benchmark, or historical collectors.
+
 ## Next Phase
 
-The next phase is Phase 6.3F: product-level weather feature integration and
-export review, local-only.
+The next phase is Phase 6.4A: news/events source discovery and design,
+local-only.

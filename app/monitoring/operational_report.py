@@ -96,6 +96,12 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
                 "rows_with_fertilizer_benchmark": 0,
                 "latest_benchmark_feature_date": None,
             },
+            "weather_coverage": {
+                "rows_with_weather_temperature_30d": 0,
+                "rows_with_weather_precipitation_30d": 0,
+                "rows_with_weather_gdd_30d": 0,
+                "latest_product_weather_feature_date": None,
+            },
         },
         "historical_price_bars": {
             "count": 0,
@@ -270,6 +276,35 @@ def _fill_db_report(
             select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.benchmark_fertilizer_index_value.is_not(None))
         ),
         "latest_benchmark_feature_date": latest_benchmark_feature_date.isoformat() if latest_benchmark_feature_date else None,
+    }
+    latest_product_weather_feature_date = session.scalar(
+        select(func.max(DailyProductFeature.feature_date)).where(
+            or_(
+                DailyProductFeature.weather_temperature_30d_mean_weighted.is_not(None),
+                DailyProductFeature.weather_precipitation_30d_sum_weighted.is_not(None),
+                DailyProductFeature.weather_growing_degree_days_30d_weighted.is_not(None),
+            )
+        )
+    )
+    report["daily_product_features"]["weather_coverage"] = {
+        "rows_with_weather_temperature_30d": session.scalar(
+            select(func.count())
+            .select_from(DailyProductFeature)
+            .where(DailyProductFeature.weather_temperature_30d_mean_weighted.is_not(None))
+        ),
+        "rows_with_weather_precipitation_30d": session.scalar(
+            select(func.count())
+            .select_from(DailyProductFeature)
+            .where(DailyProductFeature.weather_precipitation_30d_sum_weighted.is_not(None))
+        ),
+        "rows_with_weather_gdd_30d": session.scalar(
+            select(func.count())
+            .select_from(DailyProductFeature)
+            .where(DailyProductFeature.weather_growing_degree_days_30d_weighted.is_not(None))
+        ),
+        "latest_product_weather_feature_date": (
+            latest_product_weather_feature_date.isoformat() if latest_product_weather_feature_date else None
+        ),
     }
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
     last_historical_bar_date = session.scalar(select(func.max(HistoricalPriceBar.bar_date)))

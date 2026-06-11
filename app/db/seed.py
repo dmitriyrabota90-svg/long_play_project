@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.logging import setup_logging
-from app.db.models import Product, Source, WeatherRegion
+from app.db.models import Product, ProductWeatherRegionWeight, Source, WeatherRegion
 from app.db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,17 @@ class WeatherRegionSeed:
     spatial_model: str
     aggregation_strategy: str
     reason_for_ml: str
+
+
+@dataclass(frozen=True)
+class ProductWeatherRegionWeightSeed:
+    product_code: str
+    region_code: str
+    weight: Decimal
+    role: str = "production_weather_proxy"
+    effective_from: date = date(2020, 1, 1)
+    effective_to: date | None = None
+    is_active: bool = True
 
 
 PRODUCTS: tuple[ProductSeed, ...] = (
@@ -312,11 +324,62 @@ WEATHER_REGIONS: tuple[WeatherRegionSeed, ...] = (
     ),
 )
 
+SOYBEAN_WEATHER_PRODUCT_CODES = ("soybean_oil", "soybean_meal")
+SOYBEAN_WEATHER_REGION_CODES = (
+    "br_mato_grosso_soybean",
+    "br_parana_soybean",
+    "br_goias_soybean",
+    "us_iowa_soybean",
+    "us_illinois_soybean",
+    "us_indiana_soybean",
+    "ar_buenos_aires_soybean",
+    "ar_cordoba_soybean",
+    "ar_santa_fe_soybean",
+)
+RAPESEED_WEATHER_PRODUCT_CODES = ("rapeseed_oil", "rapeseed_meal")
+RAPESEED_WEATHER_REGION_CODES = (
+    "ca_saskatchewan_canola",
+    "ca_alberta_canola",
+    "ca_manitoba_canola",
+    "eu_france_rapeseed",
+    "ua_black_sea_rapeseed",
+)
+
+
+def _equal_weights(count: int) -> tuple[Decimal, ...]:
+    if count <= 0:
+        return ()
+    quant = Decimal("0.00000001")
+    base = (Decimal("1") / Decimal(count)).quantize(quant)
+    values = [base for _ in range(count)]
+    values[-1] = Decimal("1") - sum(values[:-1])
+    return tuple(values)
+
+
+PRODUCT_WEATHER_REGION_WEIGHTS: tuple[ProductWeatherRegionWeightSeed, ...] = tuple(
+    ProductWeatherRegionWeightSeed(product_code=product_code, region_code=region_code, weight=weight)
+    for product_code in SOYBEAN_WEATHER_PRODUCT_CODES
+    for region_code, weight in zip(
+        SOYBEAN_WEATHER_REGION_CODES,
+        _equal_weights(len(SOYBEAN_WEATHER_REGION_CODES)),
+        strict=True,
+    )
+) + tuple(
+    ProductWeatherRegionWeightSeed(product_code=product_code, region_code=region_code, weight=weight)
+    for product_code in RAPESEED_WEATHER_PRODUCT_CODES
+    for region_code, weight in zip(
+        RAPESEED_WEATHER_REGION_CODES,
+        _equal_weights(len(RAPESEED_WEATHER_REGION_CODES)),
+        strict=True,
+    )
+)
+
 
 def seed_database(session: Session) -> dict[str, int]:
     products_created = 0
     sources_created = 0
     weather_regions_created = 0
+    product_weather_region_weights_created = 0
 
     for item in PRODUCTS:
         product = session.scalar(select(Product).where(Product.code == item.code))
@@ -395,11 +458,58 @@ def seed_database(session: Session) -> dict[str, int]:
             region.is_active = True
             region.metadata_json = {"reason_for_ml": item.reason_for_ml, "coordinate_policy": "first_version_point_proxy"}
 
+    session.flush()
+    for item in PRODUCT_WEATHER_REGION_WEIGHTS:
+        product = session.scalar(select(Product).where(Product.code == item.product_code))
+        region = session.scalar(select(WeatherRegion).where(WeatherRegion.region_code == item.region_code))
+        if product is None or region is None:
+            logger.warning(
+                "skipping product weather region weight product_code=%s region_code=%s product_exists=%s region_exists=%s",
+                item.product_code,
+                item.region_code,
+                product is not None,
+                region is not None,
+            )
+            continue
+        existing = session.scalar(
+            select(ProductWeatherRegionWeight).where(
+                ProductWeatherRegionWeight.product_id == product.id,
+                ProductWeatherRegionWeight.region_id == region.id,
+                ProductWeatherRegionWeight.role == item.role,
+                ProductWeatherRegionWeight.effective_from == item.effective_from,
+            )
+        )
+        metadata_json = {
+            "weighting_method": "equal_weight_first_version",
+            "region_basis": "seeded_weather_regions",
+            "note": "Replace later with production/export weights.",
+        }
+        if existing is None:
+            session.add(
+                ProductWeatherRegionWeight(
+                    product_id=product.id,
+                    region_id=region.id,
+                    weight=item.weight,
+                    role=item.role,
+                    effective_from=item.effective_from,
+                    effective_to=item.effective_to,
+                    is_active=item.is_active,
+                    metadata_json=metadata_json,
+                )
+            )
+            product_weather_region_weights_created += 1
+        else:
+            existing.weight = item.weight
+            existing.effective_to = item.effective_to
+            existing.is_active = item.is_active
+            existing.metadata_json = metadata_json
+
     session.commit()
     return {
         "products_created": products_created,
         "sources_created": sources_created,
         "weather_regions_created": weather_regions_created,
+        "product_weather_region_weights_created": product_weather_region_weights_created,
     }
 
 

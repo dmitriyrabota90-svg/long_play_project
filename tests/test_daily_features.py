@@ -554,6 +554,8 @@ def test_quality_checks_are_created() -> None:
     assert "daily_feature_price_present" in check_names
     assert "daily_feature_no_future_fx" in check_names
     assert "daily_feature_no_future_benchmark" in check_names
+    assert "daily_feature_no_future_weather" in check_names
+    assert "daily_feature_weather_coverage_recorded" in check_names
     assert "daily_feature_unique_product_date" in check_names
 
 

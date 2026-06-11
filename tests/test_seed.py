@@ -1,8 +1,18 @@
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Base, Product, Source, WeatherRegion
-from app.db.seed import PRODUCTS, SOURCES, WEATHER_REGIONS, seed_database
+from app.db.models import Base, Product, ProductWeatherRegionWeight, Source, WeatherRegion
+from app.db.seed import (
+    PRODUCTS,
+    PRODUCT_WEATHER_REGION_WEIGHTS,
+    RAPESEED_WEATHER_PRODUCT_CODES,
+    RAPESEED_WEATHER_REGION_CODES,
+    SOURCES,
+    SOYBEAN_WEATHER_PRODUCT_CODES,
+    SOYBEAN_WEATHER_REGION_CODES,
+    WEATHER_REGIONS,
+    seed_database,
+)
 
 
 def test_seed_is_idempotent() -> None:
@@ -23,16 +33,41 @@ def test_seed_is_idempotent() -> None:
         open_meteo_source = session.scalar(select(Source).where(Source.code == "open_meteo_historical_weather"))
         nasa_power_source = session.scalar(select(Source).where(Source.code == "nasa_power_weather"))
         weather_region_count = session.scalar(select(func.count()).select_from(WeatherRegion))
+        product_weather_weights_count = session.scalar(select(func.count()).select_from(ProductWeatherRegionWeight))
         mato_grosso_region = session.scalar(
             select(WeatherRegion).where(WeatherRegion.region_code == "br_mato_grosso_soybean")
         )
         saskatchewan_region = session.scalar(
             select(WeatherRegion).where(WeatherRegion.region_code == "ca_saskatchewan_canola")
         )
+        weight_counts = {
+            product_code: session.scalar(
+                select(func.count())
+                .select_from(ProductWeatherRegionWeight)
+                .join(Product, Product.id == ProductWeatherRegionWeight.product_id)
+                .where(Product.code == product_code)
+            )
+            for product_code in SOYBEAN_WEATHER_PRODUCT_CODES + RAPESEED_WEATHER_PRODUCT_CODES
+        }
+        weight_sums = {
+            product_code: session.scalar(
+                select(func.sum(ProductWeatherRegionWeight.weight))
+                .join(Product, Product.id == ProductWeatherRegionWeight.product_id)
+                .where(Product.code == product_code)
+            )
+            for product_code in SOYBEAN_WEATHER_PRODUCT_CODES + RAPESEED_WEATHER_PRODUCT_CODES
+        }
 
     assert product_count == len(PRODUCTS)
     assert source_count == len(SOURCES)
     assert weather_region_count == len(WEATHER_REGIONS)
+    assert product_weather_weights_count == len(PRODUCT_WEATHER_REGION_WEIGHTS)
+    for product_code in SOYBEAN_WEATHER_PRODUCT_CODES:
+        assert weight_counts[product_code] == len(SOYBEAN_WEATHER_REGION_CODES)
+        assert weight_sums[product_code] == 1
+    for product_code in RAPESEED_WEATHER_PRODUCT_CODES:
+        assert weight_counts[product_code] == len(RAPESEED_WEATHER_REGION_CODES)
+        assert weight_sums[product_code] == 1
     assert historical_source is not None
     assert historical_source.name == "Jijinhao Historical Prices"
     assert historical_source.source_type == "price_history"

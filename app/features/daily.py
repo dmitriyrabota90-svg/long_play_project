@@ -21,7 +21,10 @@ from app.db.models import (
     FxRate,
     PriceObservation,
     Product,
+    ProductWeatherRegionWeight,
     Source,
+    WeatherDailyFeature,
+    WeatherRegion,
 )
 from app.db.session import session_scope
 
@@ -118,6 +121,22 @@ BENCHMARK_FEATURE_SPECS = {
         },
     },
 }
+WEATHER_FEATURE_SPECS = {
+    "temperature_7d_mean": "weather_temperature_7d_mean_weighted",
+    "temperature_30d_mean": "weather_temperature_30d_mean_weighted",
+    "temperature_min_7d": "weather_temperature_min_7d_weighted",
+    "temperature_max_7d": "weather_temperature_max_7d_weighted",
+    "precipitation_7d_sum": "weather_precipitation_7d_sum_weighted",
+    "precipitation_14d_sum": "weather_precipitation_14d_sum_weighted",
+    "precipitation_30d_sum": "weather_precipitation_30d_sum_weighted",
+    "heat_stress_days_7d": "weather_heat_stress_days_7d_weighted",
+    "heat_stress_days_30d": "weather_heat_stress_days_30d_weighted",
+    "frost_days_7d": "weather_frost_days_7d_weighted",
+    "frost_days_30d": "weather_frost_days_30d_weighted",
+    "drought_proxy_30d": "weather_drought_proxy_30d_weighted",
+    "growing_degree_days_7d": "weather_growing_degree_days_7d_weighted",
+    "growing_degree_days_30d": "weather_growing_degree_days_30d_weighted",
+}
 SEASONS_BY_MONTH = {
     1: "winter",
     2: "winter",
@@ -182,6 +201,20 @@ NUMERIC_SCALES = {
     "benchmark_wheat_delta_3m": 8,
     "benchmark_fertilizer_index_delta_1m": 8,
     "benchmark_fertilizer_index_delta_3m": 8,
+    "weather_temperature_7d_mean_weighted": 8,
+    "weather_temperature_30d_mean_weighted": 8,
+    "weather_temperature_min_7d_weighted": 8,
+    "weather_temperature_max_7d_weighted": 8,
+    "weather_precipitation_7d_sum_weighted": 8,
+    "weather_precipitation_14d_sum_weighted": 8,
+    "weather_precipitation_30d_sum_weighted": 8,
+    "weather_heat_stress_days_7d_weighted": 8,
+    "weather_heat_stress_days_30d_weighted": 8,
+    "weather_frost_days_7d_weighted": 8,
+    "weather_frost_days_30d_weighted": 8,
+    "weather_drought_proxy_30d_weighted": 8,
+    "weather_growing_degree_days_7d_weighted": 8,
+    "weather_growing_degree_days_30d_weighted": 8,
 }
 
 
@@ -224,6 +257,16 @@ class _FxAsOf:
     def fx_as_of_date(self) -> date | None:
         dates = [_to_utc(rate.observed_at).date() for rate in self.rates.values()]
         return max(dates) if dates else None
+
+
+@dataclass(frozen=True)
+class _WeatherWeight:
+    product_id: int
+    region_id: int
+    region_code: str
+    weight: Decimal
+    effective_from: date
+    effective_to: date | None
 
 
 def build_calendar_features(feature_date: date) -> dict[str, Any]:
@@ -291,6 +334,8 @@ def _build_daily_features_with_session(
     fx_rates = _load_fx_rates(session, to_date=end)
     energy_prices = _load_energy_prices(session, to_date=end)
     benchmark_prices = _load_commodity_benchmarks(session, to_date=end)
+    weather_weights = _load_product_weather_weights(session)
+    weather_features = _load_weather_daily_features(session, to_date=end)
 
     rows_created = 0
     rows_updated = 0
@@ -306,6 +351,8 @@ def _build_daily_features_with_session(
             fx_rates=fx_rates,
             energy_prices=energy_prices,
             benchmark_prices=benchmark_prices,
+            weather_weights=weather_weights,
+            weather_features=weather_features,
         )
         if warning_names:
             missing_fx_dates.add(feature_date.isoformat())
@@ -445,6 +492,40 @@ def _load_commodity_benchmarks(session: Session, *, to_date: date) -> dict[str, 
     return by_code
 
 
+def _load_product_weather_weights(session: Session) -> dict[int, list[_WeatherWeight]]:
+    rows = session.execute(
+        select(ProductWeatherRegionWeight, WeatherRegion.region_code)
+        .join(WeatherRegion, WeatherRegion.id == ProductWeatherRegionWeight.region_id)
+        .where(ProductWeatherRegionWeight.is_active.is_(True), WeatherRegion.is_active.is_(True))
+        .order_by(ProductWeatherRegionWeight.product_id, WeatherRegion.region_code)
+    ).all()
+    by_product: dict[int, list[_WeatherWeight]] = {}
+    for weight, region_code in rows:
+        by_product.setdefault(weight.product_id, []).append(
+            _WeatherWeight(
+                product_id=weight.product_id,
+                region_id=weight.region_id,
+                region_code=region_code,
+                weight=weight.weight,
+                effective_from=weight.effective_from,
+                effective_to=weight.effective_to,
+            )
+        )
+    return by_product
+
+
+def _load_weather_daily_features(session: Session, *, to_date: date) -> dict[int, list[WeatherDailyFeature]]:
+    rows = session.scalars(
+        select(WeatherDailyFeature)
+        .where(WeatherDailyFeature.feature_date <= to_date)
+        .order_by(WeatherDailyFeature.region_id, WeatherDailyFeature.feature_date)
+    ).all()
+    by_region: dict[int, list[WeatherDailyFeature]] = {}
+    for row in rows:
+        by_region.setdefault(row.region_id, []).append(row)
+    return by_region
+
+
 def _feature_values(
     *,
     price_day: _PriceDay,
@@ -452,6 +533,8 @@ def _feature_values(
     fx_rates: dict[str, list[FxRate]],
     energy_prices: dict[str, list[EnergyPrice]],
     benchmark_prices: dict[str, list[CommodityBenchmark]],
+    weather_weights: dict[int, list[_WeatherWeight]],
+    weather_features: dict[int, list[WeatherDailyFeature]],
 ) -> tuple[dict[str, Any], list[str]]:
     ordered = price_day.ordered
     prices = [item.price for item in ordered]
@@ -501,6 +584,14 @@ def _feature_values(
         values[f"{field}_delta_pct_1d"] = _pct(delta_abs, previous_rate.rate) if delta_abs is not None else None
     values.update(_energy_feature_values(energy_prices, price_day.feature_date))
     values.update(_benchmark_feature_values(benchmark_prices, price_day.feature_date))
+    values.update(
+        _weather_feature_values(
+            product_id=price_day.product_id,
+            feature_date=price_day.feature_date,
+            weather_weights=weather_weights,
+            weather_features=weather_features,
+        )
+    )
 
     values = _normalize_feature_values(values)
     values["features_json"] = _features_json(values)
@@ -589,6 +680,106 @@ def _benchmark_feature_values(
     values["benchmark_as_of_date"] = max(as_of_dates) if as_of_dates else None
     values["benchmark_missing_flags"] = ",".join(missing_flags) if missing_flags else None
     return values
+
+
+def _weather_feature_values(
+    *,
+    product_id: int,
+    feature_date: date,
+    weather_weights: dict[int, list[_WeatherWeight]],
+    weather_features: dict[int, list[WeatherDailyFeature]],
+) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        output_field: None
+        for output_field in WEATHER_FEATURE_SPECS.values()
+    }
+    values.update(
+        {
+            "weather_as_of_date": None,
+            "weather_regions_used": None,
+            "weather_missing_flags": None,
+        }
+    )
+    active_weights = _active_weather_weights(weather_weights.get(product_id, []), feature_date)
+    if not active_weights:
+        values["weather_missing_flags"] = "missing_product_weather_region_weights"
+        return values
+
+    selected: list[tuple[_WeatherWeight, WeatherDailyFeature]] = []
+    missing_flags: list[str] = []
+    as_of_dates: list[date] = []
+    used_region_codes: list[str] = []
+
+    for weight in active_weights:
+        feature = _weather_as_of(weather_features.get(weight.region_id, []), feature_date)
+        if feature is None:
+            missing_flags.append(f"missing_region:{weight.region_code}")
+            continue
+        feature_as_of = feature.weather_as_of_date or feature.feature_date
+        if feature_as_of > feature_date:
+            missing_flags.append(f"future_weather_as_of:{weight.region_code}")
+            continue
+        selected.append((weight, feature))
+        as_of_dates.append(feature_as_of)
+        if _weather_feature_has_any_value(feature):
+            used_region_codes.append(weight.region_code)
+        for flag_name in _truthy_weather_missing_flags(feature.missing_flags):
+            missing_flags.append(f"{weight.region_code}:{flag_name}")
+
+    if not selected:
+        missing_flags.append("missing_all_weather_regions")
+    elif len(selected) < len(active_weights):
+        missing_flags.append("partial_weather_regions")
+    if selected and not used_region_codes:
+        missing_flags.append("missing_all_weather_values")
+
+    for source_field, output_field in WEATHER_FEATURE_SPECS.items():
+        values[output_field] = _weighted_weather_value(selected, source_field=source_field)
+    values["weather_as_of_date"] = max(as_of_dates) if as_of_dates else None
+    values["weather_regions_used"] = ",".join(used_region_codes) if used_region_codes else None
+    values["weather_missing_flags"] = ",".join(_dedupe(missing_flags)) if missing_flags else None
+    return values
+
+
+def _active_weather_weights(weights: list[_WeatherWeight], feature_date: date) -> list[_WeatherWeight]:
+    return [
+        weight
+        for weight in weights
+        if weight.effective_from <= feature_date and (weight.effective_to is None or weight.effective_to >= feature_date)
+    ]
+
+
+def _weather_as_of(items: list[WeatherDailyFeature], feature_date: date) -> WeatherDailyFeature | None:
+    eligible = [item for item in items if item.feature_date <= feature_date]
+    return eligible[-1] if eligible else None
+
+
+def _weighted_weather_value(
+    selected: list[tuple[_WeatherWeight, WeatherDailyFeature]],
+    *,
+    source_field: str,
+) -> Decimal | None:
+    numerator = Decimal("0")
+    denominator = Decimal("0")
+    for weight, feature in selected:
+        value = getattr(feature, source_field)
+        if value is None:
+            continue
+        numerator += Decimal(value) * weight.weight
+        denominator += weight.weight
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _weather_feature_has_any_value(feature: WeatherDailyFeature) -> bool:
+    return any(getattr(feature, source_field) is not None for source_field in WEATHER_FEATURE_SPECS)
+
+
+def _truthy_weather_missing_flags(flags: Any) -> list[str]:
+    if not isinstance(flags, dict):
+        return []
+    return [str(name) for name, value in flags.items() if value]
 
 
 def _benchmark_as_of(items: list[CommodityBenchmark], feature_date: date) -> CommodityBenchmark | None:
@@ -713,6 +904,34 @@ def _write_feature_quality_checks(
         },
         checked_at,
     )
+    no_future_weather = values.get("weather_as_of_date") is None or values["weather_as_of_date"] <= feature_date
+    _write_check(
+        session,
+        "daily_feature_no_future_weather",
+        "pass" if no_future_weather else "error",
+        "error" if not no_future_weather else "info",
+        {
+            **details,
+            "weather_as_of_date": values["weather_as_of_date"].isoformat()
+            if values.get("weather_as_of_date")
+            else None,
+            "weather_regions_used": values.get("weather_regions_used"),
+            "weather_missing_flags": values.get("weather_missing_flags"),
+        },
+        checked_at,
+    )
+    _write_check(
+        session,
+        "daily_feature_weather_coverage_recorded",
+        "pass",
+        "info",
+        {
+            **details,
+            "weather_regions_used": values.get("weather_regions_used"),
+            "weather_missing_flags": values.get("weather_missing_flags"),
+        },
+        checked_at,
+    )
     no_future_price = _to_utc(values["as_of_at"]).date() <= feature_date
     _write_check(session, "daily_feature_no_future_price", "pass" if no_future_price else "error", "error" if not no_future_price else "info", {**details, "as_of_at": values["as_of_at"].isoformat()}, checked_at)
     duplicate_count = session.scalar(
@@ -786,6 +1005,17 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     return value
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def _pct(delta: Decimal | None, base: Decimal | None) -> Decimal | None:

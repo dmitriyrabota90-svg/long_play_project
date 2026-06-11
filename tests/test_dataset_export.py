@@ -68,6 +68,12 @@ def _seed_feature(
         benchmark_soybean_oil_as_of_date=feature_date,
         benchmark_as_of_date=feature_date,
         benchmark_missing_flags="missing_benchmark_soybeans",
+        weather_temperature_30d_mean_weighted=Decimal("21.50000000"),
+        weather_precipitation_30d_sum_weighted=Decimal("42.00000000"),
+        weather_growing_degree_days_30d_weighted=Decimal("88.00000000"),
+        weather_as_of_date=feature_date,
+        weather_regions_used="br_mato_grosso_soybean,br_parana_soybean",
+        weather_missing_flags="partial_weather_regions",
         **calendar_values,
         created_at=now,
         updated_at=now,
@@ -93,6 +99,11 @@ def test_export_query_returns_rows_from_sample_db() -> None:
     assert rows[0]["calendar_season"] == "summer"
     assert rows[0]["benchmark_soybean_oil_value"] == "1000.00000000"
     assert rows[0]["benchmark_soybean_oil_as_of_date"] == "2026-06-01"
+    assert rows[0]["weather_temperature_30d_mean_weighted"] == "21.50000000"
+    assert rows[0]["weather_precipitation_30d_sum_weighted"] == "42.00000000"
+    assert rows[0]["weather_growing_degree_days_30d_weighted"] == "88.00000000"
+    assert rows[0]["weather_regions_used"] == "br_mato_grosso_soybean,br_parana_soybean"
+    assert rows[0]["weather_missing_flags"] == "partial_weather_regions"
     assert "historical_price_bars" not in rows[0]
 
 
@@ -125,12 +136,21 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "energy_diesel_proxy_delta_7d" in header
     assert "benchmark_soybean_oil_value" in header
     assert "benchmark_fertilizer_index_delta_3m" in header
+    assert "weather_temperature_30d_mean_weighted" in header
+    assert "weather_precipitation_30d_sum_weighted" in header
+    assert "weather_growing_degree_days_30d_weighted" in header
+    assert "weather_regions_used" in header
     assert "calendar_sin_day_of_year" in manifest["columns"]
     assert "energy_wti_delta_7d" in manifest["columns"]
     assert "benchmark_as_of_date" in manifest["columns"]
+    assert "weather_as_of_date" in manifest["columns"]
     assert "commodity_benchmarks" in manifest["source_tables"]
+    assert "weather_daily_features" in manifest["source_tables"]
+    assert "product_weather_region_weights" in manifest["source_tables"]
     assert "World Bank Pink Sheet commodity benchmarks through the feature builder" in manifest["included_sources"]
+    assert "Open-Meteo region weather aggregates through product_weather_region_weights" in manifest["included_sources"]
     assert "commodity_benchmarks" not in manifest["excluded_sources"]
+    assert "weather_observations" not in manifest["excluded_sources"]
     assert manifest["sha256"]["csv"] == result.sha256["csv"]
     assert len(result.sha256["csv"]) == 64
     assert manifest["products"] == ["rapeseed_oil", "soybean_oil"]

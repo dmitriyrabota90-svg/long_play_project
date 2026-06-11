@@ -13,9 +13,11 @@ Export v1 reads:
 - `daily_product_features`
 - `products`
 - `commodity_benchmarks` through the feature builder
+- `weather_daily_features` and `product_weather_region_weights` through the
+  feature builder
 
-It does not write PostgreSQL metadata in Phase 5.0. The JSON manifest beside
-the export file is the export metadata source.
+It does not write PostgreSQL metadata in Phase 5.0 or Phase 6.3F. The JSON
+manifest beside the export file is the export metadata source.
 
 ## Row Grain
 
@@ -43,6 +45,10 @@ The CSV includes:
 - World Bank benchmark fields: soybean oil, soybeans, palm oil, maize, wheat,
   and fertilizer index values; 1-month and 3-month deltas; per-benchmark
   as-of dates; `benchmark_as_of_date`; and `benchmark_missing_flags`
+- product-level weather fields: weighted 7/30-day temperature features,
+  7/14/30-day precipitation sums, heat/frost stress counts, drought proxy,
+  growing degree days, `weather_as_of_date`, `weather_regions_used`, and
+  `weather_missing_flags`
 - `created_at`
 - `updated_at`
 
@@ -87,6 +93,8 @@ Export v1 includes only sources already materialized into
 - CBR FX rates through the daily feature builder
 - FRED energy prices through the daily feature builder
 - World Bank Pink Sheet commodity benchmarks through the daily feature builder
+- Open-Meteo region-level weather aggregates through
+  `product_weather_region_weights`
 
 ## Sources Excluded
 
@@ -95,21 +103,24 @@ Export v1 intentionally excludes:
 - `historical_price_bars`
 - `historical_price_bar_revisions`
 - news
-- weather
 - sunflower products
 - ML targets and model outputs
 
 ## As-Of And Leakage Policy
 
 Export v1 uses `daily_product_features` exactly as stored. The current feature
-builder uses current snapshot prices, CBR FX, FRED energy prices, and World Bank
-benchmark rows with as-of logic. Energy values use the latest
+builder uses current snapshot prices, CBR FX, FRED energy prices, World Bank
+benchmark rows, and product-level weather aggregates with as-of logic. Energy
+values use the latest
 `energy_prices.period_start <= feature_date`; weekly diesel is forward-filled by
 the same rule. World Bank benchmark values use the latest
 `commodity_benchmarks.period_start <= feature_date`, are forward-filled as
-monthly context features, and include explicit per-series as-of dates. Historical
-bars are not consumed by daily features yet, so the export cannot accidentally
-treat historical backfill as if it was available in the past.
+monthly context features, and include explicit per-series as-of dates. Weather
+values use active/effective product-region weights and only
+`weather_daily_features.feature_date <= product feature_date` with
+`weather_as_of_date <= product feature_date`. Historical bars are not consumed
+by daily features yet, so the export cannot accidentally treat historical
+backfill as if it was available in the past.
 
 ## Known Limitations
 
@@ -119,7 +130,10 @@ treat historical backfill as if it was available in the past.
   series are recorded in `energy_missing_flags`.
 - Benchmark features are monthly and forward-filled by `period_start`; future
   export modes may add stricter `published_at` or `fetched_at` cutoffs.
-- News, weather, and sunflower products are not implemented.
+- Weather features use first-version equal product-region weights and centroid
+  region proxies. Missing or partial regional coverage is recorded in
+  `weather_missing_flags`.
+- News and sunflower products are not implemented.
 - This is a controlled file export, not a public API or dashboard.
 
 ## Run Locally

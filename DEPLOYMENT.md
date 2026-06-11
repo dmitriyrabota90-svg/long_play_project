@@ -651,6 +651,29 @@ does not add a weather scheduler, does not rebuild product daily features, and
 does not add ML targets. Product-level weather feature/export integration is a
 later Phase 6.3F decision.
 
+Phase 6.3F adds product-level weather columns to `daily_product_features`
+through Alembic revision `0013_product_weather_features`, seeds first-version
+equal product-region weather weights, and includes those weather columns in
+the `daily_features` export. Apply this migration only during a reviewed
+deploy:
+
+```bash
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app python -m app.db.seed
+docker compose run --rm app python scripts/build_features.py weather_daily
+docker compose run --rm app python scripts/build_features.py daily
+APP_GIT_COMMIT=$(git rev-parse HEAD) docker compose run --rm -e APP_GIT_COMMIT app \
+  python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+The product weather fields are nullable. The builder uses only active/effective
+`product_weather_region_weights`, only `weather_daily_features.feature_date <=
+feature_date`, and only weather rows whose `weather_as_of_date <= feature_date`.
+Partial or absent regional coverage is recorded in `weather_missing_flags`.
+Phase 6.3F does not add a weather scheduler, does not run weather collectors
+automatically, does not change current price/FX/energy/benchmark collectors,
+and does not add ML targets.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

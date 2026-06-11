@@ -17,8 +17,9 @@ The proposed layer has four future tables:
   weather regions.
 
 Phase 6.3C should implement the schema only. Phase 6.3D should add the first
-controlled/manual weather collector. Phase 6.3E should integrate weather
-features and export columns only after as-of rules are reviewed.
+controlled/manual weather collector. Phase 6.3E should build region-level
+weather aggregates. Phase 6.3F should integrate product-level weather features
+and export columns only after as-of rules are reviewed.
 
 Phase 6.3C implements SQLAlchemy metadata, Alembic revision
 `0012_weather_schema`, idempotent source seeds for Open-Meteo and NASA POWER,
@@ -36,6 +37,13 @@ Phase 6.3E implements local/manual aggregation from `weather_observations` into
 `weather_daily_features`. It remains region-level feature engineering only:
 product-level weather columns and export integration are deferred to a later
 phase.
+
+Phase 6.3F implements the first product-level integration. It adds nullable
+weather columns to `daily_product_features`, seeds equal-weight
+`product_weather_region_weights` for soybean and rapeseed/canola products, and
+includes product weather columns in `daily_features` export v1. It does not add
+ML targets, does not add a weather scheduler, and does not run collectors
+automatically.
 
 ## Why Weather Matters For Agricultural Commodity Forecasting
 
@@ -387,17 +395,24 @@ aggregation design.
 
 ## Future Feature Integration Into `daily_product_features`
 
-Phase 6.3B does not change `daily_product_features`.
+Phase 6.3F adds nullable product-level columns to `daily_product_features`:
 
-Future product-level fields may include:
-
-- `weather_soybean_precipitation_30d_weighted`;
-- `weather_soybean_temperature_30d_weighted`;
-- `weather_soybean_heat_stress_days_30d`;
-- `weather_rapeseed_precipitation_30d_weighted`;
-- `weather_rapeseed_frost_days_30d`;
-- `weather_drought_proxy_30d`;
+- `weather_temperature_7d_mean_weighted`;
+- `weather_temperature_30d_mean_weighted`;
+- `weather_temperature_min_7d_weighted`;
+- `weather_temperature_max_7d_weighted`;
+- `weather_precipitation_7d_sum_weighted`;
+- `weather_precipitation_14d_sum_weighted`;
+- `weather_precipitation_30d_sum_weighted`;
+- `weather_heat_stress_days_7d_weighted`;
+- `weather_heat_stress_days_30d_weighted`;
+- `weather_frost_days_7d_weighted`;
+- `weather_frost_days_30d_weighted`;
+- `weather_drought_proxy_30d_weighted`;
+- `weather_growing_degree_days_7d_weighted`;
+- `weather_growing_degree_days_30d_weighted`;
 - `weather_as_of_date`;
+- `weather_regions_used`;
 - `weather_missing_flags`.
 
 Feature builder rule:
@@ -405,21 +420,22 @@ Feature builder rule:
 1. Build or read `weather_daily_features` by region/date.
 2. Join product to regions through `product_weather_region_weights`.
 3. Use only region features with `feature_date <= product feature_date`.
-4. Weight region values according to the mapping table.
-5. Write explicit missing flags when region coverage is incomplete.
+4. Use only rows whose `weather_as_of_date <= product feature_date`.
+5. Weight region values according to the mapping table.
+6. Compute from available regions when partial data exists.
+7. Write explicit missing flags when region coverage is incomplete.
 
 ## Future Export Integration
 
-Dataset export v1 should not include weather fields until Phase 6.3E explicitly
-adds them to `daily_product_features` and documents the as-of policy.
-
-When weather export integration is added, the manifest should list:
+Phase 6.3F includes weather fields in dataset export v1 after they are
+materialized into `daily_product_features`. The manifest lists:
 
 - source tables: `weather_regions`, `weather_observations`,
   `weather_daily_features`, and `product_weather_region_weights`;
 - first source: `open_meteo_historical_weather`;
-- region mapping version;
-- whether historical backfill was allowed.
+- first weighting method: `equal_weight_first_version`;
+- as-of policy: no `weather_daily_features.feature_date` or `weather_as_of_date`
+  after the product `feature_date`.
 
 No weather-derived targets should be created.
 
@@ -620,6 +636,34 @@ Phase 6.3E does not run weather collectors, does not register a scheduler, does
 not change `daily_product_features`, does not add product-level weather export
 columns, and does not create ML targets.
 
+## Phase 6.3F Product-Level Weather Features
+
+Phase 6.3F connects region-level weather aggregates to products. The first
+mapping uses equal weights:
+
+- `soybean_oil` and `soybean_meal` use seeded soybean regions in Brazil, the
+  United States, and Argentina;
+- `rapeseed_oil` and `rapeseed_meal` use seeded canola/rapeseed regions in
+  Canada, France, and Ukraine/Black Sea.
+
+The mapping rows use `role=production_weather_proxy`, `effective_from=2020-01-01`,
+`effective_to=NULL`, and `is_active=true`. The builder filters weights by
+active/effective date. For every product/date, it uses the latest region-level
+`weather_daily_features` row with `feature_date <= product feature_date`,
+preferring an exact date. If a region has no eligible weather row, the product
+feature is computed from available regions and `weather_missing_flags` records
+the missing region. If no region data exists, weather values stay `NULL` and
+`weather_missing_flags` includes `missing_all_weather_regions`.
+
+The weighted formula is `sum(value * weight) / sum(weights with present value)`.
+The builder records `weather_regions_used` as comma-separated region codes and
+sets `weather_as_of_date` to the max weather as-of date used. It never accepts
+`weather_as_of_date > feature_date`.
+
+Export v1 includes the product-level weather columns and manifest notes for
+Open-Meteo region features, equal weights, centroid limitations, missing flags,
+and leakage policy.
+
 ## Non-Goals
 
 Historical Phase 6.3B design-only non-goals:
@@ -645,7 +689,14 @@ Current Phase 6.3E aggregation non-goals:
 
 - No weather collector run as part of aggregation.
 - No scheduler changes in Phase 6.3E.
-- No product-level weather feature integration yet.
-- No dataset export weather columns yet.
+- No ML model.
+- No targets.
+
+Current Phase 6.3F integration non-goals:
+
+- No server deploy as part of local development.
+- No production DB migration until a separate deploy phase.
+- No weather collector run.
+- No scheduler changes.
 - No ML model.
 - No targets.

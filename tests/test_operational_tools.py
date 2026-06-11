@@ -64,6 +64,10 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["daily_product_features"]["benchmark_coverage"]["rows_with_wheat_benchmark"] == 0
     assert report["daily_product_features"]["benchmark_coverage"]["rows_with_fertilizer_benchmark"] == 0
     assert report["daily_product_features"]["benchmark_coverage"]["latest_benchmark_feature_date"] is None
+    assert report["daily_product_features"]["weather_coverage"]["rows_with_weather_temperature_30d"] == 0
+    assert report["daily_product_features"]["weather_coverage"]["rows_with_weather_precipitation_30d"] == 0
+    assert report["daily_product_features"]["weather_coverage"]["rows_with_weather_gdd_30d"] == 0
+    assert report["daily_product_features"]["weather_coverage"]["latest_product_weather_feature_date"] is None
     assert report["energy_prices"]["count"] == 0
     assert report["energy_prices"]["instruments_count"] == 0
     assert report["energy_prices"]["first_period_start"] is None
