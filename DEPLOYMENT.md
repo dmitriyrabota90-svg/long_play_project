@@ -699,6 +699,20 @@ feature layers. Later phases should implement schema, then a controlled
 official-report/GDELT metadata prototype, then event labeling and feature/export
 integration.
 
+Phase 6.4B is that design-only step. It adds:
+
+```text
+docs/NEWS_EVENTS_DESIGN.md
+docs/sql_drafts/0014_news_events_schema_draft.sql
+```
+
+Do not apply the SQL draft manually. It is not an Alembic migration and does not
+change production. The next deployable step should be Phase 6.4C schema-only
+implementation, followed later by Phase 6.4D controlled GDELT/official-report
+collection, Phase 6.4E rule-based event extraction, and Phase 6.4F news/event
+feature/export integration. Phase 6.4B does not add collectors, schedulers, ML
+targets, or NLP/LLM classifiers.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

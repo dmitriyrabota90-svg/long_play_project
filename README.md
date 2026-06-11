@@ -1255,8 +1255,17 @@ implementation, Phase 6.4D a first controlled news/report collector, Phase
 6.4E rule-based event labeling, and Phase 6.4F daily news/event feature and
 export integration.
 
+Phase 6.4B documents the future news/events schema in
+[docs/NEWS_EVENTS_DESIGN.md](docs/NEWS_EVENTS_DESIGN.md) and adds a draft SQL
+file at `docs/sql_drafts/0014_news_events_schema_draft.sql`. It is design-only:
+no Alembic migration, no SQLAlchemy model changes, no collector, no scheduler
+changes, no DB writes, no ML, no targets, and no NLP/LLM classifier. Planned
+next steps are Phase 6.4C schema-only implementation, Phase 6.4D a first
+controlled GDELT/official-report collector, Phase 6.4E rule-based event
+extraction, and Phase 6.4F daily news/event feature and export integration.
+
 ## Next Phase
 
-The next phase is Phase 6.4B: news/events schema design. It should stay
-design-only until the source model, deduplication, and as-of/leakage policy are
-reviewed.
+The next phase is Phase 6.4C: schema-only implementation for the news/events
+tables. It should not add collectors, schedulers, ML targets, or NLP/LLM
+classifiers.
