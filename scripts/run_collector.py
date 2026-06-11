@@ -18,6 +18,8 @@ from app.collectors.energy.fred_energy_prices import FredEnergyPricesCollector, 
 from app.collectors.fx.cbr_fx import CbrFxCollector
 from app.collectors.historical.jijinhao_historical_prices import JijinhaoHistoricalPricesCollector
 from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
+from app.collectors.weather.open_meteo_config import MAX_DAYS_PER_RUN as OPEN_METEO_MAX_DAYS_PER_RUN
+from app.collectors.weather.open_meteo_historical import OpenMeteoHistoricalWeatherCollector
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
             "jijinhao_historical_prices",
             "fred_energy_prices",
             "world_bank_pink_sheet",
+            "open_meteo_historical_weather",
         ],
         help="Collector name to run",
     )
@@ -39,13 +42,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Required for scheduled runs. ISO datetime, for example 2026-05-12T09:00:00+00:00.",
     )
     parser.add_argument("--date", help="CBR FX rate date as YYYY-MM-DD. Only used by cbr_fx.")
-    parser.add_argument("--from-date", help="Inclusive start date as YYYY-MM-DD. Used by cbr_fx and fred_energy_prices.")
-    parser.add_argument("--to-date", help="Inclusive end date as YYYY-MM-DD. Used by cbr_fx and fred_energy_prices.")
+    parser.add_argument(
+        "--from-date",
+        help="Inclusive start date as YYYY-MM-DD. Used by cbr_fx, energy, benchmark, and weather collectors.",
+    )
+    parser.add_argument(
+        "--to-date",
+        help="Inclusive end date as YYYY-MM-DD. Used by cbr_fx, energy, benchmark, and weather collectors.",
+    )
     parser.add_argument("--endpoint", default="historys", help="Historical collector endpoint alias. Phase 4.6 supports only historys.")
     parser.add_argument("--product-code", help="Optional product code for jijinhao_historical_prices.")
     parser.add_argument("--days", type=int, default=30, help="Historical collector lookback window. Phase 4.6 max is 30.")
     parser.add_argument("--series", help="Optional FRED series id for fred_energy_prices, for example DCOILBRENTEU.")
     parser.add_argument("--benchmark", help="Optional World Bank Pink Sheet benchmark code.")
+    parser.add_argument("--region", help="Optional weather region code for open_meteo_historical_weather.")
     return parser
 
 
@@ -80,7 +90,7 @@ def main() -> None:
             parser.error("--date cannot be combined with --from-date/--to-date")
         if args.collector_name == "cbr_fx" and args.run_type != "manual":
             parser.error("--from-date/--to-date backfill only supports the default manual CLI mode")
-        if args.collector_name in {"fred_energy_prices", "world_bank_pink_sheet"} and args.run_type == "scheduled":
+        if args.collector_name in {"fred_energy_prices", "world_bank_pink_sheet", "open_meteo_historical_weather"} and args.run_type == "scheduled":
             parser.error(f"scheduled runs are not supported for {args.collector_name}")
         try:
             from_date = date.fromisoformat(args.from_date)
@@ -89,6 +99,10 @@ def main() -> None:
             parser.error("--from-date and --to-date must use YYYY-MM-DD format")
         if from_date > to_date:
             parser.error("--from-date must be on or before --to-date")
+        if args.collector_name == "open_meteo_historical_weather":
+            days_count = (to_date - from_date).days + 1
+            if days_count > OPEN_METEO_MAX_DAYS_PER_RUN:
+                parser.error(f"--from-date/--to-date range exceeds {OPEN_METEO_MAX_DAYS_PER_RUN} days")
 
     if args.collector_name != "jijinhao_historical_prices" and args.product_code:
         parser.error("--product-code is only supported for jijinhao_historical_prices")
@@ -100,6 +114,8 @@ def main() -> None:
         parser.error("--series is only supported for fred_energy_prices")
     if args.collector_name != "world_bank_pink_sheet" and args.benchmark:
         parser.error("--benchmark is only supported for world_bank_pink_sheet")
+    if args.collector_name != "open_meteo_historical_weather" and args.region:
+        parser.error("--region is only supported for open_meteo_historical_weather")
 
     if args.collector_name == "current_price_source":
         if requested_date is not None or from_date is not None or to_date is not None:
@@ -148,6 +164,19 @@ def main() -> None:
             to_date=to_date,
             run_type=args.run_type,
         )
+    elif args.collector_name == "open_meteo_historical_weather":
+        if requested_date is not None or collection_slot is not None:
+            parser.error("--date and --collection-slot are not supported for open_meteo_historical_weather")
+        if from_date is None or to_date is None:
+            parser.error("--from-date and --to-date are required for open_meteo_historical_weather")
+        if args.run_type == "scheduled":
+            parser.error("scheduled runs are not supported for open_meteo_historical_weather")
+        result = OpenMeteoHistoricalWeatherCollector().run(
+            region_code=args.region,
+            from_date=from_date,
+            to_date=to_date,
+            run_type=args.run_type,
+        )
     else:
         if requested_date is not None or collection_slot is not None:
             parser.error("--date and --collection-slot are not supported for world_bank_pink_sheet")
@@ -175,10 +204,16 @@ def main() -> None:
         print(f"benchmarks_requested={result.benchmarks_requested}")
         print(f"benchmarks_success={result.benchmarks_success}")
         print(f"benchmarks_failed={result.benchmarks_failed}")
+    if hasattr(result, "regions_requested"):
+        print(f"regions_requested={result.regions_requested}")
+        print(f"regions_success={result.regions_success}")
+        print(f"regions_failed={result.regions_failed}")
     if hasattr(result, "benchmarks"):
         print(f"benchmarks={','.join(result.benchmarks)}")
     if hasattr(result, "instruments"):
         print(f"instruments={','.join(result.instruments)}")
+    if hasattr(result, "regions"):
+        print(f"regions={','.join(result.regions)}")
     if hasattr(result, "from_date"):
         print(f"from_date={result.from_date}")
         print(f"to_date={result.to_date}")

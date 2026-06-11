@@ -26,6 +26,12 @@ initial weather region seeds, and operational reporting for empty weather
 tables. It still does not implement a weather collector, does not write weather
 observation rows, does not register a scheduler, and does not add ML targets.
 
+Phase 6.3D implements the first controlled/manual collector for Open-Meteo
+Historical Weather API. It writes production raw evidence and normalized
+`weather_observations`, but it still does not register a scheduler, does not
+aggregate weather features, and does not add product-level weather export
+columns.
+
 ## Why Weather Matters For Agricultural Commodity Forecasting
 
 Weather affects yield expectations, harvest timing, crop stress, export supply,
@@ -468,13 +474,105 @@ Phase 6.3C does not create a collector, does not run collectors, does not write
 weather observations, does not change schedulers, and does not add weather
 columns to `daily_product_features`.
 
+## Phase 6.3D Open-Meteo Collector
+
+Phase 6.3D adds a manual-only collector named
+`open_meteo_historical_weather`. It uses Open-Meteo Historical Weather API:
+
+```text
+https://archive-api.open-meteo.com/v1/archive
+```
+
+The collector accepts an explicit date range and an optional seeded
+`weather_regions.region_code`. If no region is supplied, it collects active
+regions; longer windows are limited to high/medium priority regions. A single
+manual run is capped at 45 inclusive days.
+
+Example one-region run:
+
+```bash
+python scripts/run_collector.py open_meteo_historical_weather \
+  --region br_mato_grosso_soybean \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-10
+```
+
+Example small all-region run:
+
+```bash
+python scripts/run_collector.py open_meteo_historical_weather \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-03
+```
+
+Requested daily variables:
+
+- `temperature_2m_mean`;
+- `temperature_2m_min`;
+- `temperature_2m_max`;
+- `precipitation_sum`;
+- `rain_sum`;
+- `snowfall_sum`;
+- `relative_humidity_2m_mean`;
+- `wind_speed_10m_mean`;
+- `wind_speed_10m_max`;
+- `shortwave_radiation_sum`;
+- `et0_fao_evapotranspiration`.
+
+Mapped `weather_observations` fields:
+
+- temperature mean/min/max;
+- precipitation sum;
+- snowfall sum;
+- relative humidity mean;
+- wind speed mean/max;
+- evapotranspiration;
+- shortwave radiation.
+
+`rain_sum` is retained as source metadata for now. If optional variables are
+missing or unsupported in a response, the collector stores `NULL` in the mapped
+column and records the missing variable names in `metadata_json`.
+
+Raw evidence policy:
+
+- one Open-Meteo response is saved through `RawStore` per region request;
+- every `weather_observations` row links to `raw_response_id` and
+  `collector_run_id`;
+- diagnostics artifacts are not production raw evidence.
+
+Idempotency policy:
+
+- business key:
+  `source_id + region_id + observation_date + frequency`;
+- same `source_record_hash`: skip;
+- changed `source_record_hash`: write
+  `weather_existing_observation_hash_changed`, increment conflicts, and do not
+  overwrite in Phase 6.3D.
+
+Quality checks include raw response presence, content type, daily arrays,
+parsed rows, observation date, core values, source hash, raw linkage, and
+changed-hash conflicts.
+
+No weather scheduler is registered. `daily_product_features` and dataset export
+do not use weather observations until a later explicit feature phase.
+
 ## Non-Goals
+
+Historical Phase 6.3B design-only non-goals:
 
 - No migration in Phase 6.3B.
 - No SQLAlchemy model changes in Phase 6.3B.
-- No collector.
-- No DB writes.
+- No collector in Phase 6.3B.
+- No DB writes in Phase 6.3B.
 - No scheduler changes.
 - No ML model.
 - No targets.
-- No production deploy.
+
+Current Phase 6.3D collector non-goals:
+
+- No scheduler changes in Phase 6.3D.
+- No automatic feature rebuild from weather rows.
+- No product-level weather export integration yet.
+- No ML model.
+- No targets.
+- No broad gridded weather storage or ERA5/Copernicus collector.

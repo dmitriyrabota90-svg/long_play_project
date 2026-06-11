@@ -609,6 +609,31 @@ controlled phases. The next steps are Phase 6.3D controlled Open-Meteo
 collection, Phase 6.3E weather aggregation/features, and Phase 6.3F product
 daily dataset/export integration.
 
+Phase 6.3D adds a manual-only Open-Meteo Historical Weather collector:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py open_meteo_historical_weather \
+  --region br_mato_grosso_soybean \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-10
+```
+
+For a small all-region check:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py open_meteo_historical_weather \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-03
+```
+
+This collector writes raw evidence through `RawStore`, normalized rows to
+`weather_observations`, and quality checks. It is capped at 45 inclusive days
+per manual run, skips exact duplicate rows, and warns without overwrite on
+changed existing hashes. It has no scheduler, does not rebuild daily features,
+does not write weather-derived product features, and does not add ML targets.
+The next safe step is Phase 6.3E weather daily aggregation from
+`weather_observations`.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

@@ -1145,8 +1145,38 @@ and does not add ML targets. Planned next steps are Phase 6.3D first controlled
 Open-Meteo collector, Phase 6.3E weather daily aggregation/features, and Phase
 6.3F weather integration into the product daily dataset/export.
 
+Phase 6.3D adds the first manual-only Open-Meteo Historical Weather collector.
+It uses the seeded `weather_regions`, bounded date ranges, production
+`RawStore`, `raw_responses`, `weather_observations`, and weather quality checks.
+It does not add a scheduler, does not change `daily_product_features`, and does
+not create ML targets.
+
+Run one region:
+
+```bash
+python scripts/run_collector.py open_meteo_historical_weather \
+  --region br_mato_grosso_soybean \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-10
+```
+
+Run all active regions for a small controlled range:
+
+```bash
+python scripts/run_collector.py open_meteo_historical_weather \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-03
+```
+
+The collector currently limits one manual run to 45 inclusive days. Same
+`source_id + region_id + observation_date + frequency` rows with the same
+`source_record_hash` are skipped; changed hashes create
+`weather_existing_observation_hash_changed` warnings and are not overwritten in
+Phase 6.3D. Missing optional Open-Meteo variables are stored as `NULL` and
+listed in `metadata_json`.
+
 ## Next Phase
 
-The next phase is to let collection continue for a few days, audit the exported
-feature dataset, and then decide whether the daily feature builder needs its own
-controlled scheduler.
+The next phase is Phase 6.3E: aggregate `weather_observations` into
+`weather_daily_features` locally, then review product-level weather feature and
+export integration separately.
