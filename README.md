@@ -1510,8 +1510,29 @@ licensing decisions before production automation.
 
 Diagnostics artifacts are runtime files and should not be committed.
 
+## Phase 6.7B Supply-Demand Schema Design
+
+Phase 6.7B is design-only. It documents the future supply-demand /
+production-stocks schema and SQL draft without changing SQLAlchemy models,
+without creating an Alembic migration, without writing PostgreSQL rows, without
+adding collectors, and without changing schedulers.
+
+Design artifacts:
+
+```text
+docs/SUPPLY_DEMAND_DESIGN.md
+docs/sql_drafts/0018_supply_demand_schema_draft.sql
+```
+
+The proposed future tables are `supply_demand_commodities`,
+`supply_demand_observations`, `supply_demand_revisions`,
+`product_supply_demand_weights`, and `daily_supply_demand_features`.
+The first future source remains USDA PSD / FAS PSD Online. Do not apply the SQL
+draft manually; Phase 6.7C should implement the reviewed schema through Alembic.
+
 ## Next Phase
 
-After Phase 6.7A, the next local design phase is Phase 6.7B: design the
-supply-demand balance schema, release/vintage model, revision policy, and
-as-of-safe daily feature path before any production collector or migration.
+After Phase 6.7B, the next recommended phase is Phase 6.7C: schema-only
+implementation for the supply-demand tables, source seeds, and tests. Later
+phases should add the first controlled USDA PSD collector and then
+supply-demand feature/export integration.

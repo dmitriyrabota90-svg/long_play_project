@@ -981,6 +981,22 @@ server deploy, migrations, production DB writes, collector runs, scheduler
 changes, ML, or targets. The next step is Phase 6.7B schema/as-of design before
 any production supply-demand collector.
 
+Phase 6.7B is that design-only schema step. It adds:
+
+```text
+docs/SUPPLY_DEMAND_DESIGN.md
+docs/sql_drafts/0018_supply_demand_schema_draft.sql
+```
+
+Do not apply the SQL draft manually. It is not an Alembic migration and does not
+change production. The proposed future tables are `supply_demand_commodities`,
+`supply_demand_observations`, `supply_demand_revisions`,
+`product_supply_demand_weights`, and `daily_supply_demand_features`. Planned
+next steps are Phase 6.7C schema-only implementation, Phase 6.7D a controlled
+USDA PSD collector/prototype, and Phase 6.7E supply-demand feature/export
+integration. Phase 6.7B does not add collectors, schedulers, DB writes, ML
+targets, or dataset targets.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
