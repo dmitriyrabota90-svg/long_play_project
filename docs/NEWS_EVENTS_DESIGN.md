@@ -27,6 +27,13 @@ It still does not implement a collector, does not write news rows, does not
 register a scheduler, does not add ML targets, and does not add an NLP/LLM
 classifier.
 
+Phase 6.4D implements the first controlled GDELT DOC article metadata collector
+named `gdelt_news`. It is manual-only, bounded to small date windows, stores raw
+evidence through `RawStore`, writes `raw_responses`, and inserts normalized rows
+into `news_articles`. It intentionally does not write `commodity_events`, does
+not build `daily_news_features`, does not register a scheduler, and does not add
+ML/NLP/LLM classification.
+
 ## Why News/Events Matter For Agricultural Commodity Price Forecasting
 
 News and official releases can change price expectations before slower monthly
@@ -424,6 +431,41 @@ Future collectors must be bounded:
 Paid/commercial APIs require separate license review before automated
 collection.
 
+## Phase 6.4D GDELT Collector Policy
+
+The first implemented news collector uses GDELT 2.1 DOC `ArtList` responses via
+`https://api.gdeltproject.org/api/v2/doc/doc`.
+
+Supported query presets:
+
+| query_key | commodity_family | affected products | notes |
+| --- | --- | --- | --- |
+| `soybean` | `soybean` | `soybean_oil`, `soybean_meal` | Soybean, soybean oil, and soybean meal context. |
+| `rapeseed_canola` | `rapeseed` | `rapeseed_oil`, `rapeseed_meal` | Rapeseed/canola market context. |
+| `vegetable_oils` | `vegetable_oils` | `soybean_oil`, `rapeseed_oil` | Palm/edible oil substitution context. |
+| `grain_oilseed_policy` | `policy_context` | all current products | Policy, weather, logistics, Black Sea, and biofuel context. |
+
+Limits:
+
+- require `--query-key` or `--query`;
+- require `--from-date` and `--to-date`;
+- maximum inclusive date range: 7 days;
+- maximum `maxrecords`: 100;
+- explicit timeout and user agent;
+- no scheduler.
+
+Identity and dedup:
+
+- use source stable IDs only when GDELT provides one;
+- otherwise use normalized URL identity in `article_hash`;
+- store changed title/summary/source metadata in `source_record_hash`;
+- unchanged retries increment `skipped_existing`;
+- changed existing identities create `news_existing_article_hash_changed`
+  warnings and are not overwritten in Phase 6.4D.
+
+The collector stores metadata only. It does not fetch or store article bodies
+from publisher pages.
+
 ## Future Feature Integration Into Daily Product Features
 
 `daily_product_features` should not be changed in Phase 6.4B. A later phase can
@@ -475,6 +517,17 @@ Phase 6.4C implements schema-only support:
 Phase 6.4C must not implement collectors, run collectors, register schedulers,
 write news rows, add ML targets, or add NLP/LLM classifiers.
 
+Phase 6.4D implements only the GDELT metadata collector:
+
+- collector config and parser under `app/collectors/news/`;
+- CLI support through `python scripts/run_collector.py gdelt_news`;
+- mocked tests for parsing, validation, idempotency, raw linkage, quality
+  checks, and operational report visibility.
+
+Phase 6.4D must not write `commodity_events`, must not build
+`daily_news_features`, must not register a scheduler, must not add ML targets,
+and must not add NLP/LLM classifiers.
+
 ## Non-Goals
 
 - No migration in Phase 6.4B.
@@ -485,3 +538,6 @@ write news rows, add ML targets, or add NLP/LLM classifiers.
 - No ML in Phase 6.4B.
 - No targets in Phase 6.4B.
 - No LLM classifier in Phase 6.4B.
+- No event extraction in Phase 6.4D.
+- No `commodity_events` writes in Phase 6.4D.
+- No news scheduler in Phase 6.4D.

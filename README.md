@@ -24,6 +24,7 @@ Implemented in this skeleton:
 - Manual FRED energy collector.
 - Manual World Bank Pink Sheet commodity benchmark collector.
 - Manual Open-Meteo historical weather collector and weather feature builders.
+- Manual GDELT news metadata collector.
 - Daily feature builder with price, FX, calendar, energy, benchmark, and weather features.
 - Health-check helper.
 - Dataset export v1 with manifest and SHA-256 checks.
@@ -32,7 +33,8 @@ Implemented in this skeleton:
 
 Not implemented yet:
 
-- News, sunflower product, and fundamental collectors.
+- Sunflower product and fundamental collectors.
+- News event extraction and news feature builders.
 - Automatic schedulers for historical, energy, benchmark, and weather collectors.
 - Dataset target calculation.
 - ML model training.
@@ -1274,7 +1276,41 @@ later phase. Phase 6.4C does not add a collector, does not write news rows, does
 not register a scheduler, does not add ML targets, and does not add an NLP/LLM
 classifier.
 
+Phase 6.4D adds the first manual-only GDELT news collector. It stores bounded
+GDELT DOC article metadata in `news_articles`, stores raw evidence through the
+normal `RawStore`/`raw_responses` path, and writes news-specific quality checks.
+It does not write `commodity_events`, does not build `daily_news_features`, does
+not add a scheduler, does not add ML targets, and does not add an NLP/LLM
+classifier.
+
+Run a small preset query:
+
+```bash
+python scripts/run_collector.py gdelt_news \
+  --query-key soybean \
+  --from-date 2026-06-01 \
+  --to-date 2026-06-03 \
+  --maxrecords 25
+```
+
+Run a bounded custom query:
+
+```bash
+python scripts/run_collector.py gdelt_news \
+  --query "soybean oil export ban" \
+  --from-date 2026-06-01 \
+  --to-date 2026-06-03 \
+  --maxrecords 25
+```
+
+Supported query presets are `soybean`, `rapeseed_canola`, `vegetable_oils`, and
+`grain_oilseed_policy`. Phase 6.4D limits one request to 7 inclusive days and
+`maxrecords <= 100`. Re-running the same source result skips unchanged articles;
+same identity with changed metadata creates `news_existing_article_hash_changed`
+quality warnings and is not overwritten in this phase.
+
 ## Next Phase
 
-The next phase is Phase 6.4D: first controlled GDELT/news collector,
-local-only. It should remain manual, bounded, and raw-evidence backed.
+The next phase is Phase 6.4E: rule-based event extraction from `news_articles`,
+local-only. It should keep extraction method/version explicit and must not add
+ML or LLM classification.

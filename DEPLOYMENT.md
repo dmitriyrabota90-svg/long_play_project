@@ -722,6 +722,52 @@ not expect the news/event tables to contain rows until later controlled phases.
 The next steps are Phase 6.4D controlled GDELT/news collection, Phase 6.4E
 rule-based event extraction, and Phase 6.4F daily feature/export integration.
 
+Phase 6.4D adds a manual-only GDELT DOC article metadata collector named
+`gdelt_news`. It writes raw API responses through `RawStore`, links
+`raw_responses`, and inserts normalized article metadata into `news_articles`.
+It does not write `commodity_events`, does not build `daily_news_features`, does
+not add a scheduler, and does not add ML/NLP/LLM classification.
+
+Run only small controlled windows:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py gdelt_news \
+  --query-key soybean \
+  --from-date 2026-06-01 \
+  --to-date 2026-06-03 \
+  --maxrecords 25
+```
+
+Supported query presets are `soybean`, `rapeseed_canola`, `vegetable_oils`, and
+`grain_oilseed_policy`. The first collector limits one request to 7 inclusive
+days and `maxrecords <= 100`. Same identity with unchanged metadata is skipped;
+changed metadata creates `news_existing_article_hash_changed` quality warnings
+and is not overwritten.
+
+Useful checks after a controlled run:
+
+```sql
+SELECT source_name, language, COUNT(*) AS rows_count,
+       MIN(published_at) AS first_published_at,
+       MAX(published_at) AS last_published_at
+FROM news_articles
+GROUP BY source_name, language
+ORDER BY rows_count DESC, source_name;
+
+SELECT source_id, article_hash, COUNT(*)
+FROM news_articles
+GROUP BY source_id, article_hash
+HAVING COUNT(*) > 1;
+
+SELECT COUNT(*) AS rows_without_raw_response
+FROM news_articles
+WHERE raw_response_id IS NULL;
+```
+
+The next steps are Phase 6.4E rule-based event extraction from `news_articles`
+and Phase 6.4F daily feature/export integration. Do not add a news scheduler or
+ML classifier during Phase 6.4D rollout.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

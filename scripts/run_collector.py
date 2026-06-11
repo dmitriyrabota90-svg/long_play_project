@@ -17,6 +17,8 @@ from app.collectors.benchmarks.world_bank_pink_sheet_config import is_known_benc
 from app.collectors.energy.fred_energy_prices import FredEnergyPricesCollector, is_known_series
 from app.collectors.fx.cbr_fx import CbrFxCollector
 from app.collectors.historical.jijinhao_historical_prices import JijinhaoHistoricalPricesCollector
+from app.collectors.news.gdelt_config import is_known_query_key
+from app.collectors.news.gdelt_news import GdeltNewsCollector
 from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
 from app.collectors.weather.open_meteo_config import MAX_DAYS_PER_RUN as OPEN_METEO_MAX_DAYS_PER_RUN
 from app.collectors.weather.open_meteo_historical import OpenMeteoHistoricalWeatherCollector
@@ -31,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
             "cbr_fx",
             "jijinhao_historical_prices",
             "fred_energy_prices",
+            "gdelt_news",
             "world_bank_pink_sheet",
             "open_meteo_historical_weather",
         ],
@@ -44,11 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--date", help="CBR FX rate date as YYYY-MM-DD. Only used by cbr_fx.")
     parser.add_argument(
         "--from-date",
-        help="Inclusive start date as YYYY-MM-DD. Used by cbr_fx, energy, benchmark, and weather collectors.",
+        help="Inclusive start date as YYYY-MM-DD. Used by cbr_fx, energy, benchmark, weather, and news collectors.",
     )
     parser.add_argument(
         "--to-date",
-        help="Inclusive end date as YYYY-MM-DD. Used by cbr_fx, energy, benchmark, and weather collectors.",
+        help="Inclusive end date as YYYY-MM-DD. Used by cbr_fx, energy, benchmark, weather, and news collectors.",
     )
     parser.add_argument("--endpoint", default="historys", help="Historical collector endpoint alias. Phase 4.6 supports only historys.")
     parser.add_argument("--product-code", help="Optional product code for jijinhao_historical_prices.")
@@ -56,6 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--series", help="Optional FRED series id for fred_energy_prices, for example DCOILBRENTEU.")
     parser.add_argument("--benchmark", help="Optional World Bank Pink Sheet benchmark code.")
     parser.add_argument("--region", help="Optional weather region code for open_meteo_historical_weather.")
+    parser.add_argument("--query-key", help="Optional GDELT news query preset key, for example soybean.")
+    parser.add_argument("--query", help="Optional custom GDELT news query string.")
+    parser.add_argument("--maxrecords", type=int, help="Optional GDELT maxrecords value. Phase 6.4D max is 100.")
     return parser
 
 
@@ -90,7 +96,11 @@ def main() -> None:
             parser.error("--date cannot be combined with --from-date/--to-date")
         if args.collector_name == "cbr_fx" and args.run_type != "manual":
             parser.error("--from-date/--to-date backfill only supports the default manual CLI mode")
-        if args.collector_name in {"fred_energy_prices", "world_bank_pink_sheet", "open_meteo_historical_weather"} and args.run_type == "scheduled":
+        if (
+            args.collector_name
+            in {"fred_energy_prices", "world_bank_pink_sheet", "open_meteo_historical_weather", "gdelt_news"}
+            and args.run_type == "scheduled"
+        ):
             parser.error(f"scheduled runs are not supported for {args.collector_name}")
         try:
             from_date = date.fromisoformat(args.from_date)
@@ -116,6 +126,12 @@ def main() -> None:
         parser.error("--benchmark is only supported for world_bank_pink_sheet")
     if args.collector_name != "open_meteo_historical_weather" and args.region:
         parser.error("--region is only supported for open_meteo_historical_weather")
+    if args.collector_name != "gdelt_news" and args.query_key:
+        parser.error("--query-key is only supported for gdelt_news")
+    if args.collector_name != "gdelt_news" and args.query:
+        parser.error("--query is only supported for gdelt_news")
+    if args.collector_name != "gdelt_news" and args.maxrecords is not None:
+        parser.error("--maxrecords is only supported for gdelt_news")
 
     if args.collector_name == "current_price_source":
         if requested_date is not None or from_date is not None or to_date is not None:
@@ -177,6 +193,25 @@ def main() -> None:
             to_date=to_date,
             run_type=args.run_type,
         )
+    elif args.collector_name == "gdelt_news":
+        if requested_date is not None or collection_slot is not None:
+            parser.error("--date and --collection-slot are not supported for gdelt_news")
+        if from_date is None or to_date is None:
+            parser.error("--from-date and --to-date are required for gdelt_news")
+        if args.run_type != "manual":
+            parser.error("gdelt_news is manual-only in Phase 6.4D")
+        if bool(args.query_key) == bool(args.query):
+            parser.error("provide exactly one of --query-key or --query for gdelt_news")
+        if args.query_key and not is_known_query_key(args.query_key):
+            parser.error(f"unknown GDELT query-key: {args.query_key}")
+        result = GdeltNewsCollector().run(
+            query_key=args.query_key,
+            query=args.query,
+            from_date=from_date,
+            to_date=to_date,
+            maxrecords=args.maxrecords,
+            run_type=args.run_type,
+        )
     else:
         if requested_date is not None or collection_slot is not None:
             parser.error("--date and --collection-slot are not supported for world_bank_pink_sheet")
@@ -194,6 +229,12 @@ def main() -> None:
     print(f"status={result.status}")
     if hasattr(result, "endpoint_alias"):
         print(f"endpoint_alias={result.endpoint_alias}")
+    if hasattr(result, "query_key"):
+        print(f"query_key={result.query_key}")
+    if hasattr(result, "query"):
+        print(f"query={result.query}")
+    if hasattr(result, "maxrecords"):
+        print(f"maxrecords={result.maxrecords}")
     if hasattr(result, "products_processed"):
         print(f"products_processed={result.products_processed}")
     if hasattr(result, "series_requested"):
@@ -231,6 +272,8 @@ def main() -> None:
         print(f"revisions_written={result.revisions_written}")
     if hasattr(result, "conflicts_count"):
         print(f"conflicts_count={result.conflicts_count}")
+    if hasattr(result, "skipped_malformed"):
+        print(f"skipped_malformed={result.skipped_malformed}")
     if hasattr(result, "observed_at_values"):
         print(f"observed_at_values={','.join(result.observed_at_values)}")
     if hasattr(result, "currency_pairs"):
