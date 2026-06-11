@@ -13,12 +13,15 @@ from app.config.settings import get_settings
 from app.db.models import (
     CollectorRun,
     CommodityBenchmark,
+    CommodityEvent,
     DailyProductFeature,
+    DailyNewsFeature,
     DataQualityCheck,
     EnergyPrice,
     FxRate,
     HistoricalPriceBar,
     HistoricalPriceBarRevision,
+    NewsArticle,
     PriceObservation,
     ProductWeatherRegionWeight,
     Product,
@@ -157,6 +160,29 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "active_count": 0,
             "products_count": 0,
             "regions_count": 0,
+        },
+        "news_articles": {
+            "count": 0,
+            "sources_count": 0,
+            "first_published_at": None,
+            "last_published_at": None,
+            "last_fetched_at": None,
+            "languages_count": 0,
+        },
+        "commodity_events": {
+            "count": 0,
+            "categories_count": 0,
+            "commodity_families_count": 0,
+            "first_event_date": None,
+            "last_event_date": None,
+            "latest_published_at": None,
+        },
+        "daily_news_features": {
+            "count": 0,
+            "products_count": 0,
+            "first_feature_date": None,
+            "last_feature_date": None,
+            "latest_news_as_of_date": None,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -401,6 +427,40 @@ def _fill_db_report(
         "regions_count": session.scalar(
             select(func.count(func.distinct(ProductWeatherRegionWeight.region_id))).select_from(ProductWeatherRegionWeight)
         ),
+    }
+    first_news_published_at = session.scalar(select(func.min(NewsArticle.published_at)))
+    last_news_published_at = session.scalar(select(func.max(NewsArticle.published_at)))
+    last_news_fetched_at = session.scalar(select(func.max(NewsArticle.fetched_at)))
+    report["news_articles"] = {
+        "count": session.scalar(select(func.count()).select_from(NewsArticle)),
+        "sources_count": session.scalar(select(func.count(func.distinct(NewsArticle.source_id))).select_from(NewsArticle)),
+        "first_published_at": _to_utc(first_news_published_at).isoformat() if first_news_published_at else None,
+        "last_published_at": _to_utc(last_news_published_at).isoformat() if last_news_published_at else None,
+        "last_fetched_at": _to_utc(last_news_fetched_at).isoformat() if last_news_fetched_at else None,
+        "languages_count": session.scalar(select(func.count(func.distinct(NewsArticle.language))).select_from(NewsArticle)),
+    }
+    first_event_date = session.scalar(select(func.min(CommodityEvent.event_date)))
+    last_event_date = session.scalar(select(func.max(CommodityEvent.event_date)))
+    latest_event_published_at = session.scalar(select(func.max(CommodityEvent.published_at)))
+    report["commodity_events"] = {
+        "count": session.scalar(select(func.count()).select_from(CommodityEvent)),
+        "categories_count": session.scalar(select(func.count(func.distinct(CommodityEvent.event_category))).select_from(CommodityEvent)),
+        "commodity_families_count": session.scalar(
+            select(func.count(func.distinct(CommodityEvent.commodity_family))).select_from(CommodityEvent)
+        ),
+        "first_event_date": first_event_date.isoformat() if first_event_date else None,
+        "last_event_date": last_event_date.isoformat() if last_event_date else None,
+        "latest_published_at": _to_utc(latest_event_published_at).isoformat() if latest_event_published_at else None,
+    }
+    first_news_feature_date = session.scalar(select(func.min(DailyNewsFeature.feature_date)))
+    last_news_feature_date = session.scalar(select(func.max(DailyNewsFeature.feature_date)))
+    latest_news_as_of_date = session.scalar(select(func.max(DailyNewsFeature.news_as_of_date)))
+    report["daily_news_features"] = {
+        "count": session.scalar(select(func.count()).select_from(DailyNewsFeature)),
+        "products_count": session.scalar(select(func.count(func.distinct(DailyNewsFeature.product_id))).select_from(DailyNewsFeature)),
+        "first_feature_date": first_news_feature_date.isoformat() if first_news_feature_date else None,
+        "last_feature_date": last_news_feature_date.isoformat() if last_news_feature_date else None,
+        "latest_news_as_of_date": latest_news_as_of_date.isoformat() if latest_news_as_of_date else None,
     }
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(

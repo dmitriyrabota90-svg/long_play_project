@@ -80,7 +80,20 @@ CREATE TABLE commodity_events (
     metadata_json JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_commodity_events_article_event_family_geo_date_method
+    CONSTRAINT ck_commodity_events_category
+        CHECK (event_category IN (
+            'export_restriction',
+            'import_policy',
+            'war_logistics_disruption',
+            'weather_disaster',
+            'crop_report',
+            'biofuel_policy',
+            'energy_shock',
+            'currency_macro',
+            'demand_shock',
+            'supply_chain'
+        )),
+    CONSTRAINT uq_commodity_events_identity
         UNIQUE (news_article_id, event_category, commodity_family, country, region, event_date, extraction_method),
     CONSTRAINT ck_commodity_events_direction
         CHECK (direction_hint IN ('bullish', 'bearish', 'mixed', 'unknown')),
@@ -112,6 +125,9 @@ CREATE INDEX ix_commodity_events_confidence
 
 CREATE INDEX ix_commodity_events_article_id
     ON commodity_events (news_article_id);
+
+CREATE INDEX ix_commodity_events_source_id
+    ON commodity_events (source_id);
 
 CREATE TABLE daily_news_features (
     id INTEGER PRIMARY KEY,

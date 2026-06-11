@@ -32,6 +32,10 @@ def test_seed_is_idempotent() -> None:
         fao_source = session.scalar(select(Source).where(Source.code == "fao_price_indices"))
         open_meteo_source = session.scalar(select(Source).where(Source.code == "open_meteo_historical_weather"))
         nasa_power_source = session.scalar(select(Source).where(Source.code == "nasa_power_weather"))
+        gdelt_2_1_source = session.scalar(select(Source).where(Source.code == "gdelt_2_1"))
+        usda_reports_source = session.scalar(select(Source).where(Source.code == "usda_reports"))
+        fao_news_releases_source = session.scalar(select(Source).where(Source.code == "fao_news_releases"))
+        world_bank_releases_source = session.scalar(select(Source).where(Source.code == "world_bank_commodity_releases"))
         weather_region_count = session.scalar(select(func.count()).select_from(WeatherRegion))
         product_weather_weights_count = session.scalar(select(func.count()).select_from(ProductWeatherRegionWeight))
         mato_grosso_region = session.scalar(
@@ -89,6 +93,22 @@ def test_seed_is_idempotent() -> None:
     assert nasa_power_source.name == "NASA POWER Weather / Agroclimatology"
     assert nasa_power_source.source_type == "weather"
     assert nasa_power_source.base_url == "https://power.larc.nasa.gov/"
+    assert gdelt_2_1_source is not None
+    assert gdelt_2_1_source.name == "GDELT 2.1 DOC/Event APIs"
+    assert gdelt_2_1_source.source_type == "news_event"
+    assert gdelt_2_1_source.base_url == "https://www.gdeltproject.org/"
+    assert usda_reports_source is not None
+    assert usda_reports_source.name == "USDA Reports / WASDE / PSD"
+    assert usda_reports_source.source_type == "official_report"
+    assert usda_reports_source.base_url == "https://www.usda.gov/oce/commodity/wasde"
+    assert fao_news_releases_source is not None
+    assert fao_news_releases_source.name == "FAO News / Food Price Index Releases"
+    assert fao_news_releases_source.source_type == "official_release"
+    assert fao_news_releases_source.base_url == "https://www.fao.org/newsroom/"
+    assert world_bank_releases_source is not None
+    assert world_bank_releases_source.name == "World Bank Commodity Market Releases"
+    assert world_bank_releases_source.source_type == "official_release"
+    assert world_bank_releases_source.base_url == "https://www.worldbank.org/en/research/commodity-markets"
     assert mato_grosso_region is not None
     assert mato_grosso_region.priority == "high"
     assert mato_grosso_region.commodity_family == "soybean"

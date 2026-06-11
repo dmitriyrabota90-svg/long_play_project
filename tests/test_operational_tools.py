@@ -99,6 +99,23 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["product_weather_region_weights"]["active_count"] == 0
     assert report["product_weather_region_weights"]["products_count"] == 0
     assert report["product_weather_region_weights"]["regions_count"] == 0
+    assert report["news_articles"]["count"] == 0
+    assert report["news_articles"]["sources_count"] == 0
+    assert report["news_articles"]["first_published_at"] is None
+    assert report["news_articles"]["last_published_at"] is None
+    assert report["news_articles"]["last_fetched_at"] is None
+    assert report["news_articles"]["languages_count"] == 0
+    assert report["commodity_events"]["count"] == 0
+    assert report["commodity_events"]["categories_count"] == 0
+    assert report["commodity_events"]["commodity_families_count"] == 0
+    assert report["commodity_events"]["first_event_date"] is None
+    assert report["commodity_events"]["last_event_date"] is None
+    assert report["commodity_events"]["latest_published_at"] is None
+    assert report["daily_news_features"]["count"] == 0
+    assert report["daily_news_features"]["products_count"] == 0
+    assert report["daily_news_features"]["first_feature_date"] is None
+    assert report["daily_news_features"]["last_feature_date"] is None
+    assert report["daily_news_features"]["latest_news_as_of_date"] is None
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:

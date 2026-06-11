@@ -19,6 +19,14 @@ first controlled GDELT/report collector. Phase 6.4E should add rule-based event
 extraction. Phase 6.4F should integrate daily news/event features and export
 columns only after as-of rules are reviewed.
 
+Phase 6.4C implements schema-only support for the news/events layer:
+SQLAlchemy metadata, Alembic revision `0014_news_events_schema`, idempotent
+source seeds for GDELT 2.1, USDA reports, FAO releases, and World Bank
+commodity releases, and operational report counts for empty news/event tables.
+It still does not implement a collector, does not write news rows, does not
+register a scheduler, does not add ML targets, and does not add an NLP/LLM
+classifier.
+
 ## Why News/Events Matter For Agricultural Commodity Price Forecasting
 
 News and official releases can change price expectations before slower monthly
@@ -455,12 +463,13 @@ Export v1 can include news fields only after:
 
 ## Migration Plan For Next Phase
 
-Phase 6.4C should implement schema-only support:
+Phase 6.4C implements schema-only support:
 
 - SQLAlchemy metadata for `news_articles`, `commodity_events`, and
   `daily_news_features`;
-- Alembic migration based on reviewed SQL draft;
-- optional source seeds if they are needed for schema/readiness;
+- Alembic revision `0014_news_events_schema`;
+- idempotent source seeds for `gdelt_2_1`, `usda_reports`,
+  `fao_news_releases`, and `world_bank_commodity_releases`;
 - operational report counts that treat empty tables as normal.
 
 Phase 6.4C must not implement collectors, run collectors, register schedulers,

@@ -1264,8 +1264,17 @@ next steps are Phase 6.4C schema-only implementation, Phase 6.4D a first
 controlled GDELT/official-report collector, Phase 6.4E rule-based event
 extraction, and Phase 6.4F daily news/event feature and export integration.
 
+Phase 6.4C implements schema-only support for `news_articles`,
+`commodity_events`, and `daily_news_features` through Alembic revision
+`0014_news_events_schema`, SQLAlchemy metadata, idempotent seeds for
+`gdelt_2_1`, `usda_reports`, `fao_news_releases`, and
+`world_bank_commodity_releases`, and operational report counts. The new tables
+are expected to be empty until a controlled news/report collector is added in a
+later phase. Phase 6.4C does not add a collector, does not write news rows, does
+not register a scheduler, does not add ML targets, and does not add an NLP/LLM
+classifier.
+
 ## Next Phase
 
-The next phase is Phase 6.4C: schema-only implementation for the news/events
-tables. It should not add collectors, schedulers, ML targets, or NLP/LLM
-classifiers.
+The next phase is Phase 6.4D: first controlled GDELT/news collector,
+local-only. It should remain manual, bounded, and raw-evidence backed.

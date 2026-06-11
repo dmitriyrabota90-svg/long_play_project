@@ -33,7 +33,7 @@ def test_sql_draft_contains_important_unique_constraints() -> None:
     assert "WHERE external_id IS NOT NULL" in sql
     assert "uq_news_articles_source_article_hash" in sql
     assert "ON news_articles (source_id, article_hash)" in sql
-    assert "uq_commodity_events_article_event_family_geo_date_method" in sql
+    assert "uq_commodity_events_identity" in sql
     assert "UNIQUE (news_article_id, event_category, commodity_family, country, region, event_date, extraction_method)" in sql
     assert "uq_daily_news_features_product_date" in sql
     assert "UNIQUE (product_id, feature_date)" in sql

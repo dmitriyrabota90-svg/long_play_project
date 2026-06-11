@@ -95,6 +95,15 @@ SOURCES: tuple[SourceSeed, ...] = (
     SourceSeed("eia_energy", "EIA energy data", "energy", "https://www.eia.gov/"),
     SourceSeed("usda_psd", "USDA FAS PSD", "fundamental", "https://apps.fas.usda.gov/psdonline/"),
     SourceSeed("gdelt_news", "GDELT news", "news", "https://www.gdeltproject.org/"),
+    SourceSeed("gdelt_2_1", "GDELT 2.1 DOC/Event APIs", "news_event", "https://www.gdeltproject.org/"),
+    SourceSeed("usda_reports", "USDA Reports / WASDE / PSD", "official_report", "https://www.usda.gov/oce/commodity/wasde"),
+    SourceSeed("fao_news_releases", "FAO News / Food Price Index Releases", "official_release", "https://www.fao.org/newsroom/"),
+    SourceSeed(
+        "world_bank_commodity_releases",
+        "World Bank Commodity Market Releases",
+        "official_release",
+        "https://www.worldbank.org/en/research/commodity-markets",
+    ),
     SourceSeed("open_meteo_weather", "Open-Meteo weather", "weather", "https://open-meteo.com/"),
     SourceSeed(
         "open_meteo_historical_weather",

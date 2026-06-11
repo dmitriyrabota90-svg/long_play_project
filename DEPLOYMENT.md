@@ -713,6 +713,15 @@ collection, Phase 6.4E rule-based event extraction, and Phase 6.4F news/event
 feature/export integration. Phase 6.4B does not add collectors, schedulers, ML
 targets, or NLP/LLM classifiers.
 
+Phase 6.4C adds Alembic revision `0014_news_events_schema`, SQLAlchemy models
+for `news_articles`, `commodity_events`, and `daily_news_features`, idempotent
+source seeds for `gdelt_2_1`, `usda_reports`, `fao_news_releases`, and
+`world_bank_commodity_releases`, and operational report counts. It is still
+schema-only: do not run news collectors, do not add a news scheduler, and do
+not expect the news/event tables to contain rows until later controlled phases.
+The next steps are Phase 6.4D controlled GDELT/news collection, Phase 6.4E
+rule-based event extraction, and Phase 6.4F daily feature/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
