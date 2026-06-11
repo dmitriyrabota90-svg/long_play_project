@@ -19,7 +19,7 @@ CREATE TABLE trade_commodity_codes (
     metadata_json JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_trade_commodity_codes_system_code_revision
+    CONSTRAINT uq_trade_codes_system_code_rev
         UNIQUE (code_system, commodity_code, hs_revision),
     CONSTRAINT ck_trade_commodity_codes_relevance
         CHECK (relevance IN ('direct', 'context', 'later'))

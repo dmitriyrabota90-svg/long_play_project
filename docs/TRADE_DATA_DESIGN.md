@@ -22,6 +22,13 @@ Phase 6.5C should implement the reviewed schema only. Phase 6.5D should add the
 first controlled trade collector. Phase 6.5E should integrate trade features
 and export columns only after as-of rules are reviewed.
 
+Phase 6.5C implements SQLAlchemy metadata, Alembic revision
+`0016_trade_schema`, idempotent source seeds, core HS commodity-code seeds,
+direct first-version product trade-code weights, and operational report counts.
+It remains schema-only: it does not implement a collector, does not write
+`trade_flows`, does not build `daily_trade_features`, does not register a
+scheduler, and does not add ML targets.
+
 ## Why Trade/Import-Export Matters For Agricultural Commodity Price Forecasting
 
 Trade flows describe physical availability, destination demand, export
@@ -295,6 +302,10 @@ Initial design:
 - `soybean_meal` -> HS `2304` direct, HS `1201`/`1507` context;
 - `rapeseed_oil` -> HS `1514` direct, HS `1205`/`2306` context;
 - `rapeseed_meal` -> HS `2306` direct, HS `1205`/`1514` context.
+
+Phase 6.5C seeds only the direct `1.0` mappings. Context weights are documented
+for later feature design because a fixed `0.5` context weight would be
+subjective before the first trade collector and feature validation.
 
 ## Daily Trade Features
 

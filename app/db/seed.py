@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.logging import setup_logging
-from app.db.models import Product, ProductWeatherRegionWeight, Source, WeatherRegion
+from app.db.models import Product, ProductTradeCodeWeight, ProductWeatherRegionWeight, Source, TradeCommodityCode, WeatherRegion
 from app.db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,34 @@ class ProductWeatherRegionWeightSeed:
     region_code: str
     weight: Decimal
     role: str = "production_weather_proxy"
+    effective_from: date = date(2020, 1, 1)
+    effective_to: date | None = None
+    is_active: bool = True
+
+
+@dataclass(frozen=True)
+class TradeCommodityCodeSeed:
+    code_system: str
+    commodity_code: str
+    commodity_name: str
+    hs_code: str | None
+    hs_revision: str
+    commodity_family: str
+    product_code: str | None
+    relevance: str
+    unit_hint: str | None
+    hs_description: str
+    mapping_note: str
+    is_active: bool = True
+
+
+@dataclass(frozen=True)
+class ProductTradeCodeWeightSeed:
+    product_code: str
+    commodity_code: str
+    weight: Decimal
+    relevance: str = "direct"
+    role: str = "direct_trade_proxy"
     effective_from: date = date(2020, 1, 1)
     effective_to: date | None = None
     is_active: bool = True
@@ -118,6 +146,160 @@ SOURCES: tuple[SourceSeed, ...] = (
         "https://power.larc.nasa.gov/",
     ),
     SourceSeed("faostat", "FAOSTAT", "fundamental", "https://www.fao.org/faostat/"),
+    SourceSeed("un_comtrade", "UN Comtrade", "trade", "https://comtradeplus.un.org/"),
+    SourceSeed(
+        "faostat_trade",
+        "FAOSTAT Trade / Crops and Livestock Products",
+        "trade",
+        "https://www.fao.org/faostat/",
+    ),
+    SourceSeed(
+        "usda_fas_trade",
+        "USDA FAS / GATS / PSD Trade Data",
+        "official_agriculture_trade",
+        "https://apps.fas.usda.gov/",
+    ),
+    SourceSeed("world_bank_wits", "World Bank WITS", "trade", "https://wits.worldbank.org/"),
+)
+
+TRADE_COMMODITY_CODES: tuple[TradeCommodityCodeSeed, ...] = (
+    TradeCommodityCodeSeed(
+        "HS",
+        "1201",
+        "Soybeans",
+        "1201",
+        "generic",
+        "soybean",
+        None,
+        "direct",
+        "metric_ton",
+        "Soya beans, whether or not broken",
+        "Soybean seed trade proxy for China import demand and Brazil/US/Argentina export context.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1507",
+        "Soybean oil",
+        "1507",
+        "generic",
+        "soybean",
+        "soybean_oil",
+        "direct",
+        "metric_ton",
+        "Soya-bean oil and its fractions",
+        "Direct soybean oil trade mapping; subcodes may separate crude and refined oil later.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "2304",
+        "Soybean meal / oilcake",
+        "2304",
+        "generic",
+        "soybean",
+        "soybean_meal",
+        "direct",
+        "metric_ton",
+        "Oilcake and other solid residues resulting from extraction of soya-bean oil",
+        "Direct soybean meal/oilcake trade mapping for feed and crush-product context.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1205",
+        "Rapeseed / canola seed",
+        "1205",
+        "generic",
+        "rapeseed_canola",
+        None,
+        "context",
+        "metric_ton",
+        "Rape or colza seeds, whether or not broken",
+        "Rapeseed/canola seed trade context for oil and meal products.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1514",
+        "Rapeseed / canola / mustard oil",
+        "1514",
+        "generic",
+        "rapeseed_canola",
+        "rapeseed_oil",
+        "direct",
+        "metric_ton",
+        "Rape, colza or mustard oil and fractions thereof",
+        "Direct rapeseed/canola oil mapping; mustard inclusion needs source-specific review.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "2306",
+        "Rapeseed / canola meal / oilcake",
+        "2306",
+        "generic",
+        "rapeseed_canola",
+        "rapeseed_meal",
+        "direct",
+        "metric_ton",
+        "Oilcake and other solid residues from vegetable fats or oils, other than soya-bean",
+        "Rapeseed/canola meal mapping; relevant subcode granularity must be verified per source.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1511",
+        "Palm oil",
+        "1511",
+        "generic",
+        "palm_oil",
+        None,
+        "context",
+        "metric_ton",
+        "Palm oil and its fractions",
+        "Substitute vegetable oil context for broader oil spread features.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1512",
+        "Sunflower, safflower or cottonseed oil",
+        "1512",
+        "generic",
+        "sunflower_oil",
+        None,
+        "context",
+        "metric_ton",
+        "Sunflower-seed, safflower or cotton-seed oil and fractions thereof",
+        "Vegetable oil context; not tied to current-price sunflower instruments.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1001",
+        "Wheat",
+        "1001",
+        "generic",
+        "wheat",
+        None,
+        "context",
+        "metric_ton",
+        "Wheat and meslin",
+        "Grain/feed and Black Sea trade context.",
+    ),
+    TradeCommodityCodeSeed(
+        "HS",
+        "1005",
+        "Maize / corn",
+        "1005",
+        "generic",
+        "maize_corn",
+        None,
+        "context",
+        "metric_ton",
+        "Maize (corn)",
+        "Feed and biofuel cross-market context.",
+    ),
+)
+
+PRODUCT_TRADE_CODE_WEIGHTS: tuple[ProductTradeCodeWeightSeed, ...] = (
+    ProductTradeCodeWeightSeed("soybean_oil", "1507", Decimal("1.00000000")),
+    ProductTradeCodeWeightSeed("soybean_meal", "2304", Decimal("1.00000000")),
+    ProductTradeCodeWeightSeed("rapeseed_oil", "1514", Decimal("1.00000000")),
+    ProductTradeCodeWeightSeed("rapeseed_meal", "2306", Decimal("1.00000000")),
 )
 
 WEATHER_REGIONS: tuple[WeatherRegionSeed, ...] = (
@@ -389,6 +571,8 @@ def seed_database(session: Session) -> dict[str, int]:
     sources_created = 0
     weather_regions_created = 0
     product_weather_region_weights_created = 0
+    trade_commodity_codes_created = 0
+    product_trade_code_weights_created = 0
 
     for item in PRODUCTS:
         product = session.scalar(select(Product).where(Product.code == item.code))
@@ -468,6 +652,50 @@ def seed_database(session: Session) -> dict[str, int]:
             region.metadata_json = {"reason_for_ml": item.reason_for_ml, "coordinate_policy": "first_version_point_proxy"}
 
     session.flush()
+    for item in TRADE_COMMODITY_CODES:
+        existing_code = session.scalar(
+            select(TradeCommodityCode).where(
+                TradeCommodityCode.code_system == item.code_system,
+                TradeCommodityCode.commodity_code == item.commodity_code,
+                TradeCommodityCode.hs_revision == item.hs_revision,
+            )
+        )
+        metadata_json = {
+            "hs_description": item.hs_description,
+            "design_phase": "6.5C",
+            "mapping_note": item.mapping_note,
+            "source": "Phase 6.5A/6.5B design",
+        }
+        if existing_code is None:
+            session.add(
+                TradeCommodityCode(
+                    source_id=None,
+                    code_system=item.code_system,
+                    commodity_code=item.commodity_code,
+                    commodity_name=item.commodity_name,
+                    hs_code=item.hs_code,
+                    hs_revision=item.hs_revision,
+                    commodity_family=item.commodity_family,
+                    product_code=item.product_code,
+                    relevance=item.relevance,
+                    unit_hint=item.unit_hint,
+                    is_active=item.is_active,
+                    metadata_json=metadata_json,
+                )
+            )
+            trade_commodity_codes_created += 1
+        else:
+            existing_code.source_id = None
+            existing_code.commodity_name = item.commodity_name
+            existing_code.hs_code = item.hs_code
+            existing_code.commodity_family = item.commodity_family
+            existing_code.product_code = item.product_code
+            existing_code.relevance = item.relevance
+            existing_code.unit_hint = item.unit_hint
+            existing_code.is_active = item.is_active
+            existing_code.metadata_json = metadata_json
+
+    session.flush()
     for item in PRODUCT_WEATHER_REGION_WEIGHTS:
         product = session.scalar(select(Product).where(Product.code == item.product_code))
         region = session.scalar(select(WeatherRegion).where(WeatherRegion.region_code == item.region_code))
@@ -513,12 +741,68 @@ def seed_database(session: Session) -> dict[str, int]:
             existing.is_active = item.is_active
             existing.metadata_json = metadata_json
 
+    session.flush()
+    for item in PRODUCT_TRADE_CODE_WEIGHTS:
+        product = session.scalar(select(Product).where(Product.code == item.product_code))
+        trade_code = session.scalar(
+            select(TradeCommodityCode).where(
+                TradeCommodityCode.code_system == "HS",
+                TradeCommodityCode.commodity_code == item.commodity_code,
+                TradeCommodityCode.hs_revision == "generic",
+            )
+        )
+        if product is None or trade_code is None:
+            logger.warning(
+                "skipping product trade code weight product_code=%s commodity_code=%s product_exists=%s code_exists=%s",
+                item.product_code,
+                item.commodity_code,
+                product is not None,
+                trade_code is not None,
+            )
+            continue
+        existing_trade_weight = session.scalar(
+            select(ProductTradeCodeWeight).where(
+                ProductTradeCodeWeight.product_id == product.id,
+                ProductTradeCodeWeight.trade_commodity_code_id == trade_code.id,
+                ProductTradeCodeWeight.role == item.role,
+                ProductTradeCodeWeight.effective_from == item.effective_from,
+            )
+        )
+        metadata_json = {
+            "weighting_method": "direct_only_first_version",
+            "design_phase": "6.5C",
+            "note": "Context trade-code weights are documented for later phases but not seeded in Phase 6.5C.",
+        }
+        if existing_trade_weight is None:
+            session.add(
+                ProductTradeCodeWeight(
+                    product_id=product.id,
+                    trade_commodity_code_id=trade_code.id,
+                    weight=item.weight,
+                    relevance=item.relevance,
+                    role=item.role,
+                    effective_from=item.effective_from,
+                    effective_to=item.effective_to,
+                    is_active=item.is_active,
+                    metadata_json=metadata_json,
+                )
+            )
+            product_trade_code_weights_created += 1
+        else:
+            existing_trade_weight.weight = item.weight
+            existing_trade_weight.relevance = item.relevance
+            existing_trade_weight.effective_to = item.effective_to
+            existing_trade_weight.is_active = item.is_active
+            existing_trade_weight.metadata_json = metadata_json
+
     session.commit()
     return {
         "products_created": products_created,
         "sources_created": sources_created,
         "weather_regions_created": weather_regions_created,
         "product_weather_region_weights_created": product_weather_region_weights_created,
+        "trade_commodity_codes_created": trade_commodity_codes_created,
+        "product_trade_code_weights_created": product_trade_code_weights_created,
     }
 
 

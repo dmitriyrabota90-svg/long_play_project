@@ -894,6 +894,24 @@ controlled narrow UN Comtrade collector, and Phase 6.5E trade feature/export
 integration. Phase 6.5B does not add collectors, schedulers, DB writes, ML
 targets, or dataset targets.
 
+Phase 6.5C adds Alembic revision `0016_trade_schema`, SQLAlchemy models for
+`trade_commodity_codes`, `trade_flows`, `product_trade_code_weights`, and
+`daily_trade_features`, idempotent source seeds for UN Comtrade, FAOSTAT trade,
+USDA FAS trade, and World Bank WITS, plus core HS code seeds and direct
+product-code weights. It is still schema-only: do not run trade collectors, do
+not add a trade scheduler, and do not expect `trade_flows` or
+`daily_trade_features` to contain rows until later controlled phases.
+
+After a reviewed deploy of Phase 6.5C, apply the migration and seed only:
+
+```bash
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app python -m app.db.seed
+```
+
+The next steps are Phase 6.5D controlled UN Comtrade collection and Phase 6.5E
+trade feature/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

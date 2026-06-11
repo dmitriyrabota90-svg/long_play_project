@@ -1395,8 +1395,16 @@ HS codes and reporter/partner groups. Planned next steps are Phase 6.5C schema
 implementation, Phase 6.5D first controlled UN Comtrade collector, and Phase
 6.5E trade feature/export integration.
 
+Phase 6.5C implements schema-only support for the trade/import-export layer:
+SQLAlchemy metadata, Alembic revision `0016_trade_schema`, idempotent source
+seeds for `un_comtrade`, `faostat_trade`, `usda_fas_trade`, and
+`world_bank_wits`, core HS code seeds, direct first-version
+`product_trade_code_weights`, and operational report counts. It does not add a
+collector, does not write `trade_flows`, does not build `daily_trade_features`,
+does not register a scheduler, and does not add ML targets.
+
 ## Next Phase
 
-The next phase is Phase 6.5C: schema-only implementation for trade/import-export
-tables. It should not add collectors or production trade rows until the schema
-is deployed and reviewed.
+The next phase is Phase 6.5D: first controlled UN Comtrade collector,
+local-only/manual. It should use narrow monthly windows and must not add a
+scheduler.

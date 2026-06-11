@@ -1,15 +1,17 @@
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Base, Product, ProductWeatherRegionWeight, Source, WeatherRegion
+from app.db.models import Base, Product, ProductTradeCodeWeight, ProductWeatherRegionWeight, Source, TradeCommodityCode, WeatherRegion
 from app.db.seed import (
     PRODUCTS,
+    PRODUCT_TRADE_CODE_WEIGHTS,
     PRODUCT_WEATHER_REGION_WEIGHTS,
     RAPESEED_WEATHER_PRODUCT_CODES,
     RAPESEED_WEATHER_REGION_CODES,
     SOURCES,
     SOYBEAN_WEATHER_PRODUCT_CODES,
     SOYBEAN_WEATHER_REGION_CODES,
+    TRADE_COMMODITY_CODES,
     WEATHER_REGIONS,
     seed_database,
 )
@@ -36,8 +38,29 @@ def test_seed_is_idempotent() -> None:
         usda_reports_source = session.scalar(select(Source).where(Source.code == "usda_reports"))
         fao_news_releases_source = session.scalar(select(Source).where(Source.code == "fao_news_releases"))
         world_bank_releases_source = session.scalar(select(Source).where(Source.code == "world_bank_commodity_releases"))
+        un_comtrade_source = session.scalar(select(Source).where(Source.code == "un_comtrade"))
+        faostat_trade_source = session.scalar(select(Source).where(Source.code == "faostat_trade"))
+        usda_fas_trade_source = session.scalar(select(Source).where(Source.code == "usda_fas_trade"))
+        world_bank_wits_source = session.scalar(select(Source).where(Source.code == "world_bank_wits"))
         weather_region_count = session.scalar(select(func.count()).select_from(WeatherRegion))
         product_weather_weights_count = session.scalar(select(func.count()).select_from(ProductWeatherRegionWeight))
+        trade_commodity_code_count = session.scalar(select(func.count()).select_from(TradeCommodityCode))
+        product_trade_weights_count = session.scalar(select(func.count()).select_from(ProductTradeCodeWeight))
+        direct_trade_weight_count = session.scalar(
+            select(func.count()).select_from(ProductTradeCodeWeight).where(ProductTradeCodeWeight.role == "direct_trade_proxy")
+        )
+        hs_1507 = session.scalar(
+            select(TradeCommodityCode).where(
+                TradeCommodityCode.code_system == "HS",
+                TradeCommodityCode.commodity_code == "1507",
+                TradeCommodityCode.hs_revision == "generic",
+            )
+        )
+        hs_codes = set(
+            session.scalars(
+                select(TradeCommodityCode.commodity_code).where(TradeCommodityCode.code_system == "HS")
+            ).all()
+        )
         mato_grosso_region = session.scalar(
             select(WeatherRegion).where(WeatherRegion.region_code == "br_mato_grosso_soybean")
         )
@@ -66,6 +89,10 @@ def test_seed_is_idempotent() -> None:
     assert source_count == len(SOURCES)
     assert weather_region_count == len(WEATHER_REGIONS)
     assert product_weather_weights_count == len(PRODUCT_WEATHER_REGION_WEIGHTS)
+    assert trade_commodity_code_count == len(TRADE_COMMODITY_CODES)
+    assert product_trade_weights_count == len(PRODUCT_TRADE_CODE_WEIGHTS)
+    assert direct_trade_weight_count == 4
+    assert {"1201", "1507", "2304", "1205", "1514", "2306", "1511", "1512", "1001", "1005"} <= hs_codes
     for product_code in SOYBEAN_WEATHER_PRODUCT_CODES:
         assert weight_counts[product_code] == len(SOYBEAN_WEATHER_REGION_CODES)
         assert weight_sums[product_code] == 1
@@ -109,6 +136,23 @@ def test_seed_is_idempotent() -> None:
     assert world_bank_releases_source.name == "World Bank Commodity Market Releases"
     assert world_bank_releases_source.source_type == "official_release"
     assert world_bank_releases_source.base_url == "https://www.worldbank.org/en/research/commodity-markets"
+    assert un_comtrade_source is not None
+    assert un_comtrade_source.name == "UN Comtrade"
+    assert un_comtrade_source.source_type == "trade"
+    assert un_comtrade_source.base_url == "https://comtradeplus.un.org/"
+    assert faostat_trade_source is not None
+    assert faostat_trade_source.name == "FAOSTAT Trade / Crops and Livestock Products"
+    assert faostat_trade_source.source_type == "trade"
+    assert usda_fas_trade_source is not None
+    assert usda_fas_trade_source.name == "USDA FAS / GATS / PSD Trade Data"
+    assert usda_fas_trade_source.source_type == "official_agriculture_trade"
+    assert world_bank_wits_source is not None
+    assert world_bank_wits_source.name == "World Bank WITS"
+    assert world_bank_wits_source.source_type == "trade"
+    assert hs_1507 is not None
+    assert hs_1507.product_code == "soybean_oil"
+    assert hs_1507.relevance == "direct"
+    assert hs_1507.metadata_json["design_phase"] == "6.5C"
     assert mato_grosso_region is not None
     assert mato_grosso_region.priority == "high"
     assert mato_grosso_region.commodity_family == "soybean"

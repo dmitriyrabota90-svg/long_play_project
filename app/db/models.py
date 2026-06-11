@@ -610,6 +610,160 @@ class DailyNewsFeature(Base, TimestampMixin):
     product: Mapped[Product] = relationship()
 
 
+class TradeCommodityCode(Base, TimestampMixin):
+    __tablename__ = "trade_commodity_codes"
+    __table_args__ = (
+        UniqueConstraint("code_system", "commodity_code", "hs_revision", name="uq_trade_codes_system_code_rev"),
+        CheckConstraint("relevance IN ('direct', 'context', 'later')", name="ck_trade_codes_relevance"),
+        Index("ix_trade_codes_family", "commodity_family"),
+        Index("ix_trade_codes_product_code", "product_code"),
+        Index("ix_trade_codes_hs_code", "hs_code"),
+        Index("ix_trade_codes_is_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True)
+    code_system: Mapped[str] = mapped_column(String(64), nullable=False)
+    commodity_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    commodity_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    hs_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hs_revision: Mapped[str] = mapped_column(String(32), nullable=False)
+    commodity_family: Mapped[str] = mapped_column(String(100), nullable=False)
+    product_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    relevance: Mapped[str] = mapped_column(String(32), nullable=False)
+    unit_hint: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    source: Mapped[Source | None] = relationship()
+
+
+class TradeFlow(Base, TimestampMixin):
+    __tablename__ = "trade_flows"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "trade_commodity_code_id",
+            "reporter_code",
+            "partner_code",
+            "flow_direction",
+            "frequency",
+            "period_start",
+            "period_end",
+            name="uq_trade_flows_identity",
+        ),
+        CheckConstraint("flow_direction IN ('export', 'import', 're_export', 're_import', 'unknown')", name="ck_trade_flows_direction"),
+        CheckConstraint("frequency IN ('monthly', 'annual', 'quarterly', 'unknown')", name="ck_trade_flows_frequency"),
+        CheckConstraint("period_end >= period_start", name="ck_trade_flows_period_order"),
+        Index("ix_trade_flows_code_period", "trade_commodity_code_id", "period_start"),
+        Index("ix_trade_flows_reporter_period", "reporter_code", "period_start"),
+        Index("ix_trade_flows_partner_period", "partner_code", "period_start"),
+        Index("ix_trade_flows_direction_period", "flow_direction", "period_start"),
+        Index("ix_trade_flows_source_fetched", "source_id", "fetched_at"),
+        Index("ix_trade_flows_raw_response_id", "raw_response_id"),
+        Index("ix_trade_flows_collector_run_id", "collector_run_id"),
+        Index("ix_trade_flows_record_hash", "source_record_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    trade_commodity_code_id: Mapped[int] = mapped_column(ForeignKey("trade_commodity_codes.id"), nullable=False)
+    source_record_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reporter_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    reporter_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    partner_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    partner_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    flow_direction: Mapped[str] = mapped_column(String(32), nullable=False)
+    trade_period: Mapped[str] = mapped_column(String(32), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    frequency: Mapped[str] = mapped_column(String(32), nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    quantity_unit: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    trade_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    trade_value_local: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    net_weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    gross_weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    source: Mapped[Source] = relationship()
+    raw_response: Mapped[RawResponse] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
+    trade_commodity_code: Mapped[TradeCommodityCode] = relationship()
+
+
+class ProductTradeCodeWeight(Base, TimestampMixin):
+    __tablename__ = "product_trade_code_weights"
+    __table_args__ = (
+        UniqueConstraint("product_id", "trade_commodity_code_id", "role", "effective_from", name="uq_product_trade_code_weight"),
+        CheckConstraint("relevance IN ('direct', 'context', 'later')", name="ck_product_trade_weight_relevance"),
+        CheckConstraint("weight >= 0", name="ck_product_trade_weight_nonnegative"),
+        CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="ck_product_trade_weight_dates"),
+        Index("ix_product_trade_weight_product_active", "product_id", "is_active"),
+        Index("ix_product_trade_weight_code_active", "trade_commodity_code_id", "is_active"),
+        Index("ix_product_trade_weight_effective", "effective_from", "effective_to"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    trade_commodity_code_id: Mapped[int] = mapped_column(ForeignKey("trade_commodity_codes.id"), nullable=False)
+    weight: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    relevance: Mapped[str] = mapped_column(String(32), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    product: Mapped[Product] = relationship()
+    trade_commodity_code: Mapped[TradeCommodityCode] = relationship()
+
+
+class DailyTradeFeature(Base, TimestampMixin):
+    __tablename__ = "daily_trade_features"
+    __table_args__ = (
+        UniqueConstraint("product_id", "feature_date", name="uq_daily_trade_features_product_date"),
+        CheckConstraint("trade_as_of_date IS NULL OR trade_as_of_date <= feature_date", name="ck_daily_trade_features_as_of"),
+        Index("ix_daily_trade_features_product_date", "product_id", "feature_date"),
+        Index("ix_daily_trade_features_feature_date", "feature_date"),
+        Index("ix_daily_trade_features_as_of", "trade_as_of_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    feature_date: Mapped[date] = mapped_column(Date, nullable=False)
+    export_volume_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    export_volume_3m_avg: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    export_volume_12m_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    import_volume_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    import_volume_3m_avg: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    import_volume_12m_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    net_export_volume_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    export_value_usd_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    import_value_usd_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    average_export_unit_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    average_import_unit_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    china_import_volume_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    major_exporter_volume_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    major_importer_volume_1m: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    trade_balance_proxy: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    trade_yoy_change: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    trade_as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reporting_lag_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    missing_flags: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    product: Mapped[Product] = relationship()
+
+
 class ProductWeatherRegionWeight(Base, TimestampMixin):
     __tablename__ = "product_weather_region_weights"
     __table_args__ = (

@@ -29,7 +29,7 @@ def test_sql_draft_contains_expected_tables() -> None:
 def test_sql_draft_contains_important_unique_constraints() -> None:
     sql = SQL_DRAFT.read_text(encoding="utf-8")
 
-    assert "uq_trade_commodity_codes_system_code_revision" in sql
+    assert "uq_trade_codes_system_code_rev" in sql
     assert "UNIQUE (code_system, commodity_code, hs_revision)" in sql
     assert "uq_trade_flows_identity" in sql
     assert "source_id,\n            trade_commodity_code_id,\n            reporter_code,\n            partner_code" in sql

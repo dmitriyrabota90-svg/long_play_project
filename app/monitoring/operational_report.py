@@ -16,6 +16,7 @@ from app.db.models import (
     CommodityEvent,
     DailyProductFeature,
     DailyNewsFeature,
+    DailyTradeFeature,
     DataQualityCheck,
     EnergyPrice,
     FxRate,
@@ -25,8 +26,11 @@ from app.db.models import (
     PriceObservation,
     ProductWeatherRegionWeight,
     Product,
+    ProductTradeCodeWeight,
     RawResponse,
     Source,
+    TradeCommodityCode,
+    TradeFlow,
     WeatherDailyFeature,
     WeatherObservation,
     WeatherRegion,
@@ -189,6 +193,35 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "first_feature_date": None,
             "last_feature_date": None,
             "latest_news_as_of_date": None,
+        },
+        "trade_commodity_codes": {
+            "count": 0,
+            "active_count": 0,
+            "code_systems_count": 0,
+            "direct_mappings_count": 0,
+            "context_mappings_count": 0,
+        },
+        "trade_flows": {
+            "count": 0,
+            "commodities_count": 0,
+            "reporters_count": 0,
+            "partners_count": 0,
+            "first_period_start": None,
+            "last_period_start": None,
+            "last_fetched_at": None,
+        },
+        "product_trade_code_weights": {
+            "count": 0,
+            "active_count": 0,
+            "products_count": 0,
+            "commodity_codes_count": 0,
+        },
+        "daily_trade_features": {
+            "count": 0,
+            "products_count": 0,
+            "first_feature_date": None,
+            "last_feature_date": None,
+            "latest_trade_as_of_date": None,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -490,6 +523,55 @@ def _fill_db_report(
         "first_feature_date": first_news_feature_date.isoformat() if first_news_feature_date else None,
         "last_feature_date": last_news_feature_date.isoformat() if last_news_feature_date else None,
         "latest_news_as_of_date": latest_news_as_of_date.isoformat() if latest_news_as_of_date else None,
+    }
+    report["trade_commodity_codes"] = {
+        "count": session.scalar(select(func.count()).select_from(TradeCommodityCode)),
+        "active_count": session.scalar(
+            select(func.count()).select_from(TradeCommodityCode).where(TradeCommodityCode.is_active.is_(True))
+        ),
+        "code_systems_count": session.scalar(
+            select(func.count(func.distinct(TradeCommodityCode.code_system))).select_from(TradeCommodityCode)
+        ),
+        "direct_mappings_count": session.scalar(
+            select(func.count()).select_from(TradeCommodityCode).where(TradeCommodityCode.relevance == "direct")
+        ),
+        "context_mappings_count": session.scalar(
+            select(func.count()).select_from(TradeCommodityCode).where(TradeCommodityCode.relevance == "context")
+        ),
+    }
+    first_trade_period_start = session.scalar(select(func.min(TradeFlow.period_start)))
+    last_trade_period_start = session.scalar(select(func.max(TradeFlow.period_start)))
+    last_trade_fetched_at = session.scalar(select(func.max(TradeFlow.fetched_at)))
+    report["trade_flows"] = {
+        "count": session.scalar(select(func.count()).select_from(TradeFlow)),
+        "commodities_count": session.scalar(select(func.count(func.distinct(TradeFlow.trade_commodity_code_id))).select_from(TradeFlow)),
+        "reporters_count": session.scalar(select(func.count(func.distinct(TradeFlow.reporter_code))).select_from(TradeFlow)),
+        "partners_count": session.scalar(select(func.count(func.distinct(TradeFlow.partner_code))).select_from(TradeFlow)),
+        "first_period_start": first_trade_period_start.isoformat() if first_trade_period_start else None,
+        "last_period_start": last_trade_period_start.isoformat() if last_trade_period_start else None,
+        "last_fetched_at": _to_utc(last_trade_fetched_at).isoformat() if last_trade_fetched_at else None,
+    }
+    report["product_trade_code_weights"] = {
+        "count": session.scalar(select(func.count()).select_from(ProductTradeCodeWeight)),
+        "active_count": session.scalar(
+            select(func.count()).select_from(ProductTradeCodeWeight).where(ProductTradeCodeWeight.is_active.is_(True))
+        ),
+        "products_count": session.scalar(
+            select(func.count(func.distinct(ProductTradeCodeWeight.product_id))).select_from(ProductTradeCodeWeight)
+        ),
+        "commodity_codes_count": session.scalar(
+            select(func.count(func.distinct(ProductTradeCodeWeight.trade_commodity_code_id))).select_from(ProductTradeCodeWeight)
+        ),
+    }
+    first_trade_feature_date = session.scalar(select(func.min(DailyTradeFeature.feature_date)))
+    last_trade_feature_date = session.scalar(select(func.max(DailyTradeFeature.feature_date)))
+    latest_trade_as_of_date = session.scalar(select(func.max(DailyTradeFeature.trade_as_of_date)))
+    report["daily_trade_features"] = {
+        "count": session.scalar(select(func.count()).select_from(DailyTradeFeature)),
+        "products_count": session.scalar(select(func.count(func.distinct(DailyTradeFeature.product_id))).select_from(DailyTradeFeature)),
+        "first_feature_date": first_trade_feature_date.isoformat() if first_trade_feature_date else None,
+        "last_feature_date": last_trade_feature_date.isoformat() if last_trade_feature_date else None,
+        "latest_trade_as_of_date": latest_trade_as_of_date.isoformat() if latest_trade_as_of_date else None,
     }
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(

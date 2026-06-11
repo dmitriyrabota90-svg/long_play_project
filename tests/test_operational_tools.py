@@ -120,6 +120,27 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["daily_news_features"]["first_feature_date"] is None
     assert report["daily_news_features"]["last_feature_date"] is None
     assert report["daily_news_features"]["latest_news_as_of_date"] is None
+    assert report["trade_commodity_codes"]["count"] == 0
+    assert report["trade_commodity_codes"]["active_count"] == 0
+    assert report["trade_commodity_codes"]["code_systems_count"] == 0
+    assert report["trade_commodity_codes"]["direct_mappings_count"] == 0
+    assert report["trade_commodity_codes"]["context_mappings_count"] == 0
+    assert report["trade_flows"]["count"] == 0
+    assert report["trade_flows"]["commodities_count"] == 0
+    assert report["trade_flows"]["reporters_count"] == 0
+    assert report["trade_flows"]["partners_count"] == 0
+    assert report["trade_flows"]["first_period_start"] is None
+    assert report["trade_flows"]["last_period_start"] is None
+    assert report["trade_flows"]["last_fetched_at"] is None
+    assert report["product_trade_code_weights"]["count"] == 0
+    assert report["product_trade_code_weights"]["active_count"] == 0
+    assert report["product_trade_code_weights"]["products_count"] == 0
+    assert report["product_trade_code_weights"]["commodity_codes_count"] == 0
+    assert report["daily_trade_features"]["count"] == 0
+    assert report["daily_trade_features"]["products_count"] == 0
+    assert report["daily_trade_features"]["first_feature_date"] is None
+    assert report["daily_trade_features"]["last_feature_date"] is None
+    assert report["daily_trade_features"]["latest_trade_as_of_date"] is None
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:
