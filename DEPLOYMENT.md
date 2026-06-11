@@ -674,6 +674,31 @@ Phase 6.3F does not add a weather scheduler, does not run weather collectors
 automatically, does not change current price/FX/energy/benchmark collectors,
 and does not add ML targets.
 
+## News And Event Source Audit
+
+Phase 6.4A is local-only discovery/design for future news and event sources. It
+creates diagnostics artifacts only:
+
+```bash
+python scripts/audit_news_sources.py
+```
+
+Outputs:
+
+```text
+diagnostics/news_source_audit/NEWS_SOURCE_AUDIT_REPORT.md
+diagnostics/news_source_audit/news_source_candidates.json
+```
+
+This phase does not write PostgreSQL rows, does not run collectors, does not add
+migrations, does not change schedulers, does not use production `RawStore`, and
+does not require production deploy. It also does not add ML targets or an
+NLP/LLM classifier. The recommended next phase is news/events schema design for
+future `news_articles`, `commodity_events`, and `daily_news_features` tables or
+feature layers. Later phases should implement schema, then a controlled
+official-report/GDELT metadata prototype, then event labeling and feature/export
+integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

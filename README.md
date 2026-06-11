@@ -1224,7 +1224,39 @@ Phase 6.3F is still not an ML phase. It does not add targets, does not add a
 weather scheduler, does not run weather collectors automatically, and does not
 change current price, FX, energy, benchmark, or historical collectors.
 
+## Phase 6.4A News And Event Source Audit
+
+Phase 6.4A is a local diagnostics-only inventory for future news and event
+features. It maps event categories for agricultural commodity prices and reviews
+candidate sources such as GDELT, official USDA/FAO/World Bank report releases,
+ReliefWeb disaster feeds, Google News RSS-style search feeds, and paid news
+APIs.
+
+```bash
+python scripts/audit_news_sources.py
+```
+
+The command writes only:
+
+```text
+diagnostics/news_source_audit/NEWS_SOURCE_AUDIT_REPORT.md
+diagnostics/news_source_audit/news_source_candidates.json
+```
+
+It does not write PostgreSQL rows, does not use production `RawStore`, does not
+run collectors, does not add migrations, does not change schedulers, does not
+add ML targets, and does not add an NLP/LLM classifier. The recommended first
+source for a later bounded prototype is GDELT 2.1 metadata, paired with a
+low-noise official report/release event layer for USDA WASDE/PSD, FAO, and
+World Bank releases.
+
+Planned next steps are Phase 6.4B news/events schema design, Phase 6.4C schema
+implementation, Phase 6.4D a first controlled news/report collector, Phase
+6.4E rule-based event labeling, and Phase 6.4F daily news/event feature and
+export integration.
+
 ## Next Phase
 
-The next phase is Phase 6.4A: news/events source discovery and design,
-local-only.
+The next phase is Phase 6.4B: news/events schema design. It should stay
+design-only until the source model, deduplication, and as-of/leakage policy are
+reviewed.
