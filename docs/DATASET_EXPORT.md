@@ -15,6 +15,8 @@ Export v1 reads:
 - `commodity_benchmarks` through the feature builder
 - `weather_daily_features` and `product_weather_region_weights` through the
   feature builder
+- `daily_trade_features`, `trade_flows`, `product_trade_code_weights`, and
+  `trade_commodity_codes` through the feature builder
 
 It does not write PostgreSQL metadata in Phase 5.0 or Phase 6.3F. The JSON
 manifest beside the export file is the export metadata source.
@@ -52,6 +54,10 @@ The CSV includes:
 - product-level news/event fields: 1/7/30-day article and event counts,
   7-day bullish/bearish/mixed event counts, 30-day event-category counts,
   `sentiment_proxy_7d`, `news_as_of_date`, and `news_missing_flags`
+- product-level trade fields: 1-month export/import volume and value proxies,
+  3-month averages, 12-month sums, net export/trade balance proxy,
+  China/major-reporter volume proxies, unit values, YoY change,
+  `trade_as_of_date`, `reporting_lag_days`, and `trade_missing_flags`
 - `created_at`
 - `updated_at`
 
@@ -100,6 +106,8 @@ Export v1 includes only sources already materialized into
   `product_weather_region_weights`
 - rule-based `commodity_events` and `daily_news_features` through the daily
   feature builder
+- UN Comtrade monthly trade flows through `daily_trade_features` and
+  `product_trade_code_weights`
 
 ## Sources Excluded
 
@@ -124,9 +132,12 @@ values use active/effective product-region weights and only
 `weather_daily_features.feature_date <= product feature_date` with
 `weather_as_of_date <= product feature_date`. News/event values use
 `daily_news_features.feature_date <= product feature_date` with
-`news_as_of_date <= product feature_date`. Historical bars are not consumed by
-daily features yet, so the export cannot accidentally treat historical backfill
-as if it was available in the past.
+`news_as_of_date <= product feature_date`. Trade values use
+`daily_trade_features.feature_date <= product feature_date` with
+`trade_as_of_date <= product feature_date`; monthly data is forward-filled only
+after source publication/fetch availability. Historical bars are not consumed
+by daily features yet, so the export cannot accidentally treat historical
+backfill as if it was available in the past.
 
 ## Known Limitations
 
@@ -142,6 +153,9 @@ as if it was available in the past.
 - News/event features are rule-based keyword aggregates, not semantic
   NLP/LLM/ML classifications. Missing or partial source coverage is recorded in
   `news_missing_flags`.
+- Trade features are monthly aggregates and may lag source publication. Missing
+  mappings, missing flows, incomplete rolling windows, and unavailable reporter
+  proxies are recorded in `trade_missing_flags`.
 - Sunflower products are not implemented.
 - This is a controlled file export, not a public API or dashboard.
 

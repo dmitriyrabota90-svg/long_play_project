@@ -3,13 +3,15 @@ from __future__ import annotations
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config.logging import setup_logging
 from app.config.settings import Settings, get_settings
-from app.db.models import Base
+from app.db.models import Base, DailyProductFeature, Product
 from app.monitoring.operational_report import build_operational_report
 from app.operations.backup import build_backup_plan
 from app.operations.cleanup import build_cleanup_plan
@@ -72,6 +74,10 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["daily_product_features"]["news_coverage"]["rows_with_event_count_7d"] == 0
     assert report["daily_product_features"]["news_coverage"]["rows_with_news_as_of_date"] == 0
     assert report["daily_product_features"]["news_coverage"]["latest_product_news_feature_date"] is None
+    assert report["daily_product_features"]["trade_coverage"]["rows_with_export_volume_1m"] == 0
+    assert report["daily_product_features"]["trade_coverage"]["rows_with_import_volume_1m"] == 0
+    assert report["daily_product_features"]["trade_coverage"]["rows_with_trade_as_of_date"] == 0
+    assert report["daily_product_features"]["trade_coverage"]["latest_product_trade_feature_date"] is None
     assert report["energy_prices"]["count"] == 0
     assert report["energy_prices"]["instruments_count"] == 0
     assert report["energy_prices"]["first_period_start"] is None
@@ -141,6 +147,44 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["daily_trade_features"]["first_feature_date"] is None
     assert report["daily_trade_features"]["last_feature_date"] is None
     assert report["daily_trade_features"]["latest_trade_as_of_date"] is None
+
+
+def test_operational_report_includes_product_trade_coverage() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, future=True)
+
+    with SessionLocal() as session:
+        product = Product(
+            code="soybean_oil",
+            name="Soybean oil",
+            category="oil",
+            unit="metric_ton",
+            currency_default="USD",
+        )
+        session.add(product)
+        session.flush()
+        session.add(
+            DailyProductFeature(
+                product_id=product.id,
+                feature_date=date(2026, 6, 10),
+                as_of_at=datetime(2026, 6, 10, 12, tzinfo=timezone.utc),
+                features_json={"export_volume_1m": "1000.00000000"},
+                feature_version="daily_features_v1",
+                price_last=Decimal("100.000000"),
+                export_volume_1m=Decimal("1000.00000000"),
+                import_volume_1m=Decimal("100.00000000"),
+                trade_as_of_date=date(2026, 6, 9),
+            )
+        )
+        session.commit()
+        report = build_operational_report(freshness_hours=24, session=session)
+
+    coverage = report["daily_product_features"]["trade_coverage"]
+    assert coverage["rows_with_export_volume_1m"] == 1
+    assert coverage["rows_with_import_volume_1m"] == 1
+    assert coverage["rows_with_trade_as_of_date"] == 1
+    assert coverage["latest_product_trade_feature_date"] == "2026-06-10"
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:

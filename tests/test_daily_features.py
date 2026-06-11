@@ -18,6 +18,7 @@ from app.db.models import (
     CommodityBenchmark,
     DailyNewsFeature,
     DailyProductFeature,
+    DailyTradeFeature,
     DataQualityCheck,
     EnergyPrice,
     FxRate,
@@ -291,6 +292,71 @@ def test_daily_build_copies_news_event_features() -> None:
     assert feature.news_as_of_date == date(2026, 6, 10)
     assert feature.news_missing_flags == "partial_source_coverage"
     assert feature.features_json["news_count_7d"] == 2
+
+
+def test_daily_build_copies_trade_features_without_future_leakage() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session, code="soybean_oil")
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        _price(
+            session,
+            product_id=product.id,
+            source_id=price_source.id,
+            observed_at=datetime(2026, 6, 10, 15, tzinfo=timezone.utc),
+            price="100",
+        )
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 6, 10, tzinfo=timezone.utc))
+        session.add(
+            DailyTradeFeature(
+                product_id=product.id,
+                feature_date=date(2026, 6, 10),
+                export_volume_1m=Decimal("1000.00000000"),
+                export_volume_3m_avg=Decimal("900.00000000"),
+                export_volume_12m_sum=None,
+                import_volume_1m=Decimal("100.00000000"),
+                import_volume_3m_avg=None,
+                import_volume_12m_sum=None,
+                net_export_volume_1m=Decimal("900.00000000"),
+                export_value_usd_1m=Decimal("850000.00000000"),
+                import_value_usd_1m=Decimal("85000.00000000"),
+                average_export_unit_value_usd=Decimal("850.00000000"),
+                average_import_unit_value_usd=Decimal("850.00000000"),
+                china_import_volume_1m=Decimal("100.00000000"),
+                major_exporter_volume_1m=Decimal("1000.00000000"),
+                major_importer_volume_1m=Decimal("100.00000000"),
+                trade_balance_proxy=Decimal("900.00000000"),
+                trade_yoy_change=None,
+                trade_as_of_date=date(2026, 6, 9),
+                reporting_lag_days=1,
+                missing_flags={"missing_yoy_history": True},
+                metadata_json={"test": True},
+            )
+        )
+
+        build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+        checks = {
+            item.check_name: item
+            for item in session.scalars(
+                select(DataQualityCheck).where(DataQualityCheck.check_name.like("daily_feature_%trade%"))
+            ).all()
+        }
+
+    assert feature.export_volume_1m == Decimal("1000.00000000")
+    assert feature.import_volume_1m == Decimal("100.00000000")
+    assert feature.net_export_volume_1m == Decimal("900.00000000")
+    assert feature.average_export_unit_value_usd == Decimal("850.00000000")
+    assert feature.china_import_volume_1m == Decimal("100.00000000")
+    assert feature.trade_as_of_date == date(2026, 6, 9)
+    assert feature.reporting_lag_days == 1
+    assert feature.trade_missing_flags == "missing_yoy_history"
+    assert feature.features_json["export_volume_1m"] == "1000.00000000"
+    assert feature.features_json["trade_as_of_date"] == "2026-06-09"
+    assert checks["daily_feature_no_future_trade"].status == "pass"
+    assert checks["daily_feature_trade_coverage_recorded"].details_json["trade_missing_flags"] == "missing_yoy_history"
 
 
 def test_price_delta_and_rolling_windows_require_full_window() -> None:
@@ -609,6 +675,8 @@ def test_quality_checks_are_created() -> None:
     assert "daily_feature_no_future_benchmark" in check_names
     assert "daily_feature_no_future_weather" in check_names
     assert "daily_feature_weather_coverage_recorded" in check_names
+    assert "daily_feature_no_future_trade" in check_names
+    assert "daily_feature_trade_coverage_recorded" in check_names
     assert "daily_feature_unique_product_date" in check_names
 
 

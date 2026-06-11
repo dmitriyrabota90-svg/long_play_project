@@ -133,13 +133,13 @@ def test_design_doc_mentions_product_trade_code_weights() -> None:
 def test_design_doc_mentions_future_feature_and_export_integration() -> None:
     text = DESIGN_DOC.read_text(encoding="utf-8")
 
-    assert "Future Feature Integration Into Daily Product Features" in text
+    assert "Phase 6.5E Feature Integration Into Daily Product Features" in text
     assert "daily_trade_features" in text
     assert "daily_product_features" in text
     assert "export_volume_1m" in text
     assert "china_import_volume_1m" in text
     assert "trade_missing_flags" in text
-    assert "Future Export Integration" in text
+    assert "Phase 6.5E Export Integration" in text
 
 
 def test_design_doc_mentions_source_seed_design_and_raw_lineage() -> None:

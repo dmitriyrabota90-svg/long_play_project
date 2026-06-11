@@ -115,6 +115,12 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
                 "rows_with_news_as_of_date": 0,
                 "latest_product_news_feature_date": None,
             },
+            "trade_coverage": {
+                "rows_with_export_volume_1m": 0,
+                "rows_with_import_volume_1m": 0,
+                "rows_with_trade_as_of_date": 0,
+                "latest_product_trade_feature_date": None,
+            },
         },
         "historical_price_bars": {
             "count": 0,
@@ -392,6 +398,29 @@ def _fill_db_report(
         ),
         "latest_product_news_feature_date": (
             latest_product_news_feature_date.isoformat() if latest_product_news_feature_date else None
+        ),
+    }
+    latest_product_trade_feature_date = session.scalar(
+        select(func.max(DailyProductFeature.feature_date)).where(
+            or_(
+                DailyProductFeature.export_volume_1m.is_not(None),
+                DailyProductFeature.import_volume_1m.is_not(None),
+                DailyProductFeature.trade_as_of_date.is_not(None),
+            )
+        )
+    )
+    report["daily_product_features"]["trade_coverage"] = {
+        "rows_with_export_volume_1m": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.export_volume_1m.is_not(None))
+        ),
+        "rows_with_import_volume_1m": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.import_volume_1m.is_not(None))
+        ),
+        "rows_with_trade_as_of_date": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.trade_as_of_date.is_not(None))
+        ),
+        "latest_product_trade_feature_date": (
+            latest_product_trade_feature_date.isoformat() if latest_product_trade_feature_date else None
         ),
     }
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))

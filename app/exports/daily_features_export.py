@@ -147,6 +147,25 @@ DAILY_FEATURE_COLUMNS = [
     "sentiment_proxy_7d",
     "news_as_of_date",
     "news_missing_flags",
+    "export_volume_1m",
+    "export_volume_3m_avg",
+    "export_volume_12m_sum",
+    "import_volume_1m",
+    "import_volume_3m_avg",
+    "import_volume_12m_sum",
+    "net_export_volume_1m",
+    "export_value_usd_1m",
+    "import_value_usd_1m",
+    "average_export_unit_value_usd",
+    "average_import_unit_value_usd",
+    "china_import_volume_1m",
+    "major_exporter_volume_1m",
+    "major_importer_volume_1m",
+    "trade_balance_proxy",
+    "trade_yoy_change",
+    "trade_as_of_date",
+    "reporting_lag_days",
+    "trade_missing_flags",
     "created_at",
     "updated_at",
 ]
@@ -441,6 +460,25 @@ def _row_from_feature(feature: DailyProductFeature, product: Product) -> dict[st
         "sentiment_proxy_7d": feature.sentiment_proxy_7d,
         "news_as_of_date": feature.news_as_of_date,
         "news_missing_flags": feature.news_missing_flags,
+        "export_volume_1m": feature.export_volume_1m,
+        "export_volume_3m_avg": feature.export_volume_3m_avg,
+        "export_volume_12m_sum": feature.export_volume_12m_sum,
+        "import_volume_1m": feature.import_volume_1m,
+        "import_volume_3m_avg": feature.import_volume_3m_avg,
+        "import_volume_12m_sum": feature.import_volume_12m_sum,
+        "net_export_volume_1m": feature.net_export_volume_1m,
+        "export_value_usd_1m": feature.export_value_usd_1m,
+        "import_value_usd_1m": feature.import_value_usd_1m,
+        "average_export_unit_value_usd": feature.average_export_unit_value_usd,
+        "average_import_unit_value_usd": feature.average_import_unit_value_usd,
+        "china_import_volume_1m": feature.china_import_volume_1m,
+        "major_exporter_volume_1m": feature.major_exporter_volume_1m,
+        "major_importer_volume_1m": feature.major_importer_volume_1m,
+        "trade_balance_proxy": feature.trade_balance_proxy,
+        "trade_yoy_change": feature.trade_yoy_change,
+        "trade_as_of_date": feature.trade_as_of_date,
+        "reporting_lag_days": feature.reporting_lag_days,
+        "trade_missing_flags": feature.trade_missing_flags,
         "created_at": feature.created_at,
         "updated_at": feature.updated_at,
     }
@@ -509,6 +547,10 @@ def _build_manifest(
             "daily_news_features",
             "commodity_events",
             "news_articles",
+            "daily_trade_features",
+            "trade_flows",
+            "product_trade_code_weights",
+            "trade_commodity_codes",
         ],
         "row_count": len(rows),
         "column_count": len(DAILY_FEATURE_COLUMNS),
@@ -523,13 +565,16 @@ def _build_manifest(
         "as_of_policy": (
             "Export v1 uses daily_product_features as stored. Current snapshot prices, CBR FX, FRED energy, "
             "World Bank commodity benchmarks, Open-Meteo-derived product weather features, and deterministic "
-            "rule-based news/event features are used according to the current feature builder logic."
+            "rule-based news/event features are used according to the current feature builder logic. "
+            "Product trade aggregates are copied from daily_trade_features when their trade_as_of_date is "
+            "not later than the product feature_date."
         ),
         "leakage_note": (
             "Historical bars are not used in daily features v1. World Bank benchmark features use "
             "period_start <= feature_date in Phase 6.2E. Product weather features use region-level "
             "weather_daily_features with feature_date <= product feature_date and weather_as_of_date <= "
             "product feature_date. News/event features use daily_news_features with news_as_of_date <= "
+            "product feature_date. Trade features use daily_trade_features with trade_as_of_date <= "
             "product feature_date. ML targets and future-looking labels are not included."
         ),
         "included_sources": [
@@ -540,6 +585,7 @@ def _build_manifest(
             "World Bank Pink Sheet commodity benchmarks through the feature builder",
             "Open-Meteo region weather aggregates through product_weather_region_weights",
             "Rule-based commodity events and daily news aggregates through the feature builder",
+            "UN Comtrade trade flows through daily_trade_features and product_trade_code_weights",
         ],
         "excluded_sources": [
             "historical_price_bars",
@@ -558,6 +604,8 @@ def _build_manifest(
             "Weather missing flags identify partial or absent regional coverage.",
             "News/event features are deterministic keyword-rule aggregates, not semantic NLP/LLM classifications.",
             "News missing flags identify absent articles, absent events, or partial source coverage.",
+            "Trade features are monthly aggregates forward-filled by strict as-of date and may lag source releases.",
+            "Trade missing flags identify absent trade mappings, absent trade flows, or incomplete history windows.",
             "Only products present in daily_product_features are exported.",
             "Sunflower products, ML targets, and ML outputs are not implemented in export v1.",
         ],

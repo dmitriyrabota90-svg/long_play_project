@@ -1429,8 +1429,29 @@ skips them. Same identity with changed normalized values writes
 `daily_trade_features`, dataset exports, ML targets, and scheduler integration
 are intentionally not added in Phase 6.5D.
 
+Phase 6.5E adds the daily trade feature layer and export integration. It builds
+nullable `daily_trade_features` from monthly `trade_flows`, then the normal
+daily product feature builder copies as-of-safe trade values into
+`daily_product_features`.
+
+```bash
+python scripts/build_features.py trade_daily
+python scripts/build_features.py trade_daily --product soybean_oil --from-date 2026-06-01 --to-date 2026-06-30
+python scripts/build_features.py daily
+```
+
+The daily trade builder uses `product_trade_code_weights`, monthly
+`trade_flows`, and strict availability dates (`published_at` date, falling back
+to `fetched_at` date) so `trade_as_of_date` is never later than the feature
+date. Export v1 now includes nullable trade columns such as `export_volume_1m`,
+`import_volume_1m`, `net_export_volume_1m`, `trade_as_of_date`,
+`reporting_lag_days`, and `trade_missing_flags`.
+
+Phase 6.5E does not add ML targets, does not add scheduler jobs, and does not
+run collectors by itself.
+
 ## Next Phase
 
-The next phase is Phase 6.5E: trade features/export integration, local-only. It
-should build explicit as-of rules before copying any trade features into export
-datasets.
+The next phase is Phase 6.6A: review production readiness for trade feature
+building and decide whether to run a controlled server-side trade feature
+backfill/export refresh.

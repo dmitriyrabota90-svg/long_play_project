@@ -95,6 +95,25 @@ def _seed_feature(
         sentiment_proxy_7d=Decimal("0.50000000"),
         news_as_of_date=feature_date,
         news_missing_flags="partial_source_coverage",
+        export_volume_1m=Decimal("1000.00000000"),
+        export_volume_3m_avg=Decimal("900.00000000"),
+        export_volume_12m_sum=None,
+        import_volume_1m=Decimal("100.00000000"),
+        import_volume_3m_avg=None,
+        import_volume_12m_sum=None,
+        net_export_volume_1m=Decimal("900.00000000"),
+        export_value_usd_1m=Decimal("850000.00000000"),
+        import_value_usd_1m=Decimal("85000.00000000"),
+        average_export_unit_value_usd=Decimal("850.00000000"),
+        average_import_unit_value_usd=Decimal("850.00000000"),
+        china_import_volume_1m=Decimal("100.00000000"),
+        major_exporter_volume_1m=Decimal("1000.00000000"),
+        major_importer_volume_1m=Decimal("100.00000000"),
+        trade_balance_proxy=Decimal("900.00000000"),
+        trade_yoy_change=None,
+        trade_as_of_date=feature_date,
+        reporting_lag_days=7,
+        trade_missing_flags="missing_yoy_history",
         **calendar_values,
         created_at=now,
         updated_at=now,
@@ -130,6 +149,12 @@ def test_export_query_returns_rows_from_sample_db() -> None:
     assert rows[0]["sentiment_proxy_7d"] == "0.50000000"
     assert rows[0]["news_as_of_date"] == "2026-06-01"
     assert rows[0]["news_missing_flags"] == "partial_source_coverage"
+    assert rows[0]["export_volume_1m"] == "1000.00000000"
+    assert rows[0]["import_volume_1m"] == "100.00000000"
+    assert rows[0]["net_export_volume_1m"] == "900.00000000"
+    assert rows[0]["trade_as_of_date"] == "2026-06-01"
+    assert rows[0]["reporting_lag_days"] == 7
+    assert rows[0]["trade_missing_flags"] == "missing_yoy_history"
     assert "historical_price_bars" not in rows[0]
 
 
@@ -171,24 +196,36 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "sentiment_proxy_7d" in header
     assert "news_as_of_date" in header
     assert "news_missing_flags" in header
+    assert "export_volume_1m" in header
+    assert "import_volume_1m" in header
+    assert "trade_as_of_date" in header
+    assert "trade_missing_flags" in header
     assert "calendar_sin_day_of_year" in manifest["columns"]
     assert "energy_wti_delta_7d" in manifest["columns"]
     assert "benchmark_as_of_date" in manifest["columns"]
     assert "weather_as_of_date" in manifest["columns"]
     assert "news_count_7d" in manifest["columns"]
     assert "sentiment_proxy_7d" in manifest["columns"]
+    assert "export_volume_1m" in manifest["columns"]
+    assert "trade_as_of_date" in manifest["columns"]
     assert "commodity_benchmarks" in manifest["source_tables"]
     assert "weather_daily_features" in manifest["source_tables"]
     assert "product_weather_region_weights" in manifest["source_tables"]
     assert "daily_news_features" in manifest["source_tables"]
     assert "commodity_events" in manifest["source_tables"]
     assert "news_articles" in manifest["source_tables"]
+    assert "daily_trade_features" in manifest["source_tables"]
+    assert "trade_flows" in manifest["source_tables"]
+    assert "product_trade_code_weights" in manifest["source_tables"]
+    assert "trade_commodity_codes" in manifest["source_tables"]
     assert "World Bank Pink Sheet commodity benchmarks through the feature builder" in manifest["included_sources"]
     assert "Open-Meteo region weather aggregates through product_weather_region_weights" in manifest["included_sources"]
     assert "Rule-based commodity events and daily news aggregates through the feature builder" in manifest["included_sources"]
+    assert "UN Comtrade trade flows through daily_trade_features and product_trade_code_weights" in manifest["included_sources"]
     assert "commodity_benchmarks" not in manifest["excluded_sources"]
     assert "weather_observations" not in manifest["excluded_sources"]
     assert "news_articles" not in manifest["excluded_sources"]
+    assert "trade_flows" not in manifest["excluded_sources"]
     assert manifest["sha256"]["csv"] == result.sha256["csv"]
     assert len(result.sha256["csv"]) == 64
     assert manifest["products"] == ["rapeseed_oil", "soybean_oil"]

@@ -912,6 +912,32 @@ docker compose run --rm app python -m app.db.seed
 The next steps are Phase 6.5D controlled UN Comtrade collection and Phase 6.5E
 trade feature/export integration.
 
+Phase 6.5E adds Alembic revision `0017_product_trade_features`, the
+`trade_daily` feature builder, product-level trade columns in
+`daily_product_features`, and export/operational-report integration.
+
+Local/manual commands:
+
+```bash
+python scripts/build_features.py trade_daily
+python scripts/build_features.py trade_daily --product soybean_oil --from-date 2026-06-01 --to-date 2026-06-30
+python scripts/build_features.py daily
+python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+After a reviewed server deploy, apply migrations before rebuilding features:
+
+```bash
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app python scripts/build_features.py trade_daily
+docker compose run --rm app python scripts/build_features.py daily
+```
+
+These are manual commands only. Phase 6.5E does not add a trade scheduler, does
+not run collectors automatically, does not add ML, and does not create targets.
+Export artifacts remain runtime files under `data/exports/` and must not be
+committed.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

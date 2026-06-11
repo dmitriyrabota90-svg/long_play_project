@@ -540,22 +540,31 @@ Avoid double-counting:
   grouping policy;
 - store country-group assumptions in feature metadata.
 
-## Future Feature Integration Into Daily Product Features
+## Phase 6.5E Feature Integration Into Daily Product Features
 
-The first trade feature layer should remain separate from `daily_product_features`.
-After controlled validation, `daily_product_features` can receive nullable
-columns copied from `daily_trade_features`.
+Phase 6.5E adds the first daily trade feature builder and nullable product-level
+trade columns in `daily_product_features`. The source layer remains separate:
+`daily_trade_features` is derived from monthly `trade_flows`, then the regular
+daily product feature builder copies only as-of-safe values into
+`daily_product_features`.
 
-Candidate product-level features:
+Product-level fields:
 
 - `export_volume_1m`;
 - `export_volume_3m_avg`;
+- `export_volume_12m_sum`;
 - `import_volume_1m`;
 - `import_volume_3m_avg`;
+- `import_volume_12m_sum`;
 - `net_export_volume_1m`;
+- `export_value_usd_1m`;
+- `import_value_usd_1m`;
 - `china_import_volume_1m`;
 - `major_exporter_volume_1m`;
+- `major_importer_volume_1m`;
 - `average_export_unit_value_usd`;
+- `average_import_unit_value_usd`;
+- `trade_balance_proxy`;
 - `trade_yoy_change`;
 - `reporting_lag_days`;
 - `trade_as_of_date`;
@@ -569,15 +578,33 @@ Rules:
   eligibility;
 - missing flags must be explicit.
 
-## Future Export Integration
+Run the daily trade feature layer manually:
 
-Export v1 should not include trade columns until:
+```bash
+python scripts/build_features.py trade_daily
+python scripts/build_features.py trade_daily --product soybean_oil --from-date 2026-06-01 --to-date 2026-06-30
+```
 
-- trade schema is implemented;
-- at least one controlled source collector is validated;
-- `daily_trade_features` are built with tested as-of rules;
-- feature columns are nullable and carry `trade_as_of_date` plus missing flags;
-- export manifests include the updated schema/version metadata.
+Then rebuild regular daily product features when the trade rows are ready:
+
+```bash
+python scripts/build_features.py daily
+```
+
+No trade scheduler is added in Phase 6.5E.
+
+## Phase 6.5E Export Integration
+
+Export v1 includes the nullable trade columns copied into
+`daily_product_features`. The manifest lists `daily_trade_features`,
+`trade_flows`, `product_trade_code_weights`, and `trade_commodity_codes` as
+source tables and records the as-of rule:
+`daily_trade_features.trade_as_of_date <= daily_product_features.feature_date`.
+
+Trade values can be missing when product-code weights are absent, trade flows
+are not collected for the product, or a full 3-month/12-month/YoY history is not
+available. Those cases are represented by `trade_missing_flags`; they are not
+export failures.
 
 ## Non-Goals
 
@@ -590,3 +617,6 @@ Export v1 should not include trade columns until:
 - No production deploy in Phase 6.5B.
 - No ML in Phase 6.5B.
 - No targets in Phase 6.5B.
+
+Phase 6.5E also remains non-ML and target-free. It does not add a new collector,
+does not retry live UN Comtrade requests, and does not add scheduler jobs.

@@ -17,6 +17,7 @@ from app.db.models import (
     CommodityBenchmark,
     DailyNewsFeature,
     DailyProductFeature,
+    DailyTradeFeature,
     DataQualityCheck,
     EnergyPrice,
     FxRate,
@@ -28,6 +29,7 @@ from app.db.models import (
     WeatherRegion,
 )
 from app.db.session import session_scope
+from app.features.trade_daily import TRADE_NUMERIC_FIELDS
 
 
 FEATURE_VERSION = "daily_features_v1"
@@ -160,6 +162,11 @@ NEWS_PRODUCT_FEATURE_FIELDS = (
     "sentiment_proxy_7d",
     "news_as_of_date",
 )
+TRADE_PRODUCT_FEATURE_FIELDS = (
+    *TRADE_NUMERIC_FIELDS,
+    "trade_as_of_date",
+    "reporting_lag_days",
+)
 SEASONS_BY_MONTH = {
     1: "winter",
     2: "winter",
@@ -239,6 +246,7 @@ NUMERIC_SCALES = {
     "weather_growing_degree_days_7d_weighted": 8,
     "weather_growing_degree_days_30d_weighted": 8,
     "sentiment_proxy_7d": 8,
+    **{field: 8 for field in TRADE_NUMERIC_FIELDS},
 }
 
 
@@ -361,6 +369,7 @@ def _build_daily_features_with_session(
     weather_weights = _load_product_weather_weights(session)
     weather_features = _load_weather_daily_features(session, to_date=end)
     news_features = _load_daily_news_features(session, to_date=end)
+    trade_features = _load_daily_trade_features(session, to_date=end)
 
     rows_created = 0
     rows_updated = 0
@@ -379,6 +388,7 @@ def _build_daily_features_with_session(
             weather_weights=weather_weights,
             weather_features=weather_features,
             news_features=news_features,
+            trade_features=trade_features,
         )
         if warning_names:
             missing_fx_dates.add(feature_date.isoformat())
@@ -564,6 +574,18 @@ def _load_daily_news_features(session: Session, *, to_date: date) -> dict[int, l
     return by_product
 
 
+def _load_daily_trade_features(session: Session, *, to_date: date) -> dict[int, list[DailyTradeFeature]]:
+    rows = session.scalars(
+        select(DailyTradeFeature)
+        .where(DailyTradeFeature.feature_date <= to_date)
+        .order_by(DailyTradeFeature.product_id, DailyTradeFeature.feature_date)
+    ).all()
+    by_product: dict[int, list[DailyTradeFeature]] = {}
+    for row in rows:
+        by_product.setdefault(row.product_id, []).append(row)
+    return by_product
+
+
 def _feature_values(
     *,
     price_day: _PriceDay,
@@ -574,6 +596,7 @@ def _feature_values(
     weather_weights: dict[int, list[_WeatherWeight]],
     weather_features: dict[int, list[WeatherDailyFeature]],
     news_features: dict[int, list[DailyNewsFeature]],
+    trade_features: dict[int, list[DailyTradeFeature]],
 ) -> tuple[dict[str, Any], list[str]]:
     ordered = price_day.ordered
     prices = [item.price for item in ordered]
@@ -638,10 +661,51 @@ def _feature_values(
             news_features=news_features,
         )
     )
+    values.update(
+        _trade_feature_values(
+            product_id=price_day.product_id,
+            feature_date=price_day.feature_date,
+            trade_features=trade_features,
+        )
+    )
 
     values = _normalize_feature_values(values)
     values["features_json"] = _features_json(values)
     return values, warnings
+
+
+def _trade_feature_values(
+    *,
+    product_id: int,
+    feature_date: date,
+    trade_features: dict[int, list[DailyTradeFeature]],
+) -> dict[str, Any]:
+    values: dict[str, Any] = {field: None for field in TRADE_PRODUCT_FEATURE_FIELDS}
+    values["trade_missing_flags"] = None
+    feature = _daily_trade_as_of(trade_features.get(product_id, []), feature_date)
+    if feature is None:
+        values["trade_missing_flags"] = "missing_daily_trade_features"
+        return values
+    if feature.trade_as_of_date is not None and feature.trade_as_of_date > feature_date:
+        values["trade_missing_flags"] = "future_trade_as_of"
+        return values
+
+    for field in TRADE_PRODUCT_FEATURE_FIELDS:
+        values[field] = getattr(feature, field)
+    flags = _truthy_trade_missing_flags(feature.missing_flags)
+    values["trade_missing_flags"] = ",".join(flags) if flags else None
+    return values
+
+
+def _daily_trade_as_of(items: list[DailyTradeFeature], feature_date: date) -> DailyTradeFeature | None:
+    eligible = [item for item in items if item.feature_date <= feature_date]
+    return eligible[-1] if eligible else None
+
+
+def _truthy_trade_missing_flags(flags: Any) -> list[str]:
+    if not isinstance(flags, dict):
+        return []
+    return [str(name) for name, value in flags.items() if value]
 
 
 def _news_feature_values(
@@ -1037,6 +1101,38 @@ def _write_feature_quality_checks(
             "news_count_7d": values.get("news_count_7d"),
             "event_count_7d": values.get("event_count_7d"),
             "news_missing_flags": values.get("news_missing_flags"),
+        },
+        checked_at,
+    )
+    no_future_trade = values.get("trade_as_of_date") is None or values["trade_as_of_date"] <= feature_date
+    _write_check(
+        session,
+        "daily_feature_no_future_trade",
+        "pass" if no_future_trade else "error",
+        "error" if not no_future_trade else "info",
+        {
+            **details,
+            "trade_as_of_date": values["trade_as_of_date"].isoformat()
+            if values.get("trade_as_of_date")
+            else None,
+            "trade_missing_flags": values.get("trade_missing_flags"),
+        },
+        checked_at,
+    )
+    _write_check(
+        session,
+        "daily_feature_trade_coverage_recorded",
+        "pass",
+        "info",
+        {
+            **details,
+            "export_volume_1m": str(values.get("export_volume_1m"))
+            if values.get("export_volume_1m") is not None
+            else None,
+            "import_volume_1m": str(values.get("import_volume_1m"))
+            if values.get("import_volume_1m") is not None
+            else None,
+            "trade_missing_flags": values.get("trade_missing_flags"),
         },
         checked_at,
     )
