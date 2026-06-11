@@ -420,6 +420,56 @@ Phase 6.5D can initially record changed-hash warnings and refuse silent
 overwrites. A revisions table can be added later if real revisions appear
 regularly and the project needs versioned audit history.
 
+Phase 6.5D implements that first policy for `un_comtrade`: unchanged business
+identity plus unchanged `source_record_hash` is skipped, while changed hash for
+the same identity writes `trade_existing_flow_hash_changed` and keeps the
+existing row unchanged. No silent overwrite is allowed.
+
+## Phase 6.5D UN Comtrade Collector
+
+The first trade collector is `un_comtrade`. It is manual-only and collector-run
+scoped. It uses the UN Comtrade monthly HS API endpoint candidate
+`https://comtradeapi.un.org/data/v1/get/C/M/HS`, stores every raw response
+through `RawStore`, records metadata in `raw_responses`, and writes normalized
+monthly rows to `trade_flows`.
+
+Initial bounded scope:
+
+- HS codes: `1201`, `1507`, `2304`, `1205`, `1514`, `2306`;
+- reporters/partners: `BRA`, `USA`, `ARG`, `CAN`, `CHN`, and `WLD`;
+- `WLD`/world is allowed as partner only;
+- flows: `import`, `export`, `re_import`, `re_export`;
+- maximum window: 3 monthly periods;
+- maximum records: 500;
+- no scheduler.
+
+Example:
+
+```bash
+python scripts/run_collector.py un_comtrade \
+  --hs-code 1507 \
+  --from-period 2024-01 \
+  --to-period 2024-03 \
+  --reporter BRA \
+  --partner WLD \
+  --flow export \
+  --maxrecords 100
+```
+
+The collector keeps reporter/partner codes normalized as project-level ISO-like
+codes such as `BRA` and `WLD`; source numeric request codes are preserved in
+`metadata_json` and raw payloads. This keeps identity readable while retaining
+source evidence.
+
+Quality checks include request validation, raw response presence and content
+type, parsed rows, period/direction/reporter/partner presence, quantity/value
+presence, source hash presence, raw linkage, malformed-row warnings, and changed
+existing-row warnings.
+
+Phase 6.5D does not build `daily_trade_features`, does not copy trade columns
+into `daily_product_features`, does not change exports, does not add ML targets,
+and does not add a scheduler.
+
 ## As-Of And Leakage Policy
 
 For realistic ML simulation:

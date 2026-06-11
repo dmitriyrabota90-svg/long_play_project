@@ -20,6 +20,7 @@ from app.collectors.historical.jijinhao_historical_prices import JijinhaoHistori
 from app.collectors.news.gdelt_config import is_known_query_key
 from app.collectors.news.gdelt_news import GdeltNewsCollector
 from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
+from app.collectors.trade.un_comtrade import UnComtradeCollector
 from app.collectors.weather.open_meteo_config import MAX_DAYS_PER_RUN as OPEN_METEO_MAX_DAYS_PER_RUN
 from app.collectors.weather.open_meteo_historical import OpenMeteoHistoricalWeatherCollector
 
@@ -36,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
             "gdelt_news",
             "world_bank_pink_sheet",
             "open_meteo_historical_weather",
+            "un_comtrade",
         ],
         help="Collector name to run",
     )
@@ -61,7 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--region", help="Optional weather region code for open_meteo_historical_weather.")
     parser.add_argument("--query-key", help="Optional GDELT news query preset key, for example soybean.")
     parser.add_argument("--query", help="Optional custom GDELT news query string.")
-    parser.add_argument("--maxrecords", type=int, help="Optional GDELT maxrecords value. Phase 6.4D max is 100.")
+    parser.add_argument("--maxrecords", type=int, help="Optional GDELT or UN Comtrade maxrecords value.")
+    parser.add_argument("--hs-code", help="Required HS code for un_comtrade, for example 1507.")
+    parser.add_argument("--from-period", help="Inclusive monthly period as YYYY-MM. Used by un_comtrade.")
+    parser.add_argument("--to-period", help="Inclusive monthly period as YYYY-MM. Used by un_comtrade.")
+    parser.add_argument("--reporter", help="Reporter code for un_comtrade, for example BRA.")
+    parser.add_argument("--partner", help="Partner code for un_comtrade, for example WLD.")
+    parser.add_argument("--flow", choices=["import", "export", "re_export", "re_import"], default="export")
     return parser
 
 
@@ -130,8 +138,13 @@ def main() -> None:
         parser.error("--query-key is only supported for gdelt_news")
     if args.collector_name != "gdelt_news" and args.query:
         parser.error("--query is only supported for gdelt_news")
-    if args.collector_name != "gdelt_news" and args.maxrecords is not None:
-        parser.error("--maxrecords is only supported for gdelt_news")
+    if args.collector_name not in {"gdelt_news", "un_comtrade"} and args.maxrecords is not None:
+        parser.error("--maxrecords is only supported for gdelt_news and un_comtrade")
+    if args.collector_name != "un_comtrade":
+        if args.hs_code or args.from_period or args.to_period or args.reporter or args.partner:
+            parser.error("--hs-code/--from-period/--to-period/--reporter/--partner are only supported for un_comtrade")
+        if args.flow != "export":
+            parser.error("--flow is only supported for un_comtrade")
 
     if args.collector_name == "current_price_source":
         if requested_date is not None or from_date is not None or to_date is not None:
@@ -212,6 +225,36 @@ def main() -> None:
             maxrecords=args.maxrecords,
             run_type=args.run_type,
         )
+    elif args.collector_name == "un_comtrade":
+        if requested_date is not None or collection_slot is not None:
+            parser.error("--date and --collection-slot are not supported for un_comtrade")
+        if from_date is not None or to_date is not None:
+            parser.error("--from-date/--to-date are not supported for un_comtrade; use --from-period/--to-period")
+        if args.run_type == "scheduled":
+            parser.error("scheduled runs are not supported for un_comtrade")
+        missing = [
+            name
+            for name, value in (
+                ("--hs-code", args.hs_code),
+                ("--from-period", args.from_period),
+                ("--to-period", args.to_period),
+                ("--reporter", args.reporter),
+                ("--partner", args.partner),
+            )
+            if not value
+        ]
+        if missing:
+            parser.error(f"{', '.join(missing)} are required for un_comtrade")
+        result = UnComtradeCollector().run(
+            hs_code=args.hs_code,
+            from_period=args.from_period,
+            to_period=args.to_period,
+            reporter=args.reporter,
+            partner=args.partner,
+            flow=args.flow,
+            maxrecords=args.maxrecords,
+            run_type=args.run_type,
+        )
     else:
         if requested_date is not None or collection_slot is not None:
             parser.error("--date and --collection-slot are not supported for world_bank_pink_sheet")
@@ -235,6 +278,13 @@ def main() -> None:
         print(f"query={result.query}")
     if hasattr(result, "maxrecords"):
         print(f"maxrecords={result.maxrecords}")
+    if hasattr(result, "hs_code"):
+        print(f"hs_code={result.hs_code}")
+        print(f"from_period={result.from_period}")
+        print(f"to_period={result.to_period}")
+        print(f"reporter={result.reporter}")
+        print(f"partner={result.partner}")
+        print(f"flow={result.flow}")
     if hasattr(result, "products_processed"):
         print(f"products_processed={result.products_processed}")
     if hasattr(result, "series_requested"):

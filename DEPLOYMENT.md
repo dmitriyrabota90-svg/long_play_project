@@ -1111,6 +1111,35 @@ LIMIT 20;
 
 The historical collector remains manual-only. Do not add a scheduler and do not rebuild daily features during this rollout.
 
+## UN Comtrade Collector Rollout
+
+Phase 6.5D adds a manual-only `un_comtrade` collector. It is not scheduled and
+must be run only in controlled, narrow windows after the `0016_trade_schema`
+migration and seed have been applied.
+
+Example controlled command:
+
+```bash
+docker compose run --rm app python scripts/run_collector.py un_comtrade \
+  --hs-code 1507 \
+  --from-period 2024-01 \
+  --to-period 2024-01 \
+  --reporter BRA \
+  --partner WLD \
+  --flow export \
+  --maxrecords 100
+```
+
+Phase 6.5D supports only HS codes `1201`, `1507`, `2304`, `1205`, `1514`, and
+`2306`, a maximum of 3 monthly periods per request, and bounded
+`maxrecords <= 500`. Raw responses are stored under `data/raw/un_comtrade/...`
+and normalized rows are written to `trade_flows`. Re-run the same command to
+verify idempotency; unchanged rows should be skipped, and changed rows should
+create `trade_existing_flow_hash_changed` warnings without overwriting.
+
+Do not add a scheduler for `un_comtrade` in this phase. Do not build trade
+features or export trade columns until Phase 6.5E defines the as-of policy.
+
 ## Checking The Production Scheduler
 
 Production `.env` should use:

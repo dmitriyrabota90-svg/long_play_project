@@ -1403,8 +1403,34 @@ seeds for `un_comtrade`, `faostat_trade`, `usda_fas_trade`, and
 collector, does not write `trade_flows`, does not build `daily_trade_features`,
 does not register a scheduler, and does not add ML targets.
 
+Phase 6.5D adds the first controlled manual trade collector, `un_comtrade`.
+It writes raw API payloads through `RawStore`, stores raw metadata in
+`raw_responses`, and normalizes rows into `trade_flows`. It is manual-only and
+has no scheduler.
+
+```bash
+python scripts/run_collector.py un_comtrade \
+  --hs-code 1507 \
+  --from-period 2024-01 \
+  --to-period 2024-03 \
+  --reporter BRA \
+  --partner WLD \
+  --flow export \
+  --maxrecords 100
+```
+
+Supported first-pass HS codes are `1201`, `1507`, `2304`, `1205`, `1514`, and
+`2306`. Supported controlled reporter/partner codes are `BRA`, `USA`, `ARG`,
+`CAN`, `CHN`, and `WLD`; `WLD` is allowed only as partner. Phase 6.5D limits one
+request to 3 monthly periods and `maxrecords <= 500`. Re-running unchanged rows
+skips them. Same identity with changed normalized values writes
+`trade_existing_flow_hash_changed` and does not overwrite in this phase.
+
+`daily_trade_features`, dataset exports, ML targets, and scheduler integration
+are intentionally not added in Phase 6.5D.
+
 ## Next Phase
 
-The next phase is Phase 6.5D: first controlled UN Comtrade collector,
-local-only/manual. It should use narrow monthly windows and must not add a
-scheduler.
+The next phase is Phase 6.5E: trade features/export integration, local-only. It
+should build explicit as-of rules before copying any trade features into export
+datasets.
