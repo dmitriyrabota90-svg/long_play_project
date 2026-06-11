@@ -1175,8 +1175,27 @@ The collector currently limits one manual run to 45 inclusive days. Same
 Phase 6.3D. Missing optional Open-Meteo variables are stored as `NULL` and
 listed in `metadata_json`.
 
+Phase 6.3E builds region-level weather aggregates from `weather_observations`
+into `weather_daily_features`. It is a derived-feature step only: it does not
+run weather collectors, does not change schedulers, does not modify product
+daily features, and does not add ML targets.
+
+```bash
+python scripts/build_features.py weather_daily
+python scripts/build_features.py weather_daily \
+  --region br_mato_grosso_soybean \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-10
+```
+
+The builder uses only `observation_date <= feature_date`, computes 7/14/30-day
+rolling aggregates, heat-stress days at `temperature_2m_max >= 30C`, frost days
+at `temperature_2m_min <= 0C`, first-version drought proxy as
+`precipitation_30d_sum`, and growing degree days with base `10C` for soybean
+regions and `5C` for rapeseed/canola regions. Incomplete early windows are
+recorded in `missing_flags`.
+
 ## Next Phase
 
-The next phase is Phase 6.3E: aggregate `weather_observations` into
-`weather_daily_features` locally, then review product-level weather feature and
-export integration separately.
+The next phase is Phase 6.3F: product-level weather feature integration and
+export review, local-only.

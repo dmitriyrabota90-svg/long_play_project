@@ -634,6 +634,23 @@ does not write weather-derived product features, and does not add ML targets.
 The next safe step is Phase 6.3E weather daily aggregation from
 `weather_observations`.
 
+Phase 6.3E adds local/manual aggregation from `weather_observations` into
+`weather_daily_features`:
+
+```bash
+docker compose run --rm app python scripts/build_features.py weather_daily
+docker compose run --rm app python scripts/build_features.py weather_daily \
+  --region br_mato_grosso_soybean \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-10
+```
+
+The aggregation is idempotent by `(region_id, feature_date)`, records missing
+early-window flags, and uses no future observations. It does not run collectors,
+does not add a weather scheduler, does not rebuild product daily features, and
+does not add ML targets. Product-level weather feature/export integration is a
+later Phase 6.3F decision.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

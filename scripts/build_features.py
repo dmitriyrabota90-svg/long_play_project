@@ -13,6 +13,7 @@ os.chdir(PROJECT_ROOT)
 
 from app.config.logging import setup_logging
 from app.features.daily import build_daily_features
+from app.features.weather_daily import build_weather_daily_features
 
 
 def main() -> None:
@@ -21,6 +22,10 @@ def main() -> None:
     daily = subparsers.add_parser("daily", help="Build daily product price and FX features.")
     daily.add_argument("--from-date", help="Inclusive start date as YYYY-MM-DD.")
     daily.add_argument("--to-date", help="Inclusive end date as YYYY-MM-DD.")
+    weather_daily = subparsers.add_parser("weather_daily", help="Build daily weather features by region.")
+    weather_daily.add_argument("--region", help="Optional weather region code.")
+    weather_daily.add_argument("--from-date", help="Inclusive start date as YYYY-MM-DD.")
+    weather_daily.add_argument("--to-date", help="Inclusive end date as YYYY-MM-DD.")
     args = parser.parse_args()
 
     setup_logging()
@@ -40,6 +45,25 @@ def main() -> None:
         print(f"rows_skipped={result.rows_skipped}")
         print(f"missing_fx_dates={','.join(result.missing_fx_dates)}")
         print(f"warnings_count={result.warnings_count}")
+    elif args.command == "weather_daily":
+        from_date = _parse_date_arg(parser, "--from-date", args.from_date)
+        to_date = _parse_date_arg(parser, "--to-date", args.to_date)
+        if (from_date is None) != (to_date is None):
+            parser.error("--from-date and --to-date must be provided together")
+        if from_date is not None and to_date is not None and from_date > to_date:
+            parser.error("--from-date must be on or before --to-date")
+        result = build_weather_daily_features(
+            region_code=args.region,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        print(f"regions_processed={result.regions_processed}")
+        print(f"dates_processed={result.dates_processed}")
+        print(f"rows_created={result.rows_created}")
+        print(f"rows_updated={result.rows_updated}")
+        print(f"rows_skipped={result.rows_skipped}")
+        print(f"warnings_count={result.warnings_count}")
+        print(f"missing_observation_regions={','.join(result.missing_observation_regions)}")
 
 
 def _parse_date_arg(parser: argparse.ArgumentParser, name: str, value: str | None) -> date | None:

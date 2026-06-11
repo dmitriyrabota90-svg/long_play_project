@@ -32,6 +32,11 @@ Historical Weather API. It writes production raw evidence and normalized
 aggregate weather features, and does not add product-level weather export
 columns.
 
+Phase 6.3E implements local/manual aggregation from `weather_observations` into
+`weather_daily_features`. It remains region-level feature engineering only:
+product-level weather columns and export integration are deferred to a later
+phase.
+
 ## Why Weather Matters For Agricultural Commodity Forecasting
 
 Weather affects yield expectations, harvest timing, crop stress, export supply,
@@ -556,6 +561,65 @@ changed-hash conflicts.
 No weather scheduler is registered. `daily_product_features` and dataset export
 do not use weather observations until a later explicit feature phase.
 
+## Phase 6.3E Weather Daily Aggregation
+
+Phase 6.3E adds a deterministic feature builder for `weather_daily_features`.
+It reads `weather_observations` and upserts one row per
+`region_id + feature_date`.
+
+Run all active regions with observations:
+
+```bash
+python scripts/build_features.py weather_daily
+```
+
+Run one region and explicit inclusive date range:
+
+```bash
+python scripts/build_features.py weather_daily \
+  --region br_mato_grosso_soybean \
+  --from-date 2026-05-01 \
+  --to-date 2026-05-10
+```
+
+Rolling windows:
+
+- 7d: `feature_date - 6 days` through `feature_date`;
+- 14d: `feature_date - 13 days` through `feature_date`;
+- 30d: `feature_date - 29 days` through `feature_date`.
+
+The builder uses only observations with `observation_date <= feature_date`.
+`weather_as_of_date` is the latest observation date used in the feature row.
+If an early row has less than a full rolling window, the builder computes from
+available historical observations and records incomplete-window flags.
+
+First-version thresholds and formulas:
+
+- heat stress day: `temperature_2m_max >= 30C`;
+- frost day: `temperature_2m_min <= 0C`;
+- growing degree days: `max(0, temperature_2m_mean - base_temperature)`;
+- soybean base temperature: `10C`;
+- rapeseed/canola base temperature: `5C`;
+- default base temperature: `10C`;
+- drought proxy: `precipitation_30d_sum`, where lower values mean drier.
+
+Missing flags are stored as JSON and may include:
+
+- `missing_temperature`;
+- `missing_precipitation`;
+- `incomplete_7d_window`;
+- `incomplete_14d_window`;
+- `incomplete_30d_window`;
+- `missing_region_observations`.
+
+Quality checks verify region presence, feature date validity, observation
+availability, no future observations, as-of safety, reasonable temperatures,
+non-negative precipitation, non-negative GDD, and missing flag recording.
+
+Phase 6.3E does not run weather collectors, does not register a scheduler, does
+not change `daily_product_features`, does not add product-level weather export
+columns, and does not create ML targets.
+
 ## Non-Goals
 
 Historical Phase 6.3B design-only non-goals:
@@ -576,3 +640,12 @@ Current Phase 6.3D collector non-goals:
 - No ML model.
 - No targets.
 - No broad gridded weather storage or ERA5/Copernicus collector.
+
+Current Phase 6.3E aggregation non-goals:
+
+- No weather collector run as part of aggregation.
+- No scheduler changes in Phase 6.3E.
+- No product-level weather feature integration yet.
+- No dataset export weather columns yet.
+- No ML model.
+- No targets.
