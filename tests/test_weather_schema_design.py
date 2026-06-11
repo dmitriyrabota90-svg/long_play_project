@@ -30,11 +30,11 @@ def test_sql_draft_contains_weather_tables() -> None:
 def test_sql_draft_contains_unique_constraints() -> None:
     sql = SQL_DRAFT.read_text(encoding="utf-8")
 
-    assert "uq_weather_regions_region_code" in sql
+    assert "uq_weather_regions_code" in sql
     assert "UNIQUE (region_code)" in sql
     assert "uq_weather_obs_source_region_date_freq" in sql
     assert "UNIQUE (source_id, region_id, observation_date, frequency)" in sql
-    assert "uq_weather_daily_features_region_date" in sql
+    assert "uq_weather_daily_region_date" in sql
     assert "UNIQUE (region_id, feature_date)" in sql
     assert "uq_product_weather_region_effective" in sql
 

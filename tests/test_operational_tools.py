@@ -76,6 +76,25 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["commodity_benchmarks"]["last_period_start"] is None
     assert report["commodity_benchmarks"]["last_observed_at"] is None
     assert report["commodity_benchmarks"]["last_fetched_at"] is None
+    assert report["weather_regions"]["count"] == 0
+    assert report["weather_regions"]["active_count"] == 0
+    assert report["weather_regions"]["high_priority_count"] == 0
+    assert report["weather_regions"]["countries_count"] == 0
+    assert report["weather_regions"]["commodity_families_count"] == 0
+    assert report["weather_observations"]["count"] == 0
+    assert report["weather_observations"]["regions_count"] == 0
+    assert report["weather_observations"]["first_observation_date"] is None
+    assert report["weather_observations"]["last_observation_date"] is None
+    assert report["weather_observations"]["last_fetched_at"] is None
+    assert report["weather_daily_features"]["count"] == 0
+    assert report["weather_daily_features"]["regions_count"] == 0
+    assert report["weather_daily_features"]["first_feature_date"] is None
+    assert report["weather_daily_features"]["last_feature_date"] is None
+    assert report["weather_daily_features"]["latest_weather_as_of_date"] is None
+    assert report["product_weather_region_weights"]["count"] == 0
+    assert report["product_weather_region_weights"]["active_count"] == 0
+    assert report["product_weather_region_weights"]["products_count"] == 0
+    assert report["product_weather_region_weights"]["regions_count"] == 0
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:

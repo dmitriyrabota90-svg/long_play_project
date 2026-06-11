@@ -20,9 +20,13 @@ from app.db.models import (
     HistoricalPriceBar,
     HistoricalPriceBarRevision,
     PriceObservation,
+    ProductWeatherRegionWeight,
     Product,
     RawResponse,
     Source,
+    WeatherDailyFeature,
+    WeatherObservation,
+    WeatherRegion,
 )
 from app.db.session import session_scope
 from app.monitoring.quality_summary import build_quality_summary, problematic_quality_filter
@@ -120,6 +124,33 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "last_period_start": None,
             "last_observed_at": None,
             "last_fetched_at": None,
+        },
+        "weather_regions": {
+            "count": 0,
+            "active_count": 0,
+            "high_priority_count": 0,
+            "countries_count": 0,
+            "commodity_families_count": 0,
+        },
+        "weather_observations": {
+            "count": 0,
+            "regions_count": 0,
+            "first_observation_date": None,
+            "last_observation_date": None,
+            "last_fetched_at": None,
+        },
+        "weather_daily_features": {
+            "count": 0,
+            "regions_count": 0,
+            "first_feature_date": None,
+            "last_feature_date": None,
+            "latest_weather_as_of_date": None,
+        },
+        "product_weather_region_weights": {
+            "count": 0,
+            "active_count": 0,
+            "products_count": 0,
+            "regions_count": 0,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -295,6 +326,47 @@ def _fill_db_report(
     report["commodity_benchmarks"]["last_fetched_at"] = (
         _to_utc(last_benchmark_fetched_at).isoformat() if last_benchmark_fetched_at else None
     )
+    report["weather_regions"] = {
+        "count": session.scalar(select(func.count()).select_from(WeatherRegion)),
+        "active_count": session.scalar(select(func.count()).select_from(WeatherRegion).where(WeatherRegion.is_active.is_(True))),
+        "high_priority_count": session.scalar(select(func.count()).select_from(WeatherRegion).where(WeatherRegion.priority == "high")),
+        "countries_count": session.scalar(select(func.count(func.distinct(WeatherRegion.country))).select_from(WeatherRegion)),
+        "commodity_families_count": session.scalar(
+            select(func.count(func.distinct(WeatherRegion.commodity_family))).select_from(WeatherRegion)
+        ),
+    }
+    first_weather_observation_date = session.scalar(select(func.min(WeatherObservation.observation_date)))
+    last_weather_observation_date = session.scalar(select(func.max(WeatherObservation.observation_date)))
+    last_weather_observation_fetched_at = session.scalar(select(func.max(WeatherObservation.fetched_at)))
+    report["weather_observations"] = {
+        "count": session.scalar(select(func.count()).select_from(WeatherObservation)),
+        "regions_count": session.scalar(select(func.count(func.distinct(WeatherObservation.region_id))).select_from(WeatherObservation)),
+        "first_observation_date": first_weather_observation_date.isoformat() if first_weather_observation_date else None,
+        "last_observation_date": last_weather_observation_date.isoformat() if last_weather_observation_date else None,
+        "last_fetched_at": _to_utc(last_weather_observation_fetched_at).isoformat() if last_weather_observation_fetched_at else None,
+    }
+    first_weather_feature_date = session.scalar(select(func.min(WeatherDailyFeature.feature_date)))
+    last_weather_feature_date = session.scalar(select(func.max(WeatherDailyFeature.feature_date)))
+    latest_weather_as_of_date = session.scalar(select(func.max(WeatherDailyFeature.weather_as_of_date)))
+    report["weather_daily_features"] = {
+        "count": session.scalar(select(func.count()).select_from(WeatherDailyFeature)),
+        "regions_count": session.scalar(select(func.count(func.distinct(WeatherDailyFeature.region_id))).select_from(WeatherDailyFeature)),
+        "first_feature_date": first_weather_feature_date.isoformat() if first_weather_feature_date else None,
+        "last_feature_date": last_weather_feature_date.isoformat() if last_weather_feature_date else None,
+        "latest_weather_as_of_date": latest_weather_as_of_date.isoformat() if latest_weather_as_of_date else None,
+    }
+    report["product_weather_region_weights"] = {
+        "count": session.scalar(select(func.count()).select_from(ProductWeatherRegionWeight)),
+        "active_count": session.scalar(
+            select(func.count()).select_from(ProductWeatherRegionWeight).where(ProductWeatherRegionWeight.is_active.is_(True))
+        ),
+        "products_count": session.scalar(
+            select(func.count(func.distinct(ProductWeatherRegionWeight.product_id))).select_from(ProductWeatherRegionWeight)
+        ),
+        "regions_count": session.scalar(
+            select(func.count(func.distinct(ProductWeatherRegionWeight.region_id))).select_from(ProductWeatherRegionWeight)
+        ),
+    }
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(
         select(func.count())

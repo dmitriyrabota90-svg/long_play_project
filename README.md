@@ -1136,6 +1136,15 @@ changes, no DB writes, no ML, and no targets. Planned next steps are Phase 6.3C
 schema-only implementation, Phase 6.3D a controlled Open-Meteo weather
 collector, and Phase 6.3E weather feature/export integration.
 
+Phase 6.3C implements schema-only support for the weather layer: SQLAlchemy
+metadata, Alembic revision `0012_weather_schema`, idempotent source seeds for
+`open_meteo_historical_weather` and `nasa_power_weather`, 14 initial weather
+region seeds, and operational report counts. It does not implement a weather
+collector, does not write weather observation rows, does not change schedulers,
+and does not add ML targets. Planned next steps are Phase 6.3D first controlled
+Open-Meteo collector, Phase 6.3E weather daily aggregation/features, and Phase
+6.3F weather integration into the product daily dataset/export.
+
 ## Next Phase
 
 The next phase is to let collection continue for a few days, audit the exported

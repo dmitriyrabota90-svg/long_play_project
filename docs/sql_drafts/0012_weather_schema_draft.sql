@@ -21,7 +21,7 @@ CREATE TABLE weather_regions (
     metadata_json JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_weather_regions_region_code
+    CONSTRAINT uq_weather_regions_code
         UNIQUE (region_code),
     CONSTRAINT ck_weather_regions_priority
         CHECK (priority IN ('high', 'medium', 'later')),
@@ -120,7 +120,7 @@ CREATE TABLE weather_daily_features (
     metadata_json JSONB NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    CONSTRAINT uq_weather_daily_features_region_date
+    CONSTRAINT uq_weather_daily_region_date
         UNIQUE (region_id, feature_date)
 );
 

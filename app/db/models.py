@@ -353,6 +353,139 @@ class CommodityBenchmark(Base, TimestampMixin):
     collector_run: Mapped[CollectorRun] = relationship()
 
 
+class WeatherRegion(Base, TimestampMixin):
+    __tablename__ = "weather_regions"
+    __table_args__ = (
+        UniqueConstraint("region_code", name="uq_weather_regions_code"),
+        CheckConstraint("priority IN ('high', 'medium', 'later')", name="ck_weather_regions_priority"),
+        CheckConstraint("latitude >= -90 AND latitude <= 90", name="ck_weather_regions_latitude"),
+        CheckConstraint("longitude >= -180 AND longitude <= 180", name="ck_weather_regions_longitude"),
+        Index("ix_weather_regions_code", "region_code"),
+        Index("ix_weather_regions_country_crop", "country", "crop"),
+        Index("ix_weather_regions_family", "commodity_family"),
+        Index("ix_weather_regions_active", "is_active"),
+        Index("ix_weather_regions_priority", "priority"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    region_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    region_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    country: Mapped[str] = mapped_column(String(100), nullable=False)
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    crop: Mapped[str] = mapped_column(String(100), nullable=False)
+    commodity_family: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(String(100), nullable=False)
+    priority: Mapped[str] = mapped_column(String(32), nullable=False)
+    latitude: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    longitude: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    spatial_model: Mapped[str] = mapped_column(String(64), nullable=False)
+    aggregation_strategy: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class WeatherObservation(Base, TimestampMixin):
+    __tablename__ = "weather_observations"
+    __table_args__ = (
+        UniqueConstraint("source_id", "region_id", "observation_date", "frequency", name="uq_weather_obs_source_region_date_freq"),
+        CheckConstraint("frequency IN ('daily')", name="ck_weather_obs_frequency"),
+        Index("ix_weather_obs_region_date", "region_id", "observation_date"),
+        Index("ix_weather_obs_source_date", "source_id", "observation_date"),
+        Index("ix_weather_obs_fetched_at", "fetched_at"),
+        Index("ix_weather_obs_raw_response_id", "raw_response_id"),
+        Index("ix_weather_obs_collector_run_id", "collector_run_id"),
+        Index("ix_weather_obs_record_hash", "source_record_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    region_id: Mapped[int] = mapped_column(ForeignKey("weather_regions.id"), nullable=False)
+    source_region_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    observation_date: Mapped[date] = mapped_column(Date, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(32), nullable=False)
+    temperature_2m_mean: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    temperature_2m_min: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    temperature_2m_max: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    precipitation_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    snowfall_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    relative_humidity_mean: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    wind_speed_mean: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    wind_speed_max: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    soil_moisture: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    evapotranspiration: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    shortwave_radiation: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    source: Mapped[Source] = relationship()
+    raw_response: Mapped[RawResponse] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
+    region: Mapped[WeatherRegion] = relationship()
+
+
+class WeatherDailyFeature(Base, TimestampMixin):
+    __tablename__ = "weather_daily_features"
+    __table_args__ = (
+        UniqueConstraint("region_id", "feature_date", name="uq_weather_daily_region_date"),
+        Index("ix_weather_daily_region_date", "region_id", "feature_date"),
+        Index("ix_weather_daily_feature_date", "feature_date"),
+        Index("ix_weather_daily_as_of_date", "weather_as_of_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    region_id: Mapped[int] = mapped_column(ForeignKey("weather_regions.id"), nullable=False)
+    feature_date: Mapped[date] = mapped_column(Date, nullable=False)
+    temperature_7d_mean: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    temperature_30d_mean: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    temperature_min_7d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    temperature_max_7d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    precipitation_7d_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    precipitation_14d_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    precipitation_30d_sum: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    heat_stress_days_7d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    heat_stress_days_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    frost_days_7d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    frost_days_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    drought_proxy_30d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    growing_degree_days_7d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    growing_degree_days_30d: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    weather_as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    missing_flags: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    region: Mapped[WeatherRegion] = relationship()
+
+
+class ProductWeatherRegionWeight(Base, TimestampMixin):
+    __tablename__ = "product_weather_region_weights"
+    __table_args__ = (
+        UniqueConstraint("product_id", "region_id", "role", "effective_from", name="uq_product_weather_region_weight"),
+        CheckConstraint("weight >= 0", name="ck_product_weather_weight_nonnegative"),
+        CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="ck_product_weather_effective_range"),
+        Index("ix_product_weather_product_active", "product_id", "is_active"),
+        Index("ix_product_weather_region_active", "region_id", "is_active"),
+        Index("ix_product_weather_effective", "effective_from", "effective_to"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    region_id: Mapped[int] = mapped_column(ForeignKey("weather_regions.id"), nullable=False)
+    weight: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    role: Mapped[str] = mapped_column(String(100), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    product: Mapped[Product] = relationship()
+    region: Mapped[WeatherRegion] = relationship()
+
+
 class FxRate(Base):
     __tablename__ = "fx_rates"
 
@@ -364,23 +497,6 @@ class FxRate(Base):
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
-
-
-class WeatherObservation(Base):
-    __tablename__ = "weather_observations"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
-    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
-    region_code: Mapped[str] = mapped_column(String(100), nullable=False)
-    lat: Mapped[float] = mapped_column(Float, nullable=False)
-    lon: Mapped[float] = mapped_column(Float, nullable=False)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    temperature: Mapped[float] = mapped_column(Float, nullable=False)
-    precipitation: Mapped[float] = mapped_column(Float, nullable=False)
-    soil_moisture: Mapped[float | None] = mapped_column(Float, nullable=True)
-    weather_metric_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 

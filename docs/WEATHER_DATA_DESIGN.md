@@ -20,6 +20,12 @@ Phase 6.3C should implement the schema only. Phase 6.3D should add the first
 controlled/manual weather collector. Phase 6.3E should integrate weather
 features and export columns only after as-of rules are reviewed.
 
+Phase 6.3C implements SQLAlchemy metadata, Alembic revision
+`0012_weather_schema`, idempotent source seeds for Open-Meteo and NASA POWER,
+initial weather region seeds, and operational reporting for empty weather
+tables. It still does not implement a weather collector, does not write weather
+observation rows, does not register a scheduler, and does not add ML targets.
+
 ## Why Weather Matters For Agricultural Commodity Forecasting
 
 Weather affects yield expectations, harvest timing, crop stress, export supply,
@@ -438,6 +444,29 @@ Phase 6.3C should add:
 - operational report counts for empty weather tables.
 
 Phase 6.3C must not write weather data rows or register a scheduler.
+
+## Phase 6.3C Schema Implementation
+
+Phase 6.3C adds:
+
+- `WeatherRegion`;
+- `WeatherObservation`;
+- `WeatherDailyFeature`;
+- `ProductWeatherRegionWeight`;
+- Alembic revision `0012_weather_schema`;
+- source seeds for `open_meteo_historical_weather` and `nasa_power_weather`;
+- 14 first-version point-proxy weather region seeds;
+- operational report sections for weather regions, observations, daily
+  features, and product-region weights.
+
+The existing early `weather_observations` skeleton from the initial schema is
+expanded to the reviewed model. Legacy skeleton columns are left nullable for
+compatibility, while future collector inserts should use the new region-linked
+columns.
+
+Phase 6.3C does not create a collector, does not run collectors, does not write
+weather observations, does not change schedulers, and does not add weather
+columns to `daily_product_features`.
 
 ## Non-Goals
 

@@ -600,6 +600,15 @@ change production. The next deployable step should be Phase 6.3C schema-only
 implementation, followed later by Phase 6.3D controlled Open-Meteo collection
 and Phase 6.3E weather feature/export integration.
 
+Phase 6.3C adds Alembic revision `0012_weather_schema`, weather SQLAlchemy
+models, Open-Meteo/NASA source seeds, initial weather region seeds, and
+operational report counts. It is still schema-only: do not run weather
+collectors, do not add a weather scheduler, and do not expect
+`weather_observations` or `weather_daily_features` to contain rows until later
+controlled phases. The next steps are Phase 6.3D controlled Open-Meteo
+collection, Phase 6.3E weather aggregation/features, and Phase 6.3F product
+daily dataset/export integration.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
