@@ -938,6 +938,28 @@ not run collectors automatically, does not add ML, and does not create targets.
 Export artifacts remain runtime files under `data/exports/` and must not be
 committed.
 
+Phase 6.6B is local-only dataset readiness documentation and audit tooling. It
+adds the feature catalog, dataset dictionary, source-to-feature lineage,
+leakage/as-of audit, ML-ready audit template, and a local diagnostics script:
+
+```bash
+python scripts/audit_dataset_readiness.py
+```
+
+The script writes only:
+
+```text
+diagnostics/dataset_readiness/DATASET_READINESS_AUDIT_REPORT.md
+diagnostics/dataset_readiness/dataset_readiness_audit.json
+```
+
+Do not deploy Phase 6.6B by itself as a production validation step. Server batch
+6.6A is still required before final production export validation: reviewed pull
+on the server, pending migrations, controlled derived builders, health/quality
+reports, and a checked `daily_features` export. Phase 6.6B does not run
+collectors, does not add scheduler jobs, does not add ML, and does not add
+targets.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

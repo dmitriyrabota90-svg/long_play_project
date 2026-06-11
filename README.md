@@ -1450,8 +1450,40 @@ date. Export v1 now includes nullable trade columns such as `export_volume_1m`,
 Phase 6.5E does not add ML targets, does not add scheduler jobs, and does not
 run collectors by itself.
 
+## Phase 6.6B Dataset Readiness Audit
+
+Phase 6.6B is local-only documentation and audit tooling for the future
+ML-ready `daily_features` dataset. It does not train ML, does not add targets,
+does not run collectors, does not touch production PostgreSQL, and does not
+change schedulers.
+
+New dataset readiness docs:
+
+- [docs/FEATURE_CATALOG.md](docs/FEATURE_CATALOG.md)
+- [docs/DATASET_DICTIONARY.md](docs/DATASET_DICTIONARY.md)
+- [docs/SOURCE_TO_FEATURE_LINEAGE.md](docs/SOURCE_TO_FEATURE_LINEAGE.md)
+- [docs/LEAKAGE_AND_ASOF_AUDIT.md](docs/LEAKAGE_AND_ASOF_AUDIT.md)
+- [docs/ML_READY_DATASET_AUDIT.md](docs/ML_READY_DATASET_AUDIT.md)
+
+Run the local audit:
+
+```bash
+python scripts/audit_dataset_readiness.py
+```
+
+The script reads the export schema and docs, then writes diagnostics only:
+
+```text
+diagnostics/dataset_readiness/DATASET_READINESS_AUDIT_REPORT.md
+diagnostics/dataset_readiness/dataset_readiness_audit.json
+```
+
+Diagnostics artifacts are runtime files and should not be committed.
+
 ## Next Phase
 
-The next phase is Phase 6.6A: review production readiness for trade feature
-building and decide whether to run a controlled server-side trade feature
-backfill/export refresh.
+If the server is available, the next recommended phase is Phase 6.6A server
+batch: deploy latest local code, apply pending migrations, run controlled
+derived builders, validate reports, and produce a checked production export
+snapshot. If the server is still unavailable, continue with local-only Phase
+6.7A supply-demand / production-stocks source discovery.
