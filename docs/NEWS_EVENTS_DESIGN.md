@@ -34,6 +34,13 @@ into `news_articles`. It intentionally does not write `commodity_events`, does
 not build `daily_news_features`, does not register a scheduler, and does not add
 ML/NLP/LLM classification.
 
+Phase 6.4E implements deterministic rule-based event extraction from stored
+`news_articles` into `commodity_events`. It does not call external news APIs,
+does not fetch article bodies, does not build `daily_news_features`, does not
+register a scheduler, and does not add an NLP/LLM/ML classifier. The extractor
+is intentionally transparent: all event categories and commodity-family mappings
+live in versioned local rules.
+
 ## Why News/Events Matter For Agricultural Commodity Price Forecasting
 
 News and official releases can change price expectations before slower monthly
@@ -466,6 +473,76 @@ Identity and dedup:
 The collector stores metadata only. It does not fetch or store article bodies
 from publisher pages.
 
+## Phase 6.4E Rule-Based Event Extraction
+
+Phase 6.4E adds a local/manual extractor:
+
+```bash
+python scripts/extract_news_events.py --from-date 2026-06-01 --to-date 2026-06-03 --dry-run
+python scripts/extract_news_events.py --from-date 2026-06-01 --to-date 2026-06-03 --source gdelt_2_1
+python scripts/extract_news_events.py --from-date 2026-06-01 --to-date 2026-06-03 --article-id 123
+```
+
+It scans only existing `news_articles` rows in the requested `published_at`
+date range. `--dry-run` reports candidates without writing `commodity_events`
+or quality checks.
+
+Implemented event categories:
+
+- `export_restriction`
+- `import_policy`
+- `war_logistics_disruption`
+- `weather_disaster`
+- `crop_report`
+- `biofuel_policy`
+- `energy_shock`
+- `currency_macro`
+- `demand_shock`
+- `supply_chain`
+
+Implemented commodity families:
+
+- `soybean`
+- `rapeseed`
+- `vegetable_oils`
+- `grains`
+- `fertilizer_energy`
+
+Each event stores:
+
+- `extraction_method = keyword_rule`;
+- `extraction_version = news_event_rules_v1`;
+- `source_text_hash` from normalized title/summary/body text;
+- matched keywords, matched rule names, affected product codes, and known
+  limitations in `metadata_json`.
+
+The first rule set is deliberately English-first and conservative. A candidate
+requires at least one event-category rule and at least one commodity-family rule
+to match the article title/summary/body fields that are already present in the
+database. It is not sentiment analysis, not an NLP classifier, and not an LLM
+classifier.
+
+Idempotency policy:
+
+- unchanged reruns increment `skipped_existing`;
+- changed text/rule output for an existing event identity creates
+  `commodity_event_existing_rule_hash_changed` with warning severity;
+- existing events are not overwritten in Phase 6.4E.
+
+Quality checks include article presence, text presence, category detection,
+commodity-family detection, publication timestamp, event date, confidence,
+source text hash, insert confirmation, and rule-hash conflict warnings. `skip`
+checks for unrelated articles are expected and are not failures.
+
+Known limitations:
+
+- rules are keyword-based and can miss implicit events;
+- country/region are copied from the article metadata and may represent source
+  country rather than event country;
+- language coverage is English-first;
+- no cross-source article deduplication is attempted here;
+- daily feature aggregation is intentionally deferred to Phase 6.4F.
+
 ## Future Feature Integration Into Daily Product Features
 
 `daily_product_features` should not be changed in Phase 6.4B. A later phase can
@@ -528,6 +605,18 @@ Phase 6.4D must not write `commodity_events`, must not build
 `daily_news_features`, must not register a scheduler, must not add ML targets,
 and must not add NLP/LLM classifiers.
 
+Phase 6.4E implements only rule-based event extraction:
+
+- local/manual CLI support through `python scripts/extract_news_events.py`;
+- versioned rules in `app/features/news_event_rules.py`;
+- deterministic extraction logic in `app/features/news_events.py`;
+- mocked tests for taxonomy, matching, idempotency, conflict warnings, dry-run,
+  CLI validation, and operational report visibility.
+
+Phase 6.4E must not call external news APIs, must not run GDELT collection, must
+not build `daily_news_features`, must not register a scheduler, must not add ML
+targets, and must not add NLP/LLM classifiers.
+
 ## Non-Goals
 
 - No migration in Phase 6.4B.
@@ -541,3 +630,8 @@ and must not add NLP/LLM classifiers.
 - No event extraction in Phase 6.4D.
 - No `commodity_events` writes in Phase 6.4D.
 - No news scheduler in Phase 6.4D.
+- No external news API calls in Phase 6.4E.
+- No `daily_news_features` writes in Phase 6.4E.
+- No news/event export integration in Phase 6.4E.
+- No news scheduler in Phase 6.4E.
+- No ML/NLP/LLM classifier in Phase 6.4E.

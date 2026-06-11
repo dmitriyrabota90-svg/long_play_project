@@ -768,6 +768,52 @@ The next steps are Phase 6.4E rule-based event extraction from `news_articles`
 and Phase 6.4F daily feature/export integration. Do not add a news scheduler or
 ML classifier during Phase 6.4D rollout.
 
+Phase 6.4E adds a deterministic local/manual extractor from existing
+`news_articles` into `commodity_events`. It does not call GDELT or any external
+news API, does not fetch article bodies, does not build `daily_news_features`,
+does not add a scheduler, and does not use ML/NLP/LLM classification.
+
+Dry-run a bounded date window:
+
+```bash
+docker compose run --rm app python scripts/extract_news_events.py \
+  --from-date 2026-06-01 \
+  --to-date 2026-06-03 \
+  --dry-run
+```
+
+Write deterministic events for a source/date window:
+
+```bash
+docker compose run --rm app python scripts/extract_news_events.py \
+  --from-date 2026-06-01 \
+  --to-date 2026-06-03 \
+  --source gdelt_2_1
+```
+
+Inspect results:
+
+```sql
+SELECT event_category, commodity_family, COUNT(*) AS rows_count,
+       MIN(event_date) AS first_event_date,
+       MAX(event_date) AS last_event_date
+FROM commodity_events
+GROUP BY event_category, commodity_family
+ORDER BY event_category, commodity_family;
+
+SELECT source_id, news_article_id, event_category, commodity_family,
+       country, region, event_date, extraction_method, COUNT(*)
+FROM commodity_events
+GROUP BY source_id, news_article_id, event_category, commodity_family,
+         country, region, event_date, extraction_method
+HAVING COUNT(*) > 1;
+```
+
+The extractor writes quality checks for article text, category/family detection,
+event date, confidence, source text hash, inserts, and rule-hash conflicts.
+Existing events are never overwritten silently. Phase 6.4E still does not update
+export v1 or `daily_product_features`; that is reserved for Phase 6.4F.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

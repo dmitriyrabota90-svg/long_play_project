@@ -25,6 +25,7 @@ Implemented in this skeleton:
 - Manual World Bank Pink Sheet commodity benchmark collector.
 - Manual Open-Meteo historical weather collector and weather feature builders.
 - Manual GDELT news metadata collector.
+- Rule-based commodity event extraction from stored news articles.
 - Daily feature builder with price, FX, calendar, energy, benchmark, and weather features.
 - Health-check helper.
 - Dataset export v1 with manifest and SHA-256 checks.
@@ -34,7 +35,7 @@ Implemented in this skeleton:
 Not implemented yet:
 
 - Sunflower product and fundamental collectors.
-- News event extraction and news feature builders.
+- News feature builders and news/event export integration.
 - Automatic schedulers for historical, energy, benchmark, and weather collectors.
 - Dataset target calculation.
 - ML model training.
@@ -1309,8 +1310,32 @@ Supported query presets are `soybean`, `rapeseed_canola`, `vegetable_oils`, and
 same identity with changed metadata creates `news_existing_article_hash_changed`
 quality warnings and is not overwritten in this phase.
 
+Phase 6.4E adds deterministic rule-based event extraction from already stored
+`news_articles` into `commodity_events`. It does not call GDELT or any external
+news API, does not fetch article bodies, does not use ML/NLP/LLM classifiers,
+does not build `daily_news_features`, and does not add a scheduler.
+
+```bash
+python scripts/extract_news_events.py --from-date 2026-06-01 --to-date 2026-06-03 --dry-run
+python scripts/extract_news_events.py --from-date 2026-06-01 --to-date 2026-06-03 --source gdelt_2_1
+python scripts/extract_news_events.py --from-date 2026-06-01 --to-date 2026-06-03 --article-id 123
+```
+
+The rule taxonomy covers `export_restriction`, `import_policy`,
+`war_logistics_disruption`, `weather_disaster`, `crop_report`,
+`biofuel_policy`, `energy_shock`, `currency_macro`, `demand_shock`, and
+`supply_chain`. Commodity families are currently `soybean`, `rapeseed`,
+`vegetable_oils`, `grains`, and `fertilizer_energy`.
+
+Extraction is conservative and versioned with `extraction_method=keyword_rule`
+and `extraction_version=news_event_rules_v1`. Re-running the same unchanged
+article skips existing events. If the same event identity would be produced
+from changed article text or rule output, the extractor writes
+`commodity_event_existing_rule_hash_changed` as a warning and does not overwrite
+the existing event.
+
 ## Next Phase
 
-The next phase is Phase 6.4E: rule-based event extraction from `news_articles`,
-local-only. It should keep extraction method/version explicit and must not add
-ML or LLM classification.
+The next phase is Phase 6.4F: daily news/event feature aggregation and export
+integration, local-only first. It should keep leakage controls explicit and
+must not add ML or LLM classification.
