@@ -26,7 +26,7 @@ Implemented in this skeleton:
 - Manual Open-Meteo historical weather collector and weather feature builders.
 - Manual GDELT news metadata collector.
 - Rule-based commodity event extraction from stored news articles.
-- Daily feature builder with price, FX, calendar, energy, benchmark, and weather features.
+- Daily feature builder with price, FX, calendar, energy, benchmark, weather, and news/event features.
 - Health-check helper.
 - Dataset export v1 with manifest and SHA-256 checks.
 - CLI scripts.
@@ -35,7 +35,7 @@ Implemented in this skeleton:
 Not implemented yet:
 
 - Sunflower product and fundamental collectors.
-- News feature builders and news/event export integration.
+- Trade/import-export collectors and source discovery.
 - Automatic schedulers for historical, energy, benchmark, and weather collectors.
 - Dataset target calculation.
 - ML model training.
@@ -1334,8 +1334,27 @@ from changed article text or rule output, the extractor writes
 `commodity_event_existing_rule_hash_changed` as a warning and does not overwrite
 the existing event.
 
+Phase 6.4F builds product-level daily news/event aggregates and integrates them
+into `daily_product_features` and export v1. It reads existing `news_articles`
+and `commodity_events`; it does not call GDELT, does not run collectors, does
+not add a scheduler, and does not add ML/NLP/LLM classification.
+
+```bash
+python scripts/build_features.py news_daily
+python scripts/build_features.py news_daily --from-date 2026-06-01 --to-date 2026-06-10
+python scripts/build_features.py news_daily --product soybean_oil --from-date 2026-06-01 --to-date 2026-06-10
+python scripts/build_features.py daily
+```
+
+`news_daily` writes `daily_news_features` with 1/7/30-day article and event
+counts, 7-day direction counts, 30-day event-category counts,
+`sentiment_proxy_7d`, `news_as_of_date`, `missing_flags`, and metadata. The
+daily product builder copies those fields into nullable `daily_product_features`
+columns only when `news_as_of_date <= feature_date`; otherwise it leaves values
+empty and records `news_missing_flags`.
+
 ## Next Phase
 
-The next phase is Phase 6.4F: daily news/event feature aggregation and export
-integration, local-only first. It should keep leakage controls explicit and
-must not add ML or LLM classification.
+The next phase is Phase 6.5A: trade/import-export source discovery and design,
+local-only. It should not add collectors or production writes until source and
+schema choices are reviewed.

@@ -814,6 +814,47 @@ event date, confidence, source text hash, inserts, and rule-hash conflicts.
 Existing events are never overwritten silently. Phase 6.4E still does not update
 export v1 or `daily_product_features`; that is reserved for Phase 6.4F.
 
+Phase 6.4F adds local/manual daily news/event feature aggregation and export
+integration. It reads already stored `news_articles` and `commodity_events`;
+it does not call GDELT, does not run news collectors, does not add a scheduler,
+and does not use ML/NLP/LLM classification.
+
+Build product-level news/event aggregates:
+
+```bash
+docker compose run --rm app python scripts/build_features.py news_daily
+docker compose run --rm app python scripts/build_features.py news_daily \
+  --from-date 2026-06-01 \
+  --to-date 2026-06-10
+```
+
+Then rebuild daily product features when the news aggregates should appear in
+export v1:
+
+```bash
+docker compose run --rm app python scripts/build_features.py daily
+```
+
+Useful checks:
+
+```sql
+SELECT p.code, dnf.feature_date, dnf.news_count_7d, dnf.event_count_7d,
+       dnf.sentiment_proxy_7d, dnf.news_as_of_date, dnf.missing_flags
+FROM daily_news_features dnf
+JOIN products p ON p.id = dnf.product_id
+ORDER BY dnf.feature_date DESC, p.code
+LIMIT 40;
+
+SELECT product_id, feature_date, news_as_of_date
+FROM daily_news_features
+WHERE news_as_of_date > feature_date
+LIMIT 20;
+```
+
+Export v1 now includes nullable product-level news/event columns. Missing or
+partial coverage is normal early in rollout and is recorded through
+`news_missing_flags`.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

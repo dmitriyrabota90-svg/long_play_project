@@ -16,6 +16,7 @@ from app.config.settings import get_settings
 from app.db.models import (
     Base,
     CommodityBenchmark,
+    DailyNewsFeature,
     DailyProductFeature,
     DataQualityCheck,
     EnergyPrice,
@@ -238,6 +239,58 @@ def test_daily_price_fields_and_intraday_delta() -> None:
     assert feature.calendar_year == 2026
     assert feature.calendar_month == 5
     assert feature.calendar_season == "spring"
+
+
+def test_daily_build_copies_news_event_features() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        product = _seed_product(session, code="soybean_oil")
+        price_source = _seed_source(session)
+        fx_source = _seed_source(session, code="cbr_fx", source_type="fx")
+        _price(session, product_id=product.id, source_id=price_source.id, observed_at=datetime(2026, 6, 10, 15, tzinfo=timezone.utc), price="100")
+        _seed_fx_set(session, source_id=fx_source.id, observed_at=datetime(2026, 6, 10, tzinfo=timezone.utc))
+        session.add(
+            DailyNewsFeature(
+                product_id=product.id,
+                commodity_family="soybean",
+                feature_date=date(2026, 6, 10),
+                news_count_1d=1,
+                news_count_7d=2,
+                news_count_30d=3,
+                event_count_1d=1,
+                event_count_7d=3,
+                event_count_30d=4,
+                bullish_event_count_7d=1,
+                bearish_event_count_7d=1,
+                mixed_event_count_7d=1,
+                export_restriction_count_30d=1,
+                import_policy_count_30d=1,
+                war_logistics_count_30d=0,
+                weather_disaster_count_30d=0,
+                crop_report_count_30d=1,
+                biofuel_policy_count_30d=0,
+                energy_shock_count_30d=1,
+                demand_shock_count_30d=0,
+                supply_chain_count_30d=0,
+                sentiment_proxy_7d=Decimal("0"),
+                news_as_of_date=date(2026, 6, 10),
+                missing_flags={"partial_source_coverage": True},
+                metadata_json={"test": True},
+            )
+        )
+
+        build_daily_features(session=session)
+        session.commit()
+        feature = session.scalar(select(DailyProductFeature))
+
+    assert feature.news_count_7d == 2
+    assert feature.event_count_7d == 3
+    assert feature.export_restriction_count_30d == 1
+    assert feature.crop_report_count_30d == 1
+    assert feature.sentiment_proxy_7d == Decimal("0E-8")
+    assert feature.news_as_of_date == date(2026, 6, 10)
+    assert feature.news_missing_flags == "partial_source_coverage"
+    assert feature.features_json["news_count_7d"] == 2
 
 
 def test_price_delta_and_rolling_windows_require_full_window() -> None:

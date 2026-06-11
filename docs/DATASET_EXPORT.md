@@ -49,6 +49,9 @@ The CSV includes:
   7/14/30-day precipitation sums, heat/frost stress counts, drought proxy,
   growing degree days, `weather_as_of_date`, `weather_regions_used`, and
   `weather_missing_flags`
+- product-level news/event fields: 1/7/30-day article and event counts,
+  7-day bullish/bearish/mixed event counts, 30-day event-category counts,
+  `sentiment_proxy_7d`, `news_as_of_date`, and `news_missing_flags`
 - `created_at`
 - `updated_at`
 
@@ -95,6 +98,8 @@ Export v1 includes only sources already materialized into
 - World Bank Pink Sheet commodity benchmarks through the daily feature builder
 - Open-Meteo region-level weather aggregates through
   `product_weather_region_weights`
+- rule-based `commodity_events` and `daily_news_features` through the daily
+  feature builder
 
 ## Sources Excluded
 
@@ -102,7 +107,6 @@ Export v1 intentionally excludes:
 
 - `historical_price_bars`
 - `historical_price_bar_revisions`
-- news
 - sunflower products
 - ML targets and model outputs
 
@@ -118,9 +122,11 @@ the same rule. World Bank benchmark values use the latest
 monthly context features, and include explicit per-series as-of dates. Weather
 values use active/effective product-region weights and only
 `weather_daily_features.feature_date <= product feature_date` with
-`weather_as_of_date <= product feature_date`. Historical bars are not consumed
-by daily features yet, so the export cannot accidentally treat historical
-backfill as if it was available in the past.
+`weather_as_of_date <= product feature_date`. News/event values use
+`daily_news_features.feature_date <= product feature_date` with
+`news_as_of_date <= product feature_date`. Historical bars are not consumed by
+daily features yet, so the export cannot accidentally treat historical backfill
+as if it was available in the past.
 
 ## Known Limitations
 
@@ -133,7 +139,10 @@ backfill as if it was available in the past.
 - Weather features use first-version equal product-region weights and centroid
   region proxies. Missing or partial regional coverage is recorded in
   `weather_missing_flags`.
-- News and sunflower products are not implemented.
+- News/event features are rule-based keyword aggregates, not semantic
+  NLP/LLM/ML classifications. Missing or partial source coverage is recorded in
+  `news_missing_flags`.
+- Sunflower products are not implemented.
 - This is a controlled file export, not a public API or dashboard.
 
 ## Run Locally

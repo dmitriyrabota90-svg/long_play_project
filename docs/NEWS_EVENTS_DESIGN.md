@@ -543,10 +543,74 @@ Known limitations:
 - no cross-source article deduplication is attempted here;
 - daily feature aggregation is intentionally deferred to Phase 6.4F.
 
+## Phase 6.4F Daily News/Event Features
+
+Phase 6.4F implements the first deterministic daily product-level news/event
+feature builder:
+
+```bash
+python scripts/build_features.py news_daily
+python scripts/build_features.py news_daily --from-date 2026-06-01 --to-date 2026-06-10
+python scripts/build_features.py news_daily --product soybean_oil --from-date 2026-06-01 --to-date 2026-06-10
+python scripts/build_features.py daily
+```
+
+The `news_daily` command writes `daily_news_features` from already stored
+`news_articles` and `commodity_events`. It does not call GDELT, does not fetch
+article bodies, does not run collectors, does not register a scheduler, and
+does not add ML/NLP/LLM classification.
+
+Computed fields:
+
+- `news_count_1d`, `news_count_7d`, `news_count_30d`;
+- `event_count_1d`, `event_count_7d`, `event_count_30d`;
+- `bullish_event_count_7d`, `bearish_event_count_7d`,
+  `mixed_event_count_7d`;
+- 30-day category counts for export/import policy, war/logistics, weather,
+  crop reports, biofuel, energy, demand, and supply-chain events;
+- `sentiment_proxy_7d`;
+- `news_as_of_date`;
+- `missing_flags` and `metadata_json`.
+
+Rolling windows are backward-looking only:
+
+- 1d: `feature_date`;
+- 7d: `feature_date - 6 days` through `feature_date`;
+- 30d: `feature_date - 29 days` through `feature_date`.
+
+Leakage policy:
+
+- article counts use only `published_at.date() <= feature_date`;
+- event counts use only `event_date <= feature_date` and
+  `published_at.date() <= feature_date`;
+- `news_as_of_date` must be `<= feature_date`;
+- `daily_product_features` copies news fields only when that as-of rule holds.
+
+Product mapping:
+
+- soybean products use soybean events and article hints;
+- rapeseed/canola products use rapeseed/canola events and article hints;
+- `vegetable_oils` events apply to oil products;
+- `fertilizer_energy` and broad policy context can apply to all current
+  production products.
+
+`sentiment_proxy_7d` is:
+
+```text
+(bullish_event_count_7d - bearish_event_count_7d) / max(event_count_7d, 1)
+```
+
+It is stored as `NULL` when there are no 7-day events, because zero should mean
+a balanced bullish/bearish mix rather than missing event coverage.
+
+Phase 6.4F also adds nullable product-level news/event columns to
+`daily_product_features` through Alembic revision
+`0015_product_news_features` and includes those columns in export v1.
+
 ## Future Feature Integration Into Daily Product Features
 
-`daily_product_features` should not be changed in Phase 6.4B. A later phase can
-join product-level news aggregates from `daily_news_features`.
+Phase 6.4F joins product-level news aggregates from `daily_news_features` into
+nullable `daily_product_features` columns.
 
 Candidate columns for later product features:
 
@@ -571,14 +635,14 @@ Rules:
 
 ## Future Export Integration
 
-Export v1 can include news fields only after:
+Export v1 includes news fields after Phase 6.4F:
 
-- schema migration is applied in a reviewed phase;
-- first controlled collector has raw evidence;
-- event extraction rules are versioned;
-- `daily_news_features` is built;
-- leakage checks verify `news_as_of_date <= feature_date`;
-- export manifest documents source coverage and mode.
+- schema migration `0015_product_news_features`;
+- controlled collector raw evidence in `news_articles`;
+- versioned event extraction rules in `commodity_events`;
+- `daily_news_features` product-level aggregates;
+- leakage checks requiring `news_as_of_date <= feature_date`;
+- manifest source coverage and limitations.
 
 ## Migration Plan For Next Phase
 
@@ -617,6 +681,19 @@ Phase 6.4E must not call external news APIs, must not run GDELT collection, must
 not build `daily_news_features`, must not register a scheduler, must not add ML
 targets, and must not add NLP/LLM classifiers.
 
+Phase 6.4F implements only daily news/event feature aggregation and export
+integration:
+
+- builder in `app/features/news_daily.py`;
+- CLI support through `python scripts/build_features.py news_daily`;
+- nullable product-level columns on `daily_product_features`;
+- export v1 news/event columns;
+- tests for windows, mapping, leakage, idempotency, CLI, export, and reports.
+
+Phase 6.4F must not call external news APIs, must not run GDELT collection, must
+not register a scheduler, must not add ML targets, and must not add NLP/LLM
+classifiers.
+
 ## Non-Goals
 
 - No migration in Phase 6.4B.
@@ -635,3 +712,7 @@ targets, and must not add NLP/LLM classifiers.
 - No news/event export integration in Phase 6.4E.
 - No news scheduler in Phase 6.4E.
 - No ML/NLP/LLM classifier in Phase 6.4E.
+- No external news API calls in Phase 6.4F.
+- No news scheduler in Phase 6.4F.
+- No ML/NLP/LLM classifier in Phase 6.4F.
+- No targets in Phase 6.4F.

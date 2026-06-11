@@ -126,6 +126,27 @@ DAILY_FEATURE_COLUMNS = [
     "weather_as_of_date",
     "weather_regions_used",
     "weather_missing_flags",
+    "news_count_1d",
+    "news_count_7d",
+    "news_count_30d",
+    "event_count_1d",
+    "event_count_7d",
+    "event_count_30d",
+    "bullish_event_count_7d",
+    "bearish_event_count_7d",
+    "mixed_event_count_7d",
+    "export_restriction_count_30d",
+    "import_policy_count_30d",
+    "war_logistics_count_30d",
+    "weather_disaster_count_30d",
+    "crop_report_count_30d",
+    "biofuel_policy_count_30d",
+    "energy_shock_count_30d",
+    "demand_shock_count_30d",
+    "supply_chain_count_30d",
+    "sentiment_proxy_7d",
+    "news_as_of_date",
+    "news_missing_flags",
     "created_at",
     "updated_at",
 ]
@@ -399,6 +420,27 @@ def _row_from_feature(feature: DailyProductFeature, product: Product) -> dict[st
         "weather_as_of_date": feature.weather_as_of_date,
         "weather_regions_used": feature.weather_regions_used,
         "weather_missing_flags": feature.weather_missing_flags,
+        "news_count_1d": feature.news_count_1d,
+        "news_count_7d": feature.news_count_7d,
+        "news_count_30d": feature.news_count_30d,
+        "event_count_1d": feature.event_count_1d,
+        "event_count_7d": feature.event_count_7d,
+        "event_count_30d": feature.event_count_30d,
+        "bullish_event_count_7d": feature.bullish_event_count_7d,
+        "bearish_event_count_7d": feature.bearish_event_count_7d,
+        "mixed_event_count_7d": feature.mixed_event_count_7d,
+        "export_restriction_count_30d": feature.export_restriction_count_30d,
+        "import_policy_count_30d": feature.import_policy_count_30d,
+        "war_logistics_count_30d": feature.war_logistics_count_30d,
+        "weather_disaster_count_30d": feature.weather_disaster_count_30d,
+        "crop_report_count_30d": feature.crop_report_count_30d,
+        "biofuel_policy_count_30d": feature.biofuel_policy_count_30d,
+        "energy_shock_count_30d": feature.energy_shock_count_30d,
+        "demand_shock_count_30d": feature.demand_shock_count_30d,
+        "supply_chain_count_30d": feature.supply_chain_count_30d,
+        "sentiment_proxy_7d": feature.sentiment_proxy_7d,
+        "news_as_of_date": feature.news_as_of_date,
+        "news_missing_flags": feature.news_missing_flags,
         "created_at": feature.created_at,
         "updated_at": feature.updated_at,
     }
@@ -464,6 +506,9 @@ def _build_manifest(
             "commodity_benchmarks",
             "weather_daily_features",
             "product_weather_region_weights",
+            "daily_news_features",
+            "commodity_events",
+            "news_articles",
         ],
         "row_count": len(rows),
         "column_count": len(DAILY_FEATURE_COLUMNS),
@@ -477,13 +522,14 @@ def _build_manifest(
         "database_snapshot_note": "Export generated from the current PostgreSQL snapshot at run time.",
         "as_of_policy": (
             "Export v1 uses daily_product_features as stored. Current snapshot prices, CBR FX, FRED energy, "
-            "World Bank commodity benchmarks, and Open-Meteo-derived product weather features are used according "
-            "to the current feature builder logic."
+            "World Bank commodity benchmarks, Open-Meteo-derived product weather features, and deterministic "
+            "rule-based news/event features are used according to the current feature builder logic."
         ),
         "leakage_note": (
             "Historical bars are not used in daily features v1. World Bank benchmark features use "
             "period_start <= feature_date in Phase 6.2E. Product weather features use region-level "
             "weather_daily_features with feature_date <= product feature_date and weather_as_of_date <= "
+            "product feature_date. News/event features use daily_news_features with news_as_of_date <= "
             "product feature_date. ML targets and future-looking labels are not included."
         ),
         "included_sources": [
@@ -493,6 +539,7 @@ def _build_manifest(
             "FRED energy prices through the feature builder",
             "World Bank Pink Sheet commodity benchmarks through the feature builder",
             "Open-Meteo region weather aggregates through product_weather_region_weights",
+            "Rule-based commodity events and daily news aggregates through the feature builder",
         ],
         "excluded_sources": [
             "historical_price_bars",
@@ -509,8 +556,10 @@ def _build_manifest(
             "Phase 6.2E benchmark as-of logic uses period_start <= feature_date; future export modes may add published_at/fetched_at cutoffs.",
             "Weather features use first-version equal product-region weights and centroid region proxies.",
             "Weather missing flags identify partial or absent regional coverage.",
+            "News/event features are deterministic keyword-rule aggregates, not semantic NLP/LLM classifications.",
+            "News missing flags identify absent articles, absent events, or partial source coverage.",
             "Only products present in daily_product_features are exported.",
-            "News, sunflower products, ML targets, and ML outputs are not implemented in export v1.",
+            "Sunflower products, ML targets, and ML outputs are not implemented in export v1.",
         ],
     }
 

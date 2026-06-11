@@ -74,6 +74,27 @@ def _seed_feature(
         weather_as_of_date=feature_date,
         weather_regions_used="br_mato_grosso_soybean,br_parana_soybean",
         weather_missing_flags="partial_weather_regions",
+        news_count_1d=1,
+        news_count_7d=2,
+        news_count_30d=3,
+        event_count_1d=1,
+        event_count_7d=2,
+        event_count_30d=4,
+        bullish_event_count_7d=1,
+        bearish_event_count_7d=0,
+        mixed_event_count_7d=1,
+        export_restriction_count_30d=1,
+        import_policy_count_30d=0,
+        war_logistics_count_30d=0,
+        weather_disaster_count_30d=0,
+        crop_report_count_30d=1,
+        biofuel_policy_count_30d=0,
+        energy_shock_count_30d=1,
+        demand_shock_count_30d=0,
+        supply_chain_count_30d=0,
+        sentiment_proxy_7d=Decimal("0.50000000"),
+        news_as_of_date=feature_date,
+        news_missing_flags="partial_source_coverage",
         **calendar_values,
         created_at=now,
         updated_at=now,
@@ -104,6 +125,11 @@ def test_export_query_returns_rows_from_sample_db() -> None:
     assert rows[0]["weather_growing_degree_days_30d_weighted"] == "88.00000000"
     assert rows[0]["weather_regions_used"] == "br_mato_grosso_soybean,br_parana_soybean"
     assert rows[0]["weather_missing_flags"] == "partial_weather_regions"
+    assert rows[0]["news_count_7d"] == 2
+    assert rows[0]["event_count_7d"] == 2
+    assert rows[0]["sentiment_proxy_7d"] == "0.50000000"
+    assert rows[0]["news_as_of_date"] == "2026-06-01"
+    assert rows[0]["news_missing_flags"] == "partial_source_coverage"
     assert "historical_price_bars" not in rows[0]
 
 
@@ -140,17 +166,29 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "weather_precipitation_30d_sum_weighted" in header
     assert "weather_growing_degree_days_30d_weighted" in header
     assert "weather_regions_used" in header
+    assert "news_count_7d" in header
+    assert "event_count_7d" in header
+    assert "sentiment_proxy_7d" in header
+    assert "news_as_of_date" in header
+    assert "news_missing_flags" in header
     assert "calendar_sin_day_of_year" in manifest["columns"]
     assert "energy_wti_delta_7d" in manifest["columns"]
     assert "benchmark_as_of_date" in manifest["columns"]
     assert "weather_as_of_date" in manifest["columns"]
+    assert "news_count_7d" in manifest["columns"]
+    assert "sentiment_proxy_7d" in manifest["columns"]
     assert "commodity_benchmarks" in manifest["source_tables"]
     assert "weather_daily_features" in manifest["source_tables"]
     assert "product_weather_region_weights" in manifest["source_tables"]
+    assert "daily_news_features" in manifest["source_tables"]
+    assert "commodity_events" in manifest["source_tables"]
+    assert "news_articles" in manifest["source_tables"]
     assert "World Bank Pink Sheet commodity benchmarks through the feature builder" in manifest["included_sources"]
     assert "Open-Meteo region weather aggregates through product_weather_region_weights" in manifest["included_sources"]
+    assert "Rule-based commodity events and daily news aggregates through the feature builder" in manifest["included_sources"]
     assert "commodity_benchmarks" not in manifest["excluded_sources"]
     assert "weather_observations" not in manifest["excluded_sources"]
+    assert "news_articles" not in manifest["excluded_sources"]
     assert manifest["sha256"]["csv"] == result.sha256["csv"]
     assert len(result.sha256["csv"]) == 64
     assert manifest["products"] == ["rapeseed_oil", "soybean_oil"]

@@ -105,6 +105,12 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
                 "rows_with_weather_gdd_30d": 0,
                 "latest_product_weather_feature_date": None,
             },
+            "news_coverage": {
+                "rows_with_news_count_7d": 0,
+                "rows_with_event_count_7d": 0,
+                "rows_with_news_as_of_date": 0,
+                "latest_product_news_feature_date": None,
+            },
         },
         "historical_price_bars": {
             "count": 0,
@@ -330,6 +336,29 @@ def _fill_db_report(
         ),
         "latest_product_weather_feature_date": (
             latest_product_weather_feature_date.isoformat() if latest_product_weather_feature_date else None
+        ),
+    }
+    latest_product_news_feature_date = session.scalar(
+        select(func.max(DailyProductFeature.feature_date)).where(
+            or_(
+                DailyProductFeature.news_count_7d.is_not(None),
+                DailyProductFeature.event_count_7d.is_not(None),
+                DailyProductFeature.news_as_of_date.is_not(None),
+            )
+        )
+    )
+    report["daily_product_features"]["news_coverage"] = {
+        "rows_with_news_count_7d": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.news_count_7d.is_not(None))
+        ),
+        "rows_with_event_count_7d": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.event_count_7d.is_not(None))
+        ),
+        "rows_with_news_as_of_date": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.news_as_of_date.is_not(None))
+        ),
+        "latest_product_news_feature_date": (
+            latest_product_news_feature_date.isoformat() if latest_product_news_feature_date else None
         ),
     }
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))

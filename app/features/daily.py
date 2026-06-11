@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import get_settings
 from app.db.models import (
     CommodityBenchmark,
+    DailyNewsFeature,
     DailyProductFeature,
     DataQualityCheck,
     EnergyPrice,
@@ -137,6 +138,28 @@ WEATHER_FEATURE_SPECS = {
     "growing_degree_days_7d": "weather_growing_degree_days_7d_weighted",
     "growing_degree_days_30d": "weather_growing_degree_days_30d_weighted",
 }
+NEWS_PRODUCT_FEATURE_FIELDS = (
+    "news_count_1d",
+    "news_count_7d",
+    "news_count_30d",
+    "event_count_1d",
+    "event_count_7d",
+    "event_count_30d",
+    "bullish_event_count_7d",
+    "bearish_event_count_7d",
+    "mixed_event_count_7d",
+    "export_restriction_count_30d",
+    "import_policy_count_30d",
+    "war_logistics_count_30d",
+    "weather_disaster_count_30d",
+    "crop_report_count_30d",
+    "biofuel_policy_count_30d",
+    "energy_shock_count_30d",
+    "demand_shock_count_30d",
+    "supply_chain_count_30d",
+    "sentiment_proxy_7d",
+    "news_as_of_date",
+)
 SEASONS_BY_MONTH = {
     1: "winter",
     2: "winter",
@@ -215,6 +238,7 @@ NUMERIC_SCALES = {
     "weather_drought_proxy_30d_weighted": 8,
     "weather_growing_degree_days_7d_weighted": 8,
     "weather_growing_degree_days_30d_weighted": 8,
+    "sentiment_proxy_7d": 8,
 }
 
 
@@ -336,6 +360,7 @@ def _build_daily_features_with_session(
     benchmark_prices = _load_commodity_benchmarks(session, to_date=end)
     weather_weights = _load_product_weather_weights(session)
     weather_features = _load_weather_daily_features(session, to_date=end)
+    news_features = _load_daily_news_features(session, to_date=end)
 
     rows_created = 0
     rows_updated = 0
@@ -353,6 +378,7 @@ def _build_daily_features_with_session(
             benchmark_prices=benchmark_prices,
             weather_weights=weather_weights,
             weather_features=weather_features,
+            news_features=news_features,
         )
         if warning_names:
             missing_fx_dates.add(feature_date.isoformat())
@@ -526,6 +552,18 @@ def _load_weather_daily_features(session: Session, *, to_date: date) -> dict[int
     return by_region
 
 
+def _load_daily_news_features(session: Session, *, to_date: date) -> dict[int, list[DailyNewsFeature]]:
+    rows = session.scalars(
+        select(DailyNewsFeature)
+        .where(DailyNewsFeature.feature_date <= to_date)
+        .order_by(DailyNewsFeature.product_id, DailyNewsFeature.feature_date)
+    ).all()
+    by_product: dict[int, list[DailyNewsFeature]] = {}
+    for row in rows:
+        by_product.setdefault(row.product_id, []).append(row)
+    return by_product
+
+
 def _feature_values(
     *,
     price_day: _PriceDay,
@@ -535,6 +573,7 @@ def _feature_values(
     benchmark_prices: dict[str, list[CommodityBenchmark]],
     weather_weights: dict[int, list[_WeatherWeight]],
     weather_features: dict[int, list[WeatherDailyFeature]],
+    news_features: dict[int, list[DailyNewsFeature]],
 ) -> tuple[dict[str, Any], list[str]]:
     ordered = price_day.ordered
     prices = [item.price for item in ordered]
@@ -592,10 +631,51 @@ def _feature_values(
             weather_features=weather_features,
         )
     )
+    values.update(
+        _news_feature_values(
+            product_id=price_day.product_id,
+            feature_date=price_day.feature_date,
+            news_features=news_features,
+        )
+    )
 
     values = _normalize_feature_values(values)
     values["features_json"] = _features_json(values)
     return values, warnings
+
+
+def _news_feature_values(
+    *,
+    product_id: int,
+    feature_date: date,
+    news_features: dict[int, list[DailyNewsFeature]],
+) -> dict[str, Any]:
+    values: dict[str, Any] = {field: None for field in NEWS_PRODUCT_FEATURE_FIELDS}
+    values["news_missing_flags"] = None
+    feature = _daily_news_as_of(news_features.get(product_id, []), feature_date)
+    if feature is None:
+        values["news_missing_flags"] = "missing_daily_news_features"
+        return values
+    if feature.news_as_of_date is not None and feature.news_as_of_date > feature_date:
+        values["news_missing_flags"] = "future_news_as_of"
+        return values
+
+    for field in NEWS_PRODUCT_FEATURE_FIELDS:
+        values[field] = getattr(feature, field)
+    flags = _truthy_news_missing_flags(feature.missing_flags)
+    values["news_missing_flags"] = ",".join(flags) if flags else None
+    return values
+
+
+def _daily_news_as_of(items: list[DailyNewsFeature], feature_date: date) -> DailyNewsFeature | None:
+    eligible = [item for item in items if item.feature_date <= feature_date]
+    return eligible[-1] if eligible else None
+
+
+def _truthy_news_missing_flags(flags: Any) -> list[str]:
+    if not isinstance(flags, dict):
+        return []
+    return [str(name) for name, value in flags.items() if value]
 
 
 def _energy_feature_values(
@@ -929,6 +1009,34 @@ def _write_feature_quality_checks(
             **details,
             "weather_regions_used": values.get("weather_regions_used"),
             "weather_missing_flags": values.get("weather_missing_flags"),
+        },
+        checked_at,
+    )
+    no_future_news = values.get("news_as_of_date") is None or values["news_as_of_date"] <= feature_date
+    _write_check(
+        session,
+        "daily_feature_no_future_news",
+        "pass" if no_future_news else "error",
+        "error" if not no_future_news else "info",
+        {
+            **details,
+            "news_as_of_date": values["news_as_of_date"].isoformat()
+            if values.get("news_as_of_date")
+            else None,
+            "news_missing_flags": values.get("news_missing_flags"),
+        },
+        checked_at,
+    )
+    _write_check(
+        session,
+        "daily_feature_news_coverage_recorded",
+        "pass",
+        "info",
+        {
+            **details,
+            "news_count_7d": values.get("news_count_7d"),
+            "event_count_7d": values.get("event_count_7d"),
+            "news_missing_flags": values.get("news_missing_flags"),
         },
         checked_at,
     )
