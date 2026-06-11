@@ -1380,8 +1380,23 @@ probing. Current recommendation: use UN Comtrade as the first bounded prototype
 candidate after schema design, with FAOSTAT as slower annual context and
 USDA/FAS routes needing manual verification.
 
+## Phase 6.5B Trade Import Export Schema Design
+
+Phase 6.5B documents the future trade/import-export schema in
+[docs/TRADE_DATA_DESIGN.md](docs/TRADE_DATA_DESIGN.md) and adds a draft SQL
+file at `docs/sql_drafts/0016_trade_schema_draft.sql`. It is design-only: no
+Alembic migration, no SQLAlchemy model changes, no collector, no scheduler
+changes, no DB writes, no ML, and no targets.
+
+The proposed future tables are `trade_commodity_codes`, `trade_flows`,
+`product_trade_code_weights`, and `daily_trade_features`. The first future
+collector candidate remains a narrow UN Comtrade monthly prototype for selected
+HS codes and reporter/partner groups. Planned next steps are Phase 6.5C schema
+implementation, Phase 6.5D first controlled UN Comtrade collector, and Phase
+6.5E trade feature/export integration.
+
 ## Next Phase
 
-The next phase is Phase 6.5B: trade/import-export schema design. It should not
-add collectors or production writes until source and schema choices are
-reviewed.
+The next phase is Phase 6.5C: schema-only implementation for trade/import-export
+tables. It should not add collectors or production trade rows until the schema
+is deployed and reviewed.

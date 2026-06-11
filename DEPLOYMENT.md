@@ -879,6 +879,21 @@ future `trade_commodity_codes`, `trade_flows`, and trade feature tables. Later
 phases should implement schema, then a controlled narrow UN Comtrade prototype,
 then trade feature/export integration.
 
+Phase 6.5B is that design-only step. It adds:
+
+```text
+docs/TRADE_DATA_DESIGN.md
+docs/sql_drafts/0016_trade_schema_draft.sql
+```
+
+Do not apply the SQL draft manually. It is not an Alembic migration and does not
+change production. The proposed future tables are `trade_commodity_codes`,
+`trade_flows`, `product_trade_code_weights`, and `daily_trade_features`.
+Planned next steps are Phase 6.5C schema-only implementation, Phase 6.5D a
+controlled narrow UN Comtrade collector, and Phase 6.5E trade feature/export
+integration. Phase 6.5B does not add collectors, schedulers, DB writes, ML
+targets, or dataset targets.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.
