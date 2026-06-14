@@ -241,6 +241,11 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         },
         "supply_demand_observations": {
             "count": 0,
+            "commodities_count": 0,
+            "countries_count": 0,
+            "last_fetched_at": None,
+            "last_successful_run": None,
+            "last_partial_run": None,
         },
         "supply_demand_revisions": {
             "count": 0,
@@ -635,6 +640,19 @@ def _fill_db_report(
     }
     report["supply_demand_observations"] = {
         "count": session.scalar(select(func.count()).select_from(SupplyDemandObservation)),
+        "commodities_count": session.scalar(
+            select(func.count(func.distinct(SupplyDemandObservation.supply_demand_commodity_id))).select_from(
+                SupplyDemandObservation
+            )
+        ),
+        "countries_count": session.scalar(
+            select(func.count(func.distinct(SupplyDemandObservation.country_code))).select_from(SupplyDemandObservation)
+        ),
+        "last_fetched_at": (
+            _to_utc(last_supply_demand_fetched_at).isoformat() if (last_supply_demand_fetched_at := session.scalar(
+                select(func.max(SupplyDemandObservation.fetched_at))
+            )) else None
+        ),
     }
     report["supply_demand_revisions"] = {
         "count": session.scalar(select(func.count()).select_from(SupplyDemandRevision)),
@@ -690,6 +708,23 @@ def _fill_db_report(
         .limit(1)
     )
     report["historical_price_bars"]["last_partial_run"] = _run_to_dict(historical_partial_run)
+    supply_demand_run = session.scalar(
+        select(CollectorRun)
+        .where(CollectorRun.collector_name == "usda_psd", CollectorRun.status == "success")
+        .order_by(CollectorRun.started_at.desc())
+        .limit(1)
+    )
+    report["supply_demand_observations"]["last_successful_run"] = _run_to_dict(supply_demand_run)
+    supply_demand_partial_run = session.scalar(
+        select(CollectorRun)
+        .where(
+            CollectorRun.collector_name == "usda_psd",
+            CollectorRun.status == "partial_success",
+        )
+        .order_by(CollectorRun.started_at.desc())
+        .limit(1)
+    )
+    report["supply_demand_observations"]["last_partial_run"] = _run_to_dict(supply_demand_partial_run)
 
     if source is not None:
         report["stale_products"] = _stale_products(session, source.id, freshness_cutoff)

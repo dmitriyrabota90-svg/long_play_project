@@ -20,6 +20,7 @@ from app.collectors.historical.jijinhao_historical_prices import JijinhaoHistori
 from app.collectors.news.gdelt_config import is_known_query_key
 from app.collectors.news.gdelt_news import GdeltNewsCollector
 from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
+from app.collectors.supply_demand.usda_psd import UsdaPsdCollector
 from app.collectors.trade.un_comtrade import UnComtradeCollector
 from app.collectors.weather.open_meteo_config import MAX_DAYS_PER_RUN as OPEN_METEO_MAX_DAYS_PER_RUN
 from app.collectors.weather.open_meteo_historical import OpenMeteoHistoricalWeatherCollector
@@ -38,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
             "world_bank_pink_sheet",
             "open_meteo_historical_weather",
             "un_comtrade",
+            "usda_psd",
         ],
         help="Collector name to run",
     )
@@ -70,6 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reporter", help="Reporter code for un_comtrade, for example BRA.")
     parser.add_argument("--partner", help="Partner code for un_comtrade, for example WLD.")
     parser.add_argument("--flow", choices=["import", "export", "re_export", "re_import"], default="export")
+    parser.add_argument("--commodity-family", help="Required commodity family for usda_psd, for example soybean_oil.")
+    parser.add_argument("--from-marketing-year", type=int, help="Inclusive start marketing year for usda_psd.")
+    parser.add_argument("--to-marketing-year", type=int, help="Inclusive end marketing year for usda_psd.")
+    parser.add_argument("--country", help="Country code for usda_psd, for example WLD.")
+    parser.add_argument("--dry-run", action="store_true", help="Parse and persist raw evidence without normalized writes. Used by usda_psd.")
+    parser.add_argument("--fixture-file", help="Local USDA PSD fixture JSON file. Used by usda_psd.")
+    parser.add_argument("--live-probe", action="store_true", help="Opt in to a bounded USDA PSD live probe. Used by usda_psd.")
     return parser
 
 
@@ -138,13 +147,27 @@ def main() -> None:
         parser.error("--query-key is only supported for gdelt_news")
     if args.collector_name != "gdelt_news" and args.query:
         parser.error("--query is only supported for gdelt_news")
-    if args.collector_name not in {"gdelt_news", "un_comtrade"} and args.maxrecords is not None:
-        parser.error("--maxrecords is only supported for gdelt_news and un_comtrade")
+    if args.collector_name not in {"gdelt_news", "un_comtrade", "usda_psd"} and args.maxrecords is not None:
+        parser.error("--maxrecords is only supported for gdelt_news, un_comtrade, and usda_psd")
     if args.collector_name != "un_comtrade":
         if args.hs_code or args.from_period or args.to_period or args.reporter or args.partner:
             parser.error("--hs-code/--from-period/--to-period/--reporter/--partner are only supported for un_comtrade")
         if args.flow != "export":
             parser.error("--flow is only supported for un_comtrade")
+    if args.collector_name != "usda_psd":
+        if (
+            args.commodity_family
+            or args.from_marketing_year is not None
+            or args.to_marketing_year is not None
+            or args.country
+            or args.fixture_file
+            or args.live_probe
+            or args.dry_run
+        ):
+            parser.error(
+                "--commodity-family/--from-marketing-year/--to-marketing-year/--country/"
+                "--fixture-file/--live-probe/--dry-run are only supported for usda_psd"
+            )
 
     if args.collector_name == "current_price_source":
         if requested_date is not None or from_date is not None or to_date is not None:
@@ -255,6 +278,38 @@ def main() -> None:
             maxrecords=args.maxrecords,
             run_type=args.run_type,
         )
+    elif args.collector_name == "usda_psd":
+        if requested_date is not None or collection_slot is not None:
+            parser.error("--date and --collection-slot are not supported for usda_psd")
+        if from_date is not None or to_date is not None:
+            parser.error("--from-date/--to-date are not supported for usda_psd; use --from-marketing-year/--to-marketing-year")
+        if args.run_type == "scheduled":
+            parser.error("scheduled runs are not supported for usda_psd")
+        missing = [
+            name
+            for name, value in (
+                ("--commodity-family", args.commodity_family),
+                ("--from-marketing-year", args.from_marketing_year),
+                ("--to-marketing-year", args.to_marketing_year),
+                ("--country", args.country),
+            )
+            if value in (None, "")
+        ]
+        if missing:
+            parser.error(f"{', '.join(missing)} are required for usda_psd")
+        if bool(args.fixture_file) == bool(args.live_probe):
+            parser.error("provide exactly one of --fixture-file or --live-probe for usda_psd")
+        result = UsdaPsdCollector().run(
+            commodity_family=args.commodity_family,
+            from_marketing_year=args.from_marketing_year,
+            to_marketing_year=args.to_marketing_year,
+            country=args.country,
+            maxrecords=args.maxrecords,
+            dry_run=args.dry_run,
+            fixture_file=args.fixture_file,
+            live_probe=args.live_probe,
+            run_type=args.run_type,
+        )
     else:
         if requested_date is not None or collection_slot is not None:
             parser.error("--date and --collection-slot are not supported for world_bank_pink_sheet")
@@ -285,6 +340,14 @@ def main() -> None:
         print(f"reporter={result.reporter}")
         print(f"partner={result.partner}")
         print(f"flow={result.flow}")
+    if hasattr(result, "commodity_family"):
+        print(f"commodity_family={result.commodity_family}")
+        print(f"from_marketing_year={result.from_marketing_year}")
+        print(f"to_marketing_year={result.to_marketing_year}")
+        print(f"country={result.country}")
+        print(f"dry_run={result.dry_run}")
+        print(f"fixture_file={result.fixture_file}")
+        print(f"live_probe={result.live_probe}")
     if hasattr(result, "products_processed"):
         print(f"products_processed={result.products_processed}")
     if hasattr(result, "series_requested"):
@@ -316,6 +379,8 @@ def main() -> None:
     print(f"records_written={result.records_written}")
     if hasattr(result, "skipped_existing"):
         print(f"skipped_existing={result.skipped_existing}")
+    if hasattr(result, "skipped_unmapped"):
+        print(f"skipped_unmapped={result.skipped_unmapped}")
     if hasattr(result, "updated_existing"):
         print(f"updated_existing={result.updated_existing}")
     if hasattr(result, "revisions_written"):

@@ -1553,8 +1553,53 @@ The seeded mappings intentionally mark exact USDA PSD codes as
 observation rows, does not change `daily_product_features`, and does not change
 exports or scheduler jobs.
 
+## Phase 6.7D USDA PSD Collector
+
+Phase 6.7D adds the first controlled/manual USDA PSD supply-demand collector:
+`usda_psd`. It writes raw evidence through `RawStore`, records
+`raw_responses`, and writes normalized rows to `supply_demand_observations`.
+It does not add scheduler jobs, does not change `daily_product_features`, does
+not change exports, and does not add ML targets.
+
+The first implementation is intentionally conservative:
+
+- supported commodity families: `soybean`, `soybean_oil`, `soybean_meal`,
+  `rapeseed_canola`, `rapeseed_canola_oil`, `rapeseed_canola_meal`;
+- supported countries: `WLD`, `USA`, `BRA`, `ARG`, `CAN`, `CHN`, `EU`;
+- max marketing-year window: 3 years;
+- default `--maxrecords`: 100, hard cap 500;
+- source schema status: `needs_verification`.
+
+Run against a reviewed local fixture:
+
+```bash
+python scripts/run_collector.py usda_psd \
+  --commodity-family soybean_oil \
+  --from-marketing-year 2023 \
+  --to-marketing-year 2023 \
+  --country WLD \
+  --fixture-file tests/fixtures/usda_psd/sample.json
+```
+
+Opt in to a bounded live probe only when the USDA PSD endpoint contract has
+been manually reviewed:
+
+```bash
+python scripts/run_collector.py usda_psd \
+  --commodity-family soybean_oil \
+  --from-marketing-year 2023 \
+  --to-marketing-year 2023 \
+  --country WLD \
+  --maxrecords 100 \
+  --live-probe
+```
+
+The collector rejects scheduled runs. Duplicate rows are idempotent. If an
+existing identity is found with a changed `source_record_hash`, the collector
+writes a quality warning and does not overwrite the stored observation.
+
 ## Next Phase
 
-After Phase 6.7C, the next recommended phase is Phase 6.7D: a controlled USDA
-PSD collector/prototype. Later phases should add supply-demand feature/export
-integration only after source parsing, revisions, and as-of policy are proven.
+After Phase 6.7D, the next recommended phase is Phase 6.7E: supply-demand
+daily feature and export integration. Do that only after source parsing,
+revisions, and as-of policy are proven with controlled USDA PSD data.

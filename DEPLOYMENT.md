@@ -1007,6 +1007,41 @@ After a reviewed deploy, apply the schema with normal Alembic flow and then run
 the idempotent seed. The new tables are expected to be empty except for mapping
 tables until Phase 6.7D adds a controlled USDA PSD prototype.
 
+Phase 6.7D adds that controlled/manual `usda_psd` collector. It is not
+scheduled. It writes raw evidence, `raw_responses`, quality checks, and
+normalized `supply_demand_observations`; it does not rebuild
+`daily_product_features`, does not change exports, and does not add ML targets.
+
+Use a reviewed fixture for local validation:
+
+```bash
+python scripts/run_collector.py usda_psd \
+  --commodity-family soybean_oil \
+  --from-marketing-year 2023 \
+  --to-marketing-year 2023 \
+  --country WLD \
+  --fixture-file tests/fixtures/usda_psd/sample.json
+```
+
+Use `--live-probe` only after the USDA PSD endpoint contract has been manually
+reviewed for the target commodity/country/year window:
+
+```bash
+python scripts/run_collector.py usda_psd \
+  --commodity-family soybean_oil \
+  --from-marketing-year 2023 \
+  --to-marketing-year 2023 \
+  --country WLD \
+  --maxrecords 100 \
+  --live-probe
+```
+
+Operational safety limits are fixed in code: maximum three marketing years per
+run, default `--maxrecords=100`, hard `--maxrecords=500`, and no scheduler
+registration. If an existing observation identity changes hash, the collector
+writes `supply_demand_existing_observation_hash_changed` and does not silently
+overwrite.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

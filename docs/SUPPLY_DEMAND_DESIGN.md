@@ -545,6 +545,62 @@ Phase 6.7C seed metadata uses `design_phase="6.7C"` and
 `exact_psd_code_status="needs_verification"` for supply-demand commodity
 mappings.
 
+## Phase 6.7D Controlled USDA PSD Collector
+
+Phase 6.7D implements the first manual-only collector for the schema above:
+`usda_psd`.
+
+The collector scope is intentionally bounded:
+
+- it supports the pre-seeded soybean and rapeseed/canola families and product
+  concepts only;
+- it supports `WLD`, `USA`, `BRA`, `ARG`, `CAN`, `CHN`, and `EU`;
+- it limits each run to at most three marketing years;
+- it defaults to `--maxrecords=100` and rejects values above 500;
+- it marks the source schema as `needs_verification` until exact USDA PSD
+  endpoint and attribute codes are manually confirmed.
+
+Production write behavior:
+
+- raw response bytes are stored through the normal `RawStore`;
+- one `raw_responses` row is created for each collector request;
+- normalized records are written to `supply_demand_observations`;
+- `daily_supply_demand_features` and `daily_product_features` are not changed;
+- dataset exports are not changed;
+- no scheduler job is registered.
+
+Idempotency policy:
+
+- the identity is `source_id`, `supply_demand_commodity_id`, `country_code`,
+  `marketing_year`, `report_year`, `report_month`, and `estimate_type`;
+- `source_record_hash` is deliberately not part of the identity;
+- same identity and same hash is skipped;
+- same identity and changed hash writes
+  `supply_demand_existing_observation_hash_changed` and does not overwrite the
+  existing observation.
+
+CLI examples:
+
+```bash
+python scripts/run_collector.py usda_psd \
+  --commodity-family soybean_oil \
+  --from-marketing-year 2023 \
+  --to-marketing-year 2023 \
+  --country WLD \
+  --fixture-file tests/fixtures/usda_psd/sample.json
+
+python scripts/run_collector.py usda_psd \
+  --commodity-family soybean_oil \
+  --from-marketing-year 2023 \
+  --to-marketing-year 2023 \
+  --country WLD \
+  --maxrecords 100 \
+  --live-probe
+```
+
+`--live-probe` is an explicit opt-in. The collector has no broad crawler mode
+and no scheduler mode.
+
 ## Future Feature Integration Into `daily_product_features`
 
 Nearest-term behavior:
@@ -554,6 +610,9 @@ Nearest-term behavior:
 - no feature builder is implemented yet.
 - Phase 6.7C creates `daily_supply_demand_features`, but does not populate it
   and does not copy any columns into `daily_product_features`.
+- Phase 6.7D populates `supply_demand_observations` only; it still does not
+  populate `daily_supply_demand_features` and does not copy supply-demand
+  values into `daily_product_features`.
 
 Future behavior:
 
@@ -620,3 +679,7 @@ Future export manifests should preserve:
 - Phase 6.7C does not change `daily_product_features`.
 - Phase 6.7C does not change dataset exports.
 - Phase 6.7C does not add scheduler jobs, ML, or targets.
+- Phase 6.7D does not add scheduler jobs.
+- Phase 6.7D does not change `daily_product_features`.
+- Phase 6.7D does not change dataset exports.
+- Phase 6.7D does not add ML or targets.
