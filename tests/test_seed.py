@@ -1,9 +1,20 @@
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Base, Product, ProductTradeCodeWeight, ProductWeatherRegionWeight, Source, TradeCommodityCode, WeatherRegion
+from app.db.models import (
+    Base,
+    Product,
+    ProductSupplyDemandWeight,
+    ProductTradeCodeWeight,
+    ProductWeatherRegionWeight,
+    Source,
+    SupplyDemandCommodity,
+    TradeCommodityCode,
+    WeatherRegion,
+)
 from app.db.seed import (
     PRODUCTS,
+    PRODUCT_SUPPLY_DEMAND_WEIGHTS,
     PRODUCT_TRADE_CODE_WEIGHTS,
     PRODUCT_WEATHER_REGION_WEIGHTS,
     RAPESEED_WEATHER_PRODUCT_CODES,
@@ -11,6 +22,7 @@ from app.db.seed import (
     SOURCES,
     SOYBEAN_WEATHER_PRODUCT_CODES,
     SOYBEAN_WEATHER_REGION_CODES,
+    SUPPLY_DEMAND_COMMODITIES,
     TRADE_COMMODITY_CODES,
     WEATHER_REGIONS,
     seed_database,
@@ -42,18 +54,36 @@ def test_seed_is_idempotent() -> None:
         faostat_trade_source = session.scalar(select(Source).where(Source.code == "faostat_trade"))
         usda_fas_trade_source = session.scalar(select(Source).where(Source.code == "usda_fas_trade"))
         world_bank_wits_source = session.scalar(select(Source).where(Source.code == "world_bank_wits"))
+        usda_psd_source = session.scalar(select(Source).where(Source.code == "usda_psd"))
+        usda_wasde_source = session.scalar(select(Source).where(Source.code == "usda_wasde"))
+        faostat_supply_demand_source = session.scalar(select(Source).where(Source.code == "faostat_supply_demand"))
+        usda_nass_quickstats_source = session.scalar(select(Source).where(Source.code == "usda_nass_quickstats"))
         weather_region_count = session.scalar(select(func.count()).select_from(WeatherRegion))
         product_weather_weights_count = session.scalar(select(func.count()).select_from(ProductWeatherRegionWeight))
         trade_commodity_code_count = session.scalar(select(func.count()).select_from(TradeCommodityCode))
         product_trade_weights_count = session.scalar(select(func.count()).select_from(ProductTradeCodeWeight))
+        supply_demand_commodity_count = session.scalar(select(func.count()).select_from(SupplyDemandCommodity))
+        product_supply_demand_weights_count = session.scalar(select(func.count()).select_from(ProductSupplyDemandWeight))
         direct_trade_weight_count = session.scalar(
             select(func.count()).select_from(ProductTradeCodeWeight).where(ProductTradeCodeWeight.role == "direct_trade_proxy")
         )
+        direct_supply_demand_weight_count = session.scalar(
+            select(func.count())
+            .select_from(ProductSupplyDemandWeight)
+            .where(ProductSupplyDemandWeight.role == "direct_supply_demand_proxy")
+        )
+        supply_demand_metrics = set(session.scalars(select(SupplyDemandCommodity.metric_name)).all())
         hs_1507 = session.scalar(
             select(TradeCommodityCode).where(
                 TradeCommodityCode.code_system == "HS",
                 TradeCommodityCode.commodity_code == "1507",
                 TradeCommodityCode.hs_revision == "generic",
+            )
+        )
+        soybean_oil_production = session.scalar(
+            select(SupplyDemandCommodity).where(
+                SupplyDemandCommodity.product_code == "soybean_oil",
+                SupplyDemandCommodity.metric_name == "production_volume",
             )
         )
         hs_codes = set(
@@ -91,7 +121,24 @@ def test_seed_is_idempotent() -> None:
     assert product_weather_weights_count == len(PRODUCT_WEATHER_REGION_WEIGHTS)
     assert trade_commodity_code_count == len(TRADE_COMMODITY_CODES)
     assert product_trade_weights_count == len(PRODUCT_TRADE_CODE_WEIGHTS)
+    assert supply_demand_commodity_count == len(SUPPLY_DEMAND_COMMODITIES)
+    assert product_supply_demand_weights_count == len(PRODUCT_SUPPLY_DEMAND_WEIGHTS)
     assert direct_trade_weight_count == 4
+    assert direct_supply_demand_weight_count == len(PRODUCT_SUPPLY_DEMAND_WEIGHTS)
+    assert {
+        "production_volume",
+        "domestic_consumption",
+        "feed_use",
+        "crush_volume",
+        "exports_volume",
+        "imports_volume",
+        "beginning_stocks",
+        "ending_stocks",
+        "stock_to_use_ratio",
+        "planted_area",
+        "harvested_area",
+        "yield",
+    } <= supply_demand_metrics
     assert {"1201", "1507", "2304", "1205", "1514", "2306", "1511", "1512", "1001", "1005"} <= hs_codes
     for product_code in SOYBEAN_WEATHER_PRODUCT_CODES:
         assert weight_counts[product_code] == len(SOYBEAN_WEATHER_REGION_CODES)
@@ -149,10 +196,26 @@ def test_seed_is_idempotent() -> None:
     assert world_bank_wits_source is not None
     assert world_bank_wits_source.name == "World Bank WITS"
     assert world_bank_wits_source.source_type == "trade"
+    assert usda_psd_source is not None
+    assert usda_psd_source.name == "USDA PSD / FAS PSD Online"
+    assert usda_psd_source.source_type == "supply_demand"
+    assert usda_wasde_source is not None
+    assert usda_wasde_source.name == "USDA WASDE"
+    assert usda_wasde_source.source_type == "official_report"
+    assert faostat_supply_demand_source is not None
+    assert faostat_supply_demand_source.name == "FAOSTAT Production / Food Balance"
+    assert faostat_supply_demand_source.source_type == "supply_demand_context"
+    assert usda_nass_quickstats_source is not None
+    assert usda_nass_quickstats_source.name == "USDA NASS Quick Stats"
+    assert usda_nass_quickstats_source.source_type == "area_yield_production"
     assert hs_1507 is not None
     assert hs_1507.product_code == "soybean_oil"
     assert hs_1507.relevance == "direct"
     assert hs_1507.metadata_json["design_phase"] == "6.5C"
+    assert soybean_oil_production is not None
+    assert soybean_oil_production.relevance == "direct"
+    assert soybean_oil_production.metadata_json["design_phase"] == "6.7C"
+    assert soybean_oil_production.metadata_json["exact_psd_code_status"] == "needs_verification"
     assert mato_grosso_region is not None
     assert mato_grosso_region.priority == "high"
     assert mato_grosso_region.commodity_family == "soybean"

@@ -529,7 +529,10 @@ Recommended first scope:
 
 ## Source Seed Design
 
-Phase 6.7B does not change seed data. Future seed candidates:
+Phase 6.7C implements schema-only source seeds and conservative mappings.
+These rows prepare the database for a later collector, but they are not
+collected observations and they do not verify exact USDA PSD commodity or
+attribute codes.
 
 | source code | name | category/type | active policy |
 | --- | --- | --- | --- |
@@ -538,7 +541,9 @@ Phase 6.7B does not change seed data. Future seed candidates:
 | `faostat_supply_demand` | FAOSTAT Production / Food Balance | `supply_demand_context` | active later context source. |
 | `usda_nass_quickstats` | USDA NASS Quick Stats | `area_yield_production` | active later/manual after API key policy. |
 
-No source seed is added in Phase 6.7B.
+Phase 6.7C seed metadata uses `design_phase="6.7C"` and
+`exact_psd_code_status="needs_verification"` for supply-demand commodity
+mappings.
 
 ## Future Feature Integration Into `daily_product_features`
 
@@ -547,6 +552,8 @@ Nearest-term behavior:
 - no change to `daily_product_features` in Phase 6.7B;
 - no supply-demand columns are added yet;
 - no feature builder is implemented yet.
+- Phase 6.7C creates `daily_supply_demand_features`, but does not populate it
+  and does not copy any columns into `daily_product_features`.
 
 Future behavior:
 
@@ -592,7 +599,8 @@ Future export manifests should preserve:
 
 ## Future Phases
 
-- Phase 6.7C: supply-demand schema-only implementation and tests.
+- Phase 6.7C: supply-demand schema-only implementation, source seeds, mapping
+  seeds, operational counts, and tests.
 - Phase 6.7D: first controlled USDA PSD collector/prototype.
 - Phase 6.7E: supply-demand daily features and export integration.
 
@@ -607,3 +615,8 @@ Future export manifests should preserve:
 - No ML in Phase 6.7B.
 - No targets in Phase 6.7B.
 - No production deploy in Phase 6.7B.
+- Phase 6.7C does not implement a collector.
+- Phase 6.7C does not collect USDA PSD/WASDE/FAOSTAT/NASS data.
+- Phase 6.7C does not change `daily_product_features`.
+- Phase 6.7C does not change dataset exports.
+- Phase 6.7C does not add scheduler jobs, ML, or targets.

@@ -997,6 +997,16 @@ USDA PSD collector/prototype, and Phase 6.7E supply-demand feature/export
 integration. Phase 6.7B does not add collectors, schedulers, DB writes, ML
 targets, or dataset targets.
 
+Phase 6.7C implements the reviewed schema through Alembic revision
+`0018_supply_demand_schema`. It adds only new supply-demand tables, source
+seeds, conservative mapping seeds, product mapping weights, operational-report
+counts, and tests. It does not add a collector, scheduler job, feature builder,
+export columns, ML, or targets.
+
+After a reviewed deploy, apply the schema with normal Alembic flow and then run
+the idempotent seed. The new tables are expected to be empty except for mapping
+tables until Phase 6.7D adds a controlled USDA PSD prototype.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

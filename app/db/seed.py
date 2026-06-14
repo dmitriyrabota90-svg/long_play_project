@@ -9,7 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.logging import setup_logging
-from app.db.models import Product, ProductTradeCodeWeight, ProductWeatherRegionWeight, Source, TradeCommodityCode, WeatherRegion
+from app.db.models import (
+    Product,
+    ProductSupplyDemandWeight,
+    ProductTradeCodeWeight,
+    ProductWeatherRegionWeight,
+    Source,
+    SupplyDemandCommodity,
+    TradeCommodityCode,
+    WeatherRegion,
+)
 from app.db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -88,6 +97,37 @@ class ProductTradeCodeWeightSeed:
     is_active: bool = True
 
 
+@dataclass(frozen=True)
+class SupplyDemandCommoditySeed:
+    source_code: str
+    source_commodity_code: str
+    source_commodity_name: str
+    source_metric_code: str
+    source_metric_name: str
+    commodity_family: str
+    product_code: str | None
+    metric_name: str
+    metric_group: str
+    unit_hint: str
+    frequency: str
+    relevance: str
+    mapping_note: str
+    is_active: bool = True
+
+
+@dataclass(frozen=True)
+class ProductSupplyDemandWeightSeed:
+    product_code: str
+    commodity_family: str
+    metric_name: str
+    weight: Decimal
+    relevance: str = "direct"
+    role: str = "direct_supply_demand_proxy"
+    effective_from: date = date(2020, 1, 1)
+    effective_to: date | None = None
+    is_active: bool = True
+
+
 PRODUCTS: tuple[ProductSeed, ...] = (
     ProductSeed("rapeseed_oil", "Рапсовое масло", "oil"),
     ProductSeed("soybean_oil", "Соевое масло", "oil"),
@@ -121,7 +161,15 @@ SOURCES: tuple[SourceSeed, ...] = (
     SourceSeed("ecb_fx", "European Central Bank FX", "fx", "https://www.ecb.europa.eu/"),
     SourceSeed("fred_energy_prices", "FRED Energy Prices", "energy", "https://fred.stlouisfed.org/"),
     SourceSeed("eia_energy", "EIA energy data", "energy", "https://www.eia.gov/"),
-    SourceSeed("usda_psd", "USDA FAS PSD", "fundamental", "https://apps.fas.usda.gov/psdonline/"),
+    SourceSeed("usda_psd", "USDA PSD / FAS PSD Online", "supply_demand", "https://apps.fas.usda.gov/psdonline/"),
+    SourceSeed("usda_wasde", "USDA WASDE", "official_report", "https://www.usda.gov/oce/commodity/wasde"),
+    SourceSeed(
+        "faostat_supply_demand",
+        "FAOSTAT Production / Food Balance",
+        "supply_demand_context",
+        "https://www.fao.org/faostat/",
+    ),
+    SourceSeed("usda_nass_quickstats", "USDA NASS Quick Stats", "area_yield_production", "https://quickstats.nass.usda.gov/"),
     SourceSeed("gdelt_news", "GDELT news", "news", "https://www.gdeltproject.org/"),
     SourceSeed("gdelt_2_1", "GDELT 2.1 DOC/Event APIs", "news_event", "https://www.gdeltproject.org/"),
     SourceSeed("usda_reports", "USDA Reports / WASDE / PSD", "official_report", "https://www.usda.gov/oce/commodity/wasde"),
@@ -300,6 +348,178 @@ PRODUCT_TRADE_CODE_WEIGHTS: tuple[ProductTradeCodeWeightSeed, ...] = (
     ProductTradeCodeWeightSeed("soybean_meal", "2304", Decimal("1.00000000")),
     ProductTradeCodeWeightSeed("rapeseed_oil", "1514", Decimal("1.00000000")),
     ProductTradeCodeWeightSeed("rapeseed_meal", "2306", Decimal("1.00000000")),
+)
+
+SUPPLY_DEMAND_METRIC_GROUPS: dict[str, str] = {
+    "production_volume": "production",
+    "domestic_consumption": "consumption_use",
+    "feed_use": "consumption_use",
+    "crush_volume": "processing",
+    "exports_volume": "trade",
+    "imports_volume": "trade",
+    "beginning_stocks": "stocks",
+    "ending_stocks": "stocks",
+    "stock_to_use_ratio": "stocks",
+    "planted_area": "area_yield",
+    "harvested_area": "area_yield",
+    "yield": "area_yield",
+}
+SUPPLY_DEMAND_METRIC_UNITS: dict[str, str] = {
+    "stock_to_use_ratio": "ratio",
+    "planted_area": "hectare",
+    "harvested_area": "hectare",
+    "yield": "metric_ton_per_hectare",
+}
+SUPPLY_DEMAND_PRODUCT_METRICS: dict[str, tuple[str, ...]] = {
+    "soybean_oil": (
+        "production_volume",
+        "domestic_consumption",
+        "exports_volume",
+        "imports_volume",
+        "beginning_stocks",
+        "ending_stocks",
+        "stock_to_use_ratio",
+    ),
+    "soybean_meal": (
+        "production_volume",
+        "feed_use",
+        "exports_volume",
+        "imports_volume",
+        "beginning_stocks",
+        "ending_stocks",
+        "stock_to_use_ratio",
+    ),
+    "rapeseed_oil": (
+        "production_volume",
+        "domestic_consumption",
+        "exports_volume",
+        "imports_volume",
+        "beginning_stocks",
+        "ending_stocks",
+        "stock_to_use_ratio",
+    ),
+    "rapeseed_meal": (
+        "production_volume",
+        "feed_use",
+        "exports_volume",
+        "imports_volume",
+        "beginning_stocks",
+        "ending_stocks",
+        "stock_to_use_ratio",
+    ),
+}
+SUPPLY_DEMAND_PRODUCT_CONCEPTS: dict[str, tuple[str, str, str]] = {
+    "soybean_oil": ("soybean", "Soybean oil", "Direct soybean oil official supply-demand concept."),
+    "soybean_meal": ("soybean", "Soybean meal", "Direct soybean meal official supply-demand concept."),
+    "rapeseed_oil": ("rapeseed_canola", "Rapeseed / canola oil", "Direct rapeseed/canola oil official supply-demand concept."),
+    "rapeseed_meal": ("rapeseed_canola", "Rapeseed / canola meal", "Direct rapeseed/canola meal official supply-demand concept."),
+}
+SUPPLY_DEMAND_CONTEXT_CONCEPTS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "soybean",
+        "Soybean context",
+        "Context soybean balance concept for oil and meal supply-demand features.",
+        (
+            "production_volume",
+            "crush_volume",
+            "exports_volume",
+            "imports_volume",
+            "beginning_stocks",
+            "ending_stocks",
+            "stock_to_use_ratio",
+            "planted_area",
+            "harvested_area",
+            "yield",
+        ),
+    ),
+    (
+        "rapeseed_canola",
+        "Rapeseed / canola context",
+        "Context rapeseed/canola balance concept for oil and meal supply-demand features.",
+        (
+            "production_volume",
+            "crush_volume",
+            "exports_volume",
+            "imports_volume",
+            "beginning_stocks",
+            "ending_stocks",
+            "stock_to_use_ratio",
+            "planted_area",
+            "harvested_area",
+            "yield",
+        ),
+    ),
+)
+
+
+def _source_code_fragment(value: str) -> str:
+    return value.replace("/", "").replace(" ", "_").replace("-", "_").lower()
+
+
+def _supply_demand_unit(metric_name: str) -> str:
+    return SUPPLY_DEMAND_METRIC_UNITS.get(metric_name, "metric_ton")
+
+
+def _supply_demand_metric_seed(
+    *,
+    commodity_family: str,
+    source_commodity_name: str,
+    product_code: str | None,
+    metric_name: str,
+    relevance: str,
+    mapping_note: str,
+) -> SupplyDemandCommoditySeed:
+    source_fragment = _source_code_fragment(source_commodity_name)
+    return SupplyDemandCommoditySeed(
+        source_code="usda_psd",
+        source_commodity_code=f"psd_needs_verification_{source_fragment}",
+        source_commodity_name=source_commodity_name,
+        source_metric_code=f"psd_needs_verification_{metric_name}",
+        source_metric_name=metric_name.replace("_", " ").title(),
+        commodity_family=commodity_family,
+        product_code=product_code,
+        metric_name=metric_name,
+        metric_group=SUPPLY_DEMAND_METRIC_GROUPS[metric_name],
+        unit_hint=_supply_demand_unit(metric_name),
+        frequency="monthly_report",
+        relevance=relevance,
+        mapping_note=mapping_note,
+    )
+
+
+SUPPLY_DEMAND_COMMODITIES: tuple[SupplyDemandCommoditySeed, ...] = tuple(
+    _supply_demand_metric_seed(
+        commodity_family=commodity_family,
+        source_commodity_name=source_commodity_name,
+        product_code=product_code,
+        metric_name=metric_name,
+        relevance="direct",
+        mapping_note=f"{mapping_note} Exact USDA PSD commodity/attribute codes still need source verification.",
+    )
+    for product_code, (commodity_family, source_commodity_name, mapping_note) in SUPPLY_DEMAND_PRODUCT_CONCEPTS.items()
+    for metric_name in SUPPLY_DEMAND_PRODUCT_METRICS[product_code]
+) + tuple(
+    _supply_demand_metric_seed(
+        commodity_family=commodity_family,
+        source_commodity_name=source_commodity_name,
+        product_code=None,
+        metric_name=metric_name,
+        relevance="context",
+        mapping_note=f"{mapping_note} Exact USDA PSD commodity/attribute codes still need source verification.",
+    )
+    for commodity_family, source_commodity_name, mapping_note, metric_names in SUPPLY_DEMAND_CONTEXT_CONCEPTS
+    for metric_name in metric_names
+)
+
+PRODUCT_SUPPLY_DEMAND_WEIGHTS: tuple[ProductSupplyDemandWeightSeed, ...] = tuple(
+    ProductSupplyDemandWeightSeed(
+        product_code=product_code,
+        commodity_family=commodity_family,
+        metric_name=metric_name,
+        weight=Decimal("1.00000000"),
+    )
+    for product_code, (commodity_family, _source_commodity_name, _mapping_note) in SUPPLY_DEMAND_PRODUCT_CONCEPTS.items()
+    for metric_name in SUPPLY_DEMAND_PRODUCT_METRICS[product_code]
 )
 
 WEATHER_REGIONS: tuple[WeatherRegionSeed, ...] = (
@@ -573,6 +793,8 @@ def seed_database(session: Session) -> dict[str, int]:
     product_weather_region_weights_created = 0
     trade_commodity_codes_created = 0
     product_trade_code_weights_created = 0
+    supply_demand_commodities_created = 0
+    product_supply_demand_weights_created = 0
 
     for item in PRODUCTS:
         product = session.scalar(select(Product).where(Product.code == item.code))
@@ -613,6 +835,58 @@ def seed_database(session: Session) -> dict[str, int]:
             source.source_type = item.source_type
             source.base_url = item.base_url
             source.is_active = True
+
+    session.flush()
+    for item in SUPPLY_DEMAND_COMMODITIES:
+        source = session.scalar(select(Source).where(Source.code == item.source_code))
+        if source is None:
+            logger.warning("skipping supply-demand commodity source_code=%s source_exists=False", item.source_code)
+            continue
+        metadata_json = {
+            "design_phase": "6.7C",
+            "exact_psd_code_status": "needs_verification",
+            "mapping_note": item.mapping_note,
+            "source_candidate": item.source_code,
+        }
+        commodity = session.scalar(
+            select(SupplyDemandCommodity).where(
+                SupplyDemandCommodity.source_id == source.id,
+                SupplyDemandCommodity.source_commodity_code == item.source_commodity_code,
+                SupplyDemandCommodity.source_metric_code == item.source_metric_code,
+                SupplyDemandCommodity.metric_name == item.metric_name,
+            )
+        )
+        if commodity is None:
+            session.add(
+                SupplyDemandCommodity(
+                    source_id=source.id,
+                    source_commodity_code=item.source_commodity_code,
+                    source_commodity_name=item.source_commodity_name,
+                    source_metric_code=item.source_metric_code,
+                    source_metric_name=item.source_metric_name,
+                    commodity_family=item.commodity_family,
+                    product_code=item.product_code,
+                    metric_name=item.metric_name,
+                    metric_group=item.metric_group,
+                    unit_hint=item.unit_hint,
+                    frequency=item.frequency,
+                    relevance=item.relevance,
+                    is_active=item.is_active,
+                    metadata_json=metadata_json,
+                )
+            )
+            supply_demand_commodities_created += 1
+        else:
+            commodity.source_commodity_name = item.source_commodity_name
+            commodity.source_metric_name = item.source_metric_name
+            commodity.commodity_family = item.commodity_family
+            commodity.product_code = item.product_code
+            commodity.metric_group = item.metric_group
+            commodity.unit_hint = item.unit_hint
+            commodity.frequency = item.frequency
+            commodity.relevance = item.relevance
+            commodity.is_active = item.is_active
+            commodity.metadata_json = metadata_json
 
     for item in WEATHER_REGIONS:
         region = session.scalar(select(WeatherRegion).where(WeatherRegion.region_code == item.region_code))
@@ -795,6 +1069,62 @@ def seed_database(session: Session) -> dict[str, int]:
             existing_trade_weight.is_active = item.is_active
             existing_trade_weight.metadata_json = metadata_json
 
+    session.flush()
+    for item in PRODUCT_SUPPLY_DEMAND_WEIGHTS:
+        product = session.scalar(select(Product).where(Product.code == item.product_code))
+        commodity = session.scalar(
+            select(SupplyDemandCommodity).where(
+                SupplyDemandCommodity.product_code == item.product_code,
+                SupplyDemandCommodity.commodity_family == item.commodity_family,
+                SupplyDemandCommodity.metric_name == item.metric_name,
+                SupplyDemandCommodity.relevance == item.relevance,
+            )
+        )
+        if product is None or commodity is None:
+            logger.warning(
+                "skipping product supply-demand weight product_code=%s metric_name=%s product_exists=%s commodity_exists=%s",
+                item.product_code,
+                item.metric_name,
+                product is not None,
+                commodity is not None,
+            )
+            continue
+        existing_supply_demand_weight = session.scalar(
+            select(ProductSupplyDemandWeight).where(
+                ProductSupplyDemandWeight.product_id == product.id,
+                ProductSupplyDemandWeight.supply_demand_commodity_id == commodity.id,
+                ProductSupplyDemandWeight.role == item.role,
+                ProductSupplyDemandWeight.effective_from == item.effective_from,
+            )
+        )
+        metadata_json = {
+            "weighting_method": "direct_only_first_version",
+            "design_phase": "6.7C",
+            "exact_psd_code_status": "needs_verification",
+            "note": "Context supply-demand weights are documented for later phases but not seeded in Phase 6.7C.",
+        }
+        if existing_supply_demand_weight is None:
+            session.add(
+                ProductSupplyDemandWeight(
+                    product_id=product.id,
+                    supply_demand_commodity_id=commodity.id,
+                    weight=item.weight,
+                    relevance=item.relevance,
+                    role=item.role,
+                    effective_from=item.effective_from,
+                    effective_to=item.effective_to,
+                    is_active=item.is_active,
+                    metadata_json=metadata_json,
+                )
+            )
+            product_supply_demand_weights_created += 1
+        else:
+            existing_supply_demand_weight.weight = item.weight
+            existing_supply_demand_weight.relevance = item.relevance
+            existing_supply_demand_weight.effective_to = item.effective_to
+            existing_supply_demand_weight.is_active = item.is_active
+            existing_supply_demand_weight.metadata_json = metadata_json
+
     session.commit()
     return {
         "products_created": products_created,
@@ -803,6 +1133,8 @@ def seed_database(session: Session) -> dict[str, int]:
         "product_weather_region_weights_created": product_weather_region_weights_created,
         "trade_commodity_codes_created": trade_commodity_codes_created,
         "product_trade_code_weights_created": product_trade_code_weights_created,
+        "supply_demand_commodities_created": supply_demand_commodities_created,
+        "product_supply_demand_weights_created": product_supply_demand_weights_created,
     }
 
 

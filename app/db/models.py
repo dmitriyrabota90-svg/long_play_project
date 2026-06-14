@@ -764,6 +764,239 @@ class DailyTradeFeature(Base, TimestampMixin):
     product: Mapped[Product] = relationship()
 
 
+class SupplyDemandCommodity(Base, TimestampMixin):
+    __tablename__ = "supply_demand_commodities"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "source_commodity_code",
+            "source_metric_code",
+            "metric_name",
+            name="uq_supply_demand_commodities_source_metric",
+        ),
+        CheckConstraint("relevance IN ('direct', 'context', 'later')", name="ck_supply_demand_commodities_relevance"),
+        CheckConstraint(
+            "metric_group IN ("
+            "'production', "
+            "'consumption_use', "
+            "'processing', "
+            "'trade', "
+            "'stocks', "
+            "'area_yield', "
+            "'report_metadata', "
+            "'quality', "
+            "'unknown'"
+            ")",
+            name="ck_supply_demand_commodities_metric_group",
+        ),
+        Index("ix_supply_demand_commodities_family", "commodity_family"),
+        Index("ix_supply_demand_commodities_product_code", "product_code"),
+        Index("ix_supply_demand_commodities_metric_name", "metric_name"),
+        Index("ix_supply_demand_commodities_metric_group", "metric_group"),
+        Index("ix_supply_demand_commodities_is_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True)
+    source_commodity_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_commodity_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_metric_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_metric_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    commodity_family: Mapped[str] = mapped_column(String(100), nullable=False)
+    product_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_group: Mapped[str] = mapped_column(String(100), nullable=False)
+    unit_hint: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    frequency: Mapped[str] = mapped_column(String(64), nullable=False)
+    relevance: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    source: Mapped[Source | None] = relationship()
+
+
+class SupplyDemandObservation(Base, TimestampMixin):
+    __tablename__ = "supply_demand_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "supply_demand_commodity_id",
+            "country_code",
+            "marketing_year",
+            "report_year",
+            "report_month",
+            "estimate_type",
+            name="uq_supply_demand_observations_identity",
+        ),
+        CheckConstraint(
+            "estimate_type IN ('actual', 'estimate', 'forecast', 'projection', 'unknown')",
+            name="ck_supply_demand_observations_estimate_type",
+        ),
+        CheckConstraint(
+            "frequency IN ('monthly_report', 'marketing_year', 'annual', 'quarterly', 'unknown')",
+            name="ck_supply_demand_observations_frequency",
+        ),
+        CheckConstraint("report_month BETWEEN 1 AND 12", name="ck_supply_demand_observations_report_month"),
+        CheckConstraint(
+            "marketing_year_end IS NULL OR marketing_year_start IS NULL OR marketing_year_end >= marketing_year_start",
+            name="ck_supply_demand_observations_marketing_dates",
+        ),
+        CheckConstraint(
+            "observed_period_end IS NULL OR observed_period_start IS NULL OR observed_period_end >= observed_period_start",
+            name="ck_supply_demand_observations_observed_dates",
+        ),
+        Index("ix_supply_demand_obs_commodity_year", "supply_demand_commodity_id", "marketing_year"),
+        Index("ix_supply_demand_obs_country_year", "country_code", "marketing_year"),
+        Index("ix_supply_demand_obs_report_published", "report_published_at"),
+        Index("ix_supply_demand_obs_published_at", "published_at"),
+        Index("ix_supply_demand_obs_fetched_at", "fetched_at"),
+        Index("ix_supply_demand_obs_raw_response_id", "raw_response_id"),
+        Index("ix_supply_demand_obs_collector_run_id", "collector_run_id"),
+        Index("ix_supply_demand_obs_record_hash", "source_record_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    raw_response_id: Mapped[int] = mapped_column(ForeignKey("raw_responses.id"), nullable=False)
+    collector_run_id: Mapped[int] = mapped_column(ForeignKey("collector_runs.id"), nullable=False)
+    supply_demand_commodity_id: Mapped[int] = mapped_column(ForeignKey("supply_demand_commodities.id"), nullable=False)
+    source_record_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    country_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    region_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    region_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    marketing_year: Mapped[str] = mapped_column(String(32), nullable=False)
+    marketing_year_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    marketing_year_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    report_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    report_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    report_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    observed_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    observed_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    frequency: Mapped[str] = mapped_column(String(32), nullable=False)
+    estimate_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    metric_value: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    metric_unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    is_forecast: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_revision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    source: Mapped[Source] = relationship()
+    raw_response: Mapped[RawResponse] = relationship()
+    collector_run: Mapped[CollectorRun] = relationship()
+    supply_demand_commodity: Mapped[SupplyDemandCommodity] = relationship()
+
+
+class SupplyDemandRevision(Base):
+    __tablename__ = "supply_demand_revisions"
+    __table_args__ = (
+        UniqueConstraint("supply_demand_observation_id", "revision_number", name="uq_supply_demand_revisions_obs_number"),
+        CheckConstraint(
+            "revision_reason IN ('source_revision', 'report_restatement', 'corrected_estimate', 'parser_change', 'unknown')",
+            name="ck_supply_demand_revisions_reason",
+        ),
+        Index("ix_supply_demand_revisions_observation_id", "supply_demand_observation_id"),
+        Index("ix_supply_demand_revisions_detected_at", "detected_at"),
+        Index("ix_supply_demand_revisions_reason", "revision_reason"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    supply_demand_observation_id: Mapped[int] = mapped_column(ForeignKey("supply_demand_observations.id"), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    old_metric_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    new_metric_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    old_source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    new_source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision_reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    supply_demand_observation: Mapped[SupplyDemandObservation] = relationship()
+
+
+class ProductSupplyDemandWeight(Base, TimestampMixin):
+    __tablename__ = "product_supply_demand_weights"
+    __table_args__ = (
+        UniqueConstraint(
+            "product_id",
+            "supply_demand_commodity_id",
+            "role",
+            "effective_from",
+            name="uq_product_supply_demand_weights_identity",
+        ),
+        CheckConstraint("relevance IN ('direct', 'context', 'later')", name="ck_product_supply_demand_weights_relevance"),
+        CheckConstraint("weight >= 0", name="ck_product_supply_demand_weights_nonnegative"),
+        CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="ck_product_supply_demand_weights_dates"),
+        Index("ix_product_supply_demand_weights_product_active", "product_id", "is_active"),
+        Index("ix_product_supply_demand_weights_commodity_active", "supply_demand_commodity_id", "is_active"),
+        Index("ix_product_supply_demand_weights_effective", "effective_from", "effective_to"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    supply_demand_commodity_id: Mapped[int] = mapped_column(ForeignKey("supply_demand_commodities.id"), nullable=False)
+    weight: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    relevance: Mapped[str] = mapped_column(String(32), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    product: Mapped[Product] = relationship()
+    supply_demand_commodity: Mapped[SupplyDemandCommodity] = relationship()
+
+
+class DailySupplyDemandFeature(Base, TimestampMixin):
+    __tablename__ = "daily_supply_demand_features"
+    __table_args__ = (
+        UniqueConstraint("product_id", "feature_date", name="uq_daily_supply_demand_features_product_date"),
+        CheckConstraint(
+            "supply_demand_as_of_date IS NULL OR supply_demand_as_of_date <= feature_date",
+            name="ck_daily_supply_demand_features_as_of",
+        ),
+        Index("ix_daily_supply_demand_features_product_date", "product_id", "feature_date"),
+        Index("ix_daily_supply_demand_features_feature_date", "feature_date"),
+        Index("ix_daily_supply_demand_features_as_of", "supply_demand_as_of_date"),
+        Index("ix_daily_supply_demand_features_marketing_year", "marketing_year"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    feature_date: Mapped[date] = mapped_column(Date, nullable=False)
+    production_volume: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    domestic_consumption: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    food_use: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    feed_use: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    crush_volume: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    exports_volume: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    imports_volume: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    beginning_stocks: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    ending_stocks: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    stock_to_use_ratio: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    planted_area: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    harvested_area: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    yield_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    production_forecast_revision: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    ending_stocks_revision: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    stock_to_use_revision: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    forecast_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    marketing_year: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    report_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    supply_demand_as_of_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reporting_lag_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    missing_flags: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    product: Mapped[Product] = relationship()
+
+
 class ProductWeatherRegionWeight(Base, TimestampMixin):
     __tablename__ = "product_weather_region_weights"
     __table_args__ = (

@@ -16,6 +16,7 @@ from app.db.models import (
     CommodityEvent,
     DailyProductFeature,
     DailyNewsFeature,
+    DailySupplyDemandFeature,
     DailyTradeFeature,
     DataQualityCheck,
     EnergyPrice,
@@ -26,9 +27,13 @@ from app.db.models import (
     PriceObservation,
     ProductWeatherRegionWeight,
     Product,
+    ProductSupplyDemandWeight,
     ProductTradeCodeWeight,
     RawResponse,
     Source,
+    SupplyDemandCommodity,
+    SupplyDemandObservation,
+    SupplyDemandRevision,
     TradeCommodityCode,
     TradeFlow,
     WeatherDailyFeature,
@@ -228,6 +233,23 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "first_feature_date": None,
             "last_feature_date": None,
             "latest_trade_as_of_date": None,
+        },
+        "supply_demand_commodities": {
+            "count": 0,
+            "active_count": 0,
+            "metrics_count": 0,
+        },
+        "supply_demand_observations": {
+            "count": 0,
+        },
+        "supply_demand_revisions": {
+            "count": 0,
+        },
+        "product_supply_demand_weights": {
+            "count": 0,
+        },
+        "daily_supply_demand_features": {
+            "count": 0,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -601,6 +623,27 @@ def _fill_db_report(
         "first_feature_date": first_trade_feature_date.isoformat() if first_trade_feature_date else None,
         "last_feature_date": last_trade_feature_date.isoformat() if last_trade_feature_date else None,
         "latest_trade_as_of_date": latest_trade_as_of_date.isoformat() if latest_trade_as_of_date else None,
+    }
+    report["supply_demand_commodities"] = {
+        "count": session.scalar(select(func.count()).select_from(SupplyDemandCommodity)),
+        "active_count": session.scalar(
+            select(func.count()).select_from(SupplyDemandCommodity).where(SupplyDemandCommodity.is_active.is_(True))
+        ),
+        "metrics_count": session.scalar(
+            select(func.count(func.distinct(SupplyDemandCommodity.metric_name))).select_from(SupplyDemandCommodity)
+        ),
+    }
+    report["supply_demand_observations"] = {
+        "count": session.scalar(select(func.count()).select_from(SupplyDemandObservation)),
+    }
+    report["supply_demand_revisions"] = {
+        "count": session.scalar(select(func.count()).select_from(SupplyDemandRevision)),
+    }
+    report["product_supply_demand_weights"] = {
+        "count": session.scalar(select(func.count()).select_from(ProductSupplyDemandWeight)),
+    }
+    report["daily_supply_demand_features"] = {
+        "count": session.scalar(select(func.count()).select_from(DailySupplyDemandFeature)),
     }
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(

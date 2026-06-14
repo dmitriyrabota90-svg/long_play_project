@@ -1530,9 +1530,31 @@ The proposed future tables are `supply_demand_commodities`,
 The first future source remains USDA PSD / FAS PSD Online. Do not apply the SQL
 draft manually; Phase 6.7C should implement the reviewed schema through Alembic.
 
+## Phase 6.7C Supply-Demand Schema
+
+Phase 6.7C implements the reviewed supply-demand / production-stocks schema
+only. It adds SQLAlchemy models, Alembic revision
+`0018_supply_demand_schema`, idempotent source seeds, conservative
+commodity/metric mapping seeds, direct product mapping weights, and
+operational-report counts.
+
+Created tables:
+
+```text
+supply_demand_commodities
+supply_demand_observations
+supply_demand_revisions
+product_supply_demand_weights
+daily_supply_demand_features
+```
+
+The seeded mappings intentionally mark exact USDA PSD codes as
+`needs_verification`. Phase 6.7C does not implement a collector, does not write
+observation rows, does not change `daily_product_features`, and does not change
+exports or scheduler jobs.
+
 ## Next Phase
 
-After Phase 6.7B, the next recommended phase is Phase 6.7C: schema-only
-implementation for the supply-demand tables, source seeds, and tests. Later
-phases should add the first controlled USDA PSD collector and then
-supply-demand feature/export integration.
+After Phase 6.7C, the next recommended phase is Phase 6.7D: a controlled USDA
+PSD collector/prototype. Later phases should add supply-demand feature/export
+integration only after source parsing, revisions, and as-of policy are proven.

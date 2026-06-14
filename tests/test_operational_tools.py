@@ -11,7 +11,19 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config.logging import setup_logging
 from app.config.settings import Settings, get_settings
-from app.db.models import Base, DailyProductFeature, Product
+from app.db.models import (
+    Base,
+    CollectorRun,
+    DailyProductFeature,
+    DailySupplyDemandFeature,
+    Product,
+    ProductSupplyDemandWeight,
+    RawResponse,
+    Source,
+    SupplyDemandCommodity,
+    SupplyDemandObservation,
+    SupplyDemandRevision,
+)
 from app.monitoring.operational_report import build_operational_report
 from app.operations.backup import build_backup_plan
 from app.operations.cleanup import build_cleanup_plan
@@ -147,6 +159,13 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["daily_trade_features"]["first_feature_date"] is None
     assert report["daily_trade_features"]["last_feature_date"] is None
     assert report["daily_trade_features"]["latest_trade_as_of_date"] is None
+    assert report["supply_demand_commodities"]["count"] == 0
+    assert report["supply_demand_commodities"]["active_count"] == 0
+    assert report["supply_demand_commodities"]["metrics_count"] == 0
+    assert report["supply_demand_observations"]["count"] == 0
+    assert report["supply_demand_revisions"]["count"] == 0
+    assert report["product_supply_demand_weights"]["count"] == 0
+    assert report["daily_supply_demand_features"]["count"] == 0
 
 
 def test_operational_report_includes_product_trade_coverage() -> None:
@@ -185,6 +204,165 @@ def test_operational_report_includes_product_trade_coverage() -> None:
     assert coverage["rows_with_import_volume_1m"] == 1
     assert coverage["rows_with_trade_as_of_date"] == 1
     assert coverage["latest_product_trade_feature_date"] == "2026-06-10"
+
+
+def test_operational_report_includes_supply_demand_counts() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, future=True)
+
+    with SessionLocal() as session:
+        source = Source(
+            code="usda_psd",
+            name="USDA PSD / FAS PSD Online",
+            source_type="supply_demand",
+            base_url="https://apps.fas.usda.gov/psdonline/",
+        )
+        product = Product(
+            code="soybean_oil",
+            name="Soybean oil",
+            category="oil",
+            unit="metric_ton",
+            currency_default="USD",
+        )
+        session.add_all([source, product])
+        session.flush()
+        run = CollectorRun(
+            source_id=source.id,
+            collector_name="usda_psd_collector",
+            started_at=datetime(2026, 6, 14, tzinfo=timezone.utc),
+            status="success",
+            run_type="manual",
+        )
+        session.add(run)
+        session.flush()
+        raw = RawResponse(
+            source_id=source.id,
+            collector_run_id=run.id,
+            fetched_at=datetime(2026, 6, 14, tzinfo=timezone.utc),
+            url="https://apps.fas.usda.gov/psdonline/",
+            method="GET",
+            status_code=200,
+            content_type="application/json",
+            storage_path="data/raw/usda_psd/2026/06/14/1/hash.json",
+            sha256="a" * 64,
+            bytes_size=2000,
+            parser_version="usda_psd_v1",
+        )
+        commodity = SupplyDemandCommodity(
+            source_id=source.id,
+            source_commodity_code="psd_needs_verification_soybean_oil",
+            source_commodity_name="Soybean oil",
+            source_metric_code="psd_needs_verification_production_volume",
+            source_metric_name="Production Volume",
+            commodity_family="soybean",
+            product_code="soybean_oil",
+            metric_name="production_volume",
+            metric_group="production",
+            unit_hint="metric_ton",
+            frequency="monthly_report",
+            relevance="direct",
+            is_active=True,
+            metadata_json={"design_phase": "6.7C"},
+        )
+        session.add_all([raw, commodity])
+        session.flush()
+        observation = SupplyDemandObservation(
+            source_id=source.id,
+            raw_response_id=raw.id,
+            collector_run_id=run.id,
+            supply_demand_commodity_id=commodity.id,
+            source_record_id="row-1",
+            country_code="US",
+            country_name="United States",
+            region_code=None,
+            region_name=None,
+            marketing_year="2025/26",
+            marketing_year_start=date(2025, 10, 1),
+            marketing_year_end=date(2026, 9, 30),
+            report_month=6,
+            report_year=2026,
+            report_published_at=datetime(2026, 6, 12, tzinfo=timezone.utc),
+            observed_period_start=date(2025, 10, 1),
+            observed_period_end=date(2026, 9, 30),
+            frequency="monthly_report",
+            estimate_type="forecast",
+            metric_value=Decimal("1000.00000000"),
+            metric_unit="metric_ton",
+            value_usd=None,
+            is_forecast=True,
+            is_revision=False,
+            published_at=datetime(2026, 6, 12, tzinfo=timezone.utc),
+            fetched_at=datetime(2026, 6, 14, tzinfo=timezone.utc),
+            source_record_hash="record" + "a" * 58,
+            source_payload_hash="a" * 64,
+            metadata_json={"source": "test"},
+        )
+        session.add(observation)
+        session.flush()
+        session.add_all(
+            [
+                ProductSupplyDemandWeight(
+                    product_id=product.id,
+                    supply_demand_commodity_id=commodity.id,
+                    weight=Decimal("1.00000000"),
+                    relevance="direct",
+                    role="direct_supply_demand_proxy",
+                    effective_from=date(2020, 1, 1),
+                    effective_to=None,
+                    is_active=True,
+                    metadata_json={"design_phase": "6.7C"},
+                ),
+                DailySupplyDemandFeature(
+                    product_id=product.id,
+                    feature_date=date(2026, 6, 14),
+                    production_volume=Decimal("1000.00000000"),
+                    domestic_consumption=None,
+                    food_use=None,
+                    feed_use=None,
+                    crush_volume=None,
+                    exports_volume=None,
+                    imports_volume=None,
+                    beginning_stocks=None,
+                    ending_stocks=None,
+                    stock_to_use_ratio=None,
+                    planted_area=None,
+                    harvested_area=None,
+                    yield_value=None,
+                    production_forecast_revision=None,
+                    ending_stocks_revision=None,
+                    stock_to_use_revision=None,
+                    forecast_month=6,
+                    marketing_year="2025/26",
+                    report_published_at=datetime(2026, 6, 12, tzinfo=timezone.utc),
+                    supply_demand_as_of_date=date(2026, 6, 12),
+                    reporting_lag_days=2,
+                    missing_flags=None,
+                    metadata_json={"source": "test"},
+                ),
+                SupplyDemandRevision(
+                    supply_demand_observation_id=observation.id,
+                    revision_number=1,
+                    old_metric_value=Decimal("999.00000000"),
+                    new_metric_value=Decimal("1000.00000000"),
+                    old_source_record_hash="record" + "b" * 58,
+                    new_source_record_hash="record" + "a" * 58,
+                    revision_reason="source_revision",
+                    detected_at=datetime(2026, 6, 15, tzinfo=timezone.utc),
+                    metadata_json={"source": "test"},
+                ),
+            ]
+        )
+        session.commit()
+        report = build_operational_report(freshness_hours=24, session=session)
+
+    assert report["supply_demand_commodities"]["count"] == 1
+    assert report["supply_demand_commodities"]["active_count"] == 1
+    assert report["supply_demand_commodities"]["metrics_count"] == 1
+    assert report["supply_demand_observations"]["count"] == 1
+    assert report["supply_demand_revisions"]["count"] == 1
+    assert report["product_supply_demand_weights"]["count"] == 1
+    assert report["daily_supply_demand_features"]["count"] == 1
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:
