@@ -1012,12 +1012,18 @@ scheduled. It writes raw evidence, `raw_responses`, quality checks, and
 normalized `supply_demand_observations`; it does not rebuild
 `daily_product_features`, does not change exports, and does not add ML targets.
 
-Phase 6.9C changes the live USDA PSD source from the PSD Online HTML shell to
-the `PSDOnlineApi` downloadable oilseeds dataset. The controlled live probe
-downloads `psd_oilseeds_csv.zip`, stores the raw ZIP through `RawStore`, extracts
-the CSV, and normalizes only the reviewed soybean/rapeseed oil and meal
-commodity codes. The discovered `api/query/RunQuery` POST endpoint is not used
-in this hotfix.
+Phase 6.9E uses the direct USDA PSD downloadable oilseeds ZIP contract:
+
+```text
+https://apps.fas.usda.gov/psdonline/downloads/psd_oilseeds_csv.zip
+```
+
+The controlled live probe downloads that ZIP, stores it through `RawStore`,
+extracts the CSV, and normalizes only the reviewed soybean/rapeseed oil and
+meal commodity codes. The `PSDOnlineApi/api/downloadableData/GetDatasetContents`
+route is intentionally not used because it returns downloadable dataset
+metadata, not PSD data rows. The discovered `api/query/RunQuery` POST endpoint
+is not used in this hotfix.
 
 Use a reviewed fixture for local validation:
 

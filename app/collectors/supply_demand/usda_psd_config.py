@@ -7,8 +7,8 @@ COLLECTOR_NAME = "usda_psd"
 PARSER_VERSION = "usda_psd_v1"
 SOURCE_SCHEMA_STATUS = "needs_verification"
 
-BASE_URL = "https://apps.fas.usda.gov/PSDOnlineApi/api"
-DOWNLOADABLE_DATASET_ENDPOINT = f"{BASE_URL}/downloadableData/GetDatasetContents"
+BASE_URL = "https://apps.fas.usda.gov/psdonline"
+DOWNLOADABLE_DATASET_ENDPOINT = f"{BASE_URL}/downloads/psd_oilseeds_csv.zip"
 OILSEEDS_COMMODITY_GROUP_CODE = "oil"
 OILSEEDS_DATASET_FILENAME = "psd_oilseeds_csv.zip"
 REQUEST_TIMEOUT = 20.0
@@ -145,6 +145,4 @@ def usda_psd_live_probe_params(
     to_marketing_year: int,
     maxrecords: int,
 ) -> dict[str, str]:
-    return {
-        "dataSetName": OILSEEDS_DATASET_FILENAME,
-    }
+    return {}

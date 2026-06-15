@@ -1087,6 +1087,8 @@ def _json_payload(payload: bytes | str | dict[str, Any]) -> dict[str, Any]:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise UsdaPsdParseError(f"invalid JSON response: {exc}") from exc
+    if _is_downloadable_dataset_metadata(data):
+        raise UsdaPsdParseError("USDA PSD endpoint returned downloadable dataset metadata, not data rows")
     if not isinstance(data, dict):
         raise UsdaPsdParseError("JSON response root is not an object")
     return data
@@ -1103,12 +1105,19 @@ def _raw_data_rows(data: dict[str, Any]) -> list[Any] | None:
 def _raw_rows_from_payload(payload: bytes | str | dict[str, Any]) -> list[Any] | None:
     if isinstance(payload, bytes) and _is_zip_payload(payload):
         return _csv_rows_from_zip(payload)
+    if isinstance(payload, bytes) and _looks_like_html_payload(payload):
+        raise UsdaPsdParseError("USDA PSD endpoint returned HTML shell, not data rows")
     if isinstance(payload, bytes) and _looks_like_csv_payload(payload):
         return _csv_rows_from_text(_decode_text_payload(payload), source_name="payload.csv")
+    if isinstance(payload, str) and _looks_like_html_text(payload):
+        raise UsdaPsdParseError("USDA PSD endpoint returned HTML shell, not data rows")
     if isinstance(payload, str) and _looks_like_csv_text(payload):
         return _csv_rows_from_text(payload, source_name="payload.csv")
     data = _json_payload(payload)
-    return _raw_data_rows(data)
+    rows = _raw_data_rows(data)
+    if _is_downloadable_dataset_metadata(rows):
+        raise UsdaPsdParseError("USDA PSD endpoint returned downloadable dataset metadata, not data rows")
+    return rows
 
 
 def _is_zip_payload(payload: bytes) -> bool:
@@ -1123,6 +1132,26 @@ def _looks_like_csv_payload(payload: bytes) -> bool:
 def _looks_like_csv_text(payload: str) -> bool:
     stripped = payload[:256].lstrip()
     return "," in stripped and not stripped.startswith(("{", "[", "<"))
+
+
+def _looks_like_html_payload(payload: bytes) -> bool:
+    stripped = payload[:1024].lstrip().lower()
+    return stripped.startswith((b"<!doctype html", b"<html")) or b"<html" in stripped[:512]
+
+
+def _looks_like_html_text(payload: str) -> bool:
+    stripped = payload[:1024].lstrip().lower()
+    return stripped.startswith(("<!doctype html", "<html")) or "<html" in stripped[:512]
+
+
+def _is_downloadable_dataset_metadata(value: Any) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    first = value[0]
+    if not isinstance(first, dict):
+        return False
+    keys = {str(key) for key in first}
+    return {"commodityName", "commodityCode", "beginOfSeries", "splitYear"} <= keys
 
 
 def _decode_text_payload(payload: bytes) -> str:

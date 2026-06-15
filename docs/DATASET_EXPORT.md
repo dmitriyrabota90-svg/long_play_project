@@ -118,6 +118,11 @@ Export v1 includes only sources already materialized into
 - USDA PSD supply-demand observations through `daily_supply_demand_features`
   and `product_supply_demand_weights`
 
+The USDA PSD collector source contract is the direct downloadable oilseeds ZIP
+(`https://apps.fas.usda.gov/psdonline/downloads/psd_oilseeds_csv.zip`).
+Metadata-only PSD API responses are rejected before normalization and are not
+valid export inputs.
+
 ## Sources Excluded
 
 Export v1 intentionally excludes:

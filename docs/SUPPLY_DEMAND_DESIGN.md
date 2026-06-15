@@ -602,23 +602,24 @@ python scripts/run_collector.py usda_psd \
 `--live-probe` is an explicit opt-in. The collector has no broad crawler mode
 and no scheduler mode.
 
-## Phase 6.9C USDA PSD Downloadable Oilseeds Hotfix
+## Phase 6.9E USDA PSD Downloadable Oilseeds Contract
 
 Phase 6.9A showed that the first live probe endpoint returned the PSD Online
 HTML application shell rather than a usable data payload. Phase 6.9B traced the
-frontend and found the real API base:
+frontend API base, and Phase 6.9D showed that
+`PSDOnlineApi/api/downloadableData/GetDatasetContents?dataSetName=psd_oilseeds_csv.zip`
+returns downloadable dataset metadata, not PSD data rows.
+
+The collector now uses the direct downloadable ZIP URL:
 
 ```text
-https://apps.fas.usda.gov/PSDOnlineApi/api/
+https://apps.fas.usda.gov/psdonline/downloads/psd_oilseeds_csv.zip
 ```
 
-For the first production-safe hotfix, the collector intentionally avoids the
-discovered `api/query/RunQuery` POST endpoint. Instead, `--live-probe` fetches
-the bounded downloadable oilseeds dataset:
-
-```text
-downloadableData/GetDatasetContents?dataSetName=psd_oilseeds_csv.zip
-```
+Local contract validation confirmed a ZIP payload of roughly 3.8 MB containing
+`psd_oilseeds.csv`. The collector intentionally avoids both the metadata-only
+`GetDatasetContents` endpoint and the discovered `api/query/RunQuery` POST
+endpoint in this first production path.
 
 The parser accepts ZIP payloads, extracts the CSV member, and normalizes only
 the reviewed oilseeds commodity codes:

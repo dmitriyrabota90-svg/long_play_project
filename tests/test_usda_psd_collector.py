@@ -150,6 +150,20 @@ def psd_oilseeds_zip(csv_text: str | None = None) -> bytes:
     return buffer.getvalue()
 
 
+def psd_downloadable_metadata_json() -> bytes:
+    return json.dumps(
+        [
+            {
+                "commodityName": "Meal, Soybean",
+                "commodityCode": "0813100",
+                "beginOfSeries": 1964,
+                "splitYear": 0,
+            }
+        ],
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert SOURCE_CODE == "usda_psd"
     assert SOURCE_SCHEMA_STATUS == "needs_verification"
@@ -157,10 +171,12 @@ def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert DEFAULT_MAXRECORDS == 100
     assert MAX_MAXRECORDS == 500
     assert MAX_MARKETING_YEARS_PER_RUN == 3
-    assert DOWNLOADABLE_DATASET_ENDPOINT == "https://apps.fas.usda.gov/PSDOnlineApi/api/downloadableData/GetDatasetContents"
+    assert DOWNLOADABLE_DATASET_ENDPOINT == "https://apps.fas.usda.gov/psdonline/downloads/psd_oilseeds_csv.zip"
     assert OILSEEDS_COMMODITY_GROUP_CODE == "oil"
     assert OILSEEDS_DATASET_FILENAME == "psd_oilseeds_csv.zip"
     assert "psdonline/app/index.html" not in DOWNLOADABLE_DATASET_ENDPOINT.lower()
+    assert "getdatasetcontents" not in DOWNLOADABLE_DATASET_ENDPOINT.lower()
+    assert DOWNLOADABLE_DATASET_ENDPOINT.endswith(OILSEEDS_DATASET_FILENAME)
     assert "commodity-dataset-builder" in HEADERS["User-Agent"]
     assert {"WLD", "USA", "BRA", "ARG", "CAN", "CHN", "EU"} == {country.code for country in SUPPORTED_COUNTRIES}
     assert {
@@ -256,6 +272,51 @@ def test_usda_psd_parser_extracts_downloadable_oilseeds_zip_and_filters_scope() 
     assert rows[0].source_record_id == "4232000|WLD|2023|production_volume"
     assert rows[0].metric_value == Decimal("1000.5")
     assert rows[0].metric_unit == "1000 Metric Tons"
+
+
+def test_usda_psd_parser_rejects_downloadable_metadata_json() -> None:
+    request = _request()
+    rows, malformed, checks = assess_usda_psd_response(
+        payload=psd_downloadable_metadata_json(),
+        content_type="application/json",
+        status_code=200,
+        request=request,
+        fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+    )
+    normalized_check = next(check for check in checks if check.check_name == "supply_demand_normalized_rows_found")
+
+    assert rows == []
+    assert malformed == []
+    assert normalized_check.status == "fail"
+    assert normalized_check.severity == "error"
+    assert normalized_check.details["error"] == "USDA PSD endpoint returned downloadable dataset metadata, not data rows"
+    with pytest.raises(UsdaPsdParseError, match="downloadable dataset metadata"):
+        parse_usda_psd_rows(
+            psd_downloadable_metadata_json(),
+            request=request,
+            fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+        )
+
+
+def test_usda_psd_parser_rejects_html_shell() -> None:
+    request = _request()
+    payload = b"<!DOCTYPE html><html><head><title>PSD Online</title></head><body></body></html>"
+    rows, malformed, checks = assess_usda_psd_response(
+        payload=payload,
+        content_type="text/html",
+        status_code=200,
+        request=request,
+        fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+    )
+    normalized_check = next(check for check in checks if check.check_name == "supply_demand_normalized_rows_found")
+
+    assert rows == []
+    assert malformed == []
+    assert normalized_check.status == "fail"
+    assert normalized_check.severity == "error"
+    assert normalized_check.details["error"] == "USDA PSD endpoint returned HTML shell, not data rows"
+    with pytest.raises(UsdaPsdParseError, match="HTML shell"):
+        parse_usda_psd_rows(payload, request=request, fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc))
 
 
 def test_usda_psd_parser_reports_empty_and_unknown_formats() -> None:
@@ -477,7 +538,7 @@ def test_usda_psd_mocked_live_probe_uses_bounded_params_and_headers(tmp_path: Pa
     assert client.calls[0][1] == build_usda_psd_live_probe_params(_request())
     assert client.calls[0][2] == HEADERS
     assert client.calls[0][3] == REQUEST_TIMEOUT
-    assert client.calls[0][1] == {"dataSetName": OILSEEDS_DATASET_FILENAME}
+    assert client.calls[0][1] == {}
 
 
 def test_usda_psd_cli_argument_parsing_supports_manual_fixture_mode() -> None:

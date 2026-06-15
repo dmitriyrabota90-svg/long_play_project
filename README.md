@@ -1570,11 +1570,17 @@ The first implementation is intentionally conservative:
 - default `--maxrecords`: 100, hard cap 500;
 - source schema status: `needs_verification`.
 
-Phase 6.9C updates the live source from the PSD Online HTML application shell to
-the PSDOnlineApi downloadable oilseeds dataset. `--live-probe` now requests the
-bounded `psd_oilseeds_csv.zip` dataset through `PSDOnlineApi` and parses the
-CSV inside the ZIP. The discovered `api/query/RunQuery` POST endpoint is not
-used in this first hotfix.
+Phase 6.9E uses the direct USDA PSD downloadable oilseeds ZIP contract:
+
+```text
+https://apps.fas.usda.gov/psdonline/downloads/psd_oilseeds_csv.zip
+```
+
+`--live-probe` fetches that bounded ZIP, stores it as raw evidence, and parses
+the CSV inside it. The `PSDOnlineApi/api/downloadableData/GetDatasetContents`
+route is intentionally not used because production validation showed it returns
+downloadable dataset metadata, not PSD data rows. The discovered
+`api/query/RunQuery` POST endpoint remains unused in this first collector.
 
 Reviewed downloadable commodity codes:
 
