@@ -227,6 +227,40 @@ Production status: `local-implemented-awaiting-server-batch` for
 `build_trade_daily_features` and export integration; UN Comtrade collector was
 implemented earlier as controlled manual collection.
 
+## supply_demand
+
+Purpose: official production, consumption, crush, trade-balance, stock, area,
+yield, and forecast-revision context from USDA PSD-style supply-demand
+observations.
+
+Source tables: `supply_demand_observations`, `supply_demand_commodities`,
+`product_supply_demand_weights`, `daily_supply_demand_features`,
+`daily_product_features`.
+
+Source collectors/builders: `usda_psd`, `build_supply_demand_daily_features`,
+`build_daily_features`.
+
+Frequency: monthly report vintages and marketing-year balances transformed into
+daily, forward-filled product features after source availability.
+
+Expected ML value: production, crush/use, imports/exports, ending stocks,
+stock-to-use, area/yield, and forecast revisions can explain fundamental
+supply-demand tightness beyond current prices and trade actuals.
+
+Leakage/as-of protection: `report_published_at`, `published_at`, or `fetched_at`
+is reduced to `supply_demand_as_of_date`; product-level rows require
+`supply_demand_as_of_date <= feature_date`. Forecast revisions compare only
+previous eligible report vintages.
+
+Missingness policy: missing product mappings, absent observations, missing
+core metrics, missing revisions, missing publication dates, and area/yield gaps
+are represented in `supply_demand_missing_flags`.
+
+Production status: `local-implemented-awaiting-server-batch` for
+`build_supply_demand_daily_features`, `daily_product_features` integration, and
+export columns. The USDA PSD collector exists from the previous phase, but this
+feature batch still needs local verification and a later server batch.
+
 ## Raw And Source Lineage
 
 Raw/source lineage fields are not exported as row columns except the manifest
@@ -236,4 +270,5 @@ product list, and feature-date range). Normalized source tables retain
 metadata for auditability.
 
 Production status: `production-deployed` for existing collectors; latest
-trade feature/export documentation is `local-implemented-awaiting-server-batch`.
+trade and supply-demand feature/export documentation is
+`local-implemented-awaiting-server-batch`.

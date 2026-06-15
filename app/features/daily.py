@@ -17,6 +17,7 @@ from app.db.models import (
     CommodityBenchmark,
     DailyNewsFeature,
     DailyProductFeature,
+    DailySupplyDemandFeature,
     DailyTradeFeature,
     DataQualityCheck,
     EnergyPrice,
@@ -29,6 +30,7 @@ from app.db.models import (
     WeatherRegion,
 )
 from app.db.session import session_scope
+from app.features.supply_demand_daily import SUPPLY_DEMAND_NUMERIC_FIELDS
 from app.features.trade_daily import TRADE_NUMERIC_FIELDS
 
 
@@ -167,6 +169,14 @@ TRADE_PRODUCT_FEATURE_FIELDS = (
     "trade_as_of_date",
     "reporting_lag_days",
 )
+SUPPLY_DEMAND_PRODUCT_FEATURE_FIELDS = (
+    *SUPPLY_DEMAND_NUMERIC_FIELDS,
+    "forecast_month",
+    "marketing_year",
+    "report_published_at",
+    "supply_demand_as_of_date",
+    "supply_demand_reporting_lag_days",
+)
 SEASONS_BY_MONTH = {
     1: "winter",
     2: "winter",
@@ -247,6 +257,7 @@ NUMERIC_SCALES = {
     "weather_growing_degree_days_30d_weighted": 8,
     "sentiment_proxy_7d": 8,
     **{field: 8 for field in TRADE_NUMERIC_FIELDS},
+    **{field: 8 for field in SUPPLY_DEMAND_NUMERIC_FIELDS},
 }
 
 
@@ -370,6 +381,7 @@ def _build_daily_features_with_session(
     weather_features = _load_weather_daily_features(session, to_date=end)
     news_features = _load_daily_news_features(session, to_date=end)
     trade_features = _load_daily_trade_features(session, to_date=end)
+    supply_demand_features = _load_daily_supply_demand_features(session, to_date=end)
 
     rows_created = 0
     rows_updated = 0
@@ -389,6 +401,7 @@ def _build_daily_features_with_session(
             weather_features=weather_features,
             news_features=news_features,
             trade_features=trade_features,
+            supply_demand_features=supply_demand_features,
         )
         if warning_names:
             missing_fx_dates.add(feature_date.isoformat())
@@ -586,6 +599,18 @@ def _load_daily_trade_features(session: Session, *, to_date: date) -> dict[int, 
     return by_product
 
 
+def _load_daily_supply_demand_features(session: Session, *, to_date: date) -> dict[int, list[DailySupplyDemandFeature]]:
+    rows = session.scalars(
+        select(DailySupplyDemandFeature)
+        .where(DailySupplyDemandFeature.feature_date <= to_date)
+        .order_by(DailySupplyDemandFeature.product_id, DailySupplyDemandFeature.feature_date)
+    ).all()
+    by_product: dict[int, list[DailySupplyDemandFeature]] = {}
+    for row in rows:
+        by_product.setdefault(row.product_id, []).append(row)
+    return by_product
+
+
 def _feature_values(
     *,
     price_day: _PriceDay,
@@ -597,6 +622,7 @@ def _feature_values(
     weather_features: dict[int, list[WeatherDailyFeature]],
     news_features: dict[int, list[DailyNewsFeature]],
     trade_features: dict[int, list[DailyTradeFeature]],
+    supply_demand_features: dict[int, list[DailySupplyDemandFeature]],
 ) -> tuple[dict[str, Any], list[str]]:
     ordered = price_day.ordered
     prices = [item.price for item in ordered]
@@ -668,10 +694,65 @@ def _feature_values(
             trade_features=trade_features,
         )
     )
+    values.update(
+        _supply_demand_feature_values(
+            product_id=price_day.product_id,
+            feature_date=price_day.feature_date,
+            supply_demand_features=supply_demand_features,
+        )
+    )
 
     values = _normalize_feature_values(values)
     values["features_json"] = _features_json(values)
     return values, warnings
+
+
+def _supply_demand_feature_values(
+    *,
+    product_id: int,
+    feature_date: date,
+    supply_demand_features: dict[int, list[DailySupplyDemandFeature]],
+) -> dict[str, Any]:
+    values: dict[str, Any] = {field: None for field in SUPPLY_DEMAND_PRODUCT_FEATURE_FIELDS}
+    values["supply_demand_missing_flags"] = None
+    feature = _daily_supply_demand_as_of(supply_demand_features.get(product_id, []), feature_date)
+    if feature is None:
+        values["supply_demand_missing_flags"] = "missing_daily_supply_demand_features"
+        return values
+    if feature.supply_demand_as_of_date is not None and feature.supply_demand_as_of_date > feature_date:
+        values["supply_demand_missing_flags"] = "future_supply_demand_as_of"
+        return values
+
+    for field in SUPPLY_DEMAND_NUMERIC_FIELDS:
+        values[field] = getattr(feature, field)
+    values["forecast_month"] = feature.forecast_month
+    values["marketing_year"] = feature.marketing_year
+    values["report_published_at"] = feature.report_published_at
+    values["supply_demand_as_of_date"] = feature.supply_demand_as_of_date
+    values["supply_demand_reporting_lag_days"] = (
+        (feature_date - feature.supply_demand_as_of_date).days
+        if feature.supply_demand_as_of_date is not None
+        else feature.reporting_lag_days
+    )
+    flags = _truthy_supply_demand_missing_flags(feature.missing_flags)
+    values["supply_demand_missing_flags"] = ",".join(flags) if flags else None
+    return values
+
+
+def _daily_supply_demand_as_of(items: list[DailySupplyDemandFeature], feature_date: date) -> DailySupplyDemandFeature | None:
+    eligible = [
+        item
+        for item in items
+        if item.feature_date <= feature_date
+        and (item.supply_demand_as_of_date is None or item.supply_demand_as_of_date <= feature_date)
+    ]
+    return eligible[-1] if eligible else None
+
+
+def _truthy_supply_demand_missing_flags(flags: Any) -> list[str]:
+    if not isinstance(flags, dict):
+        return []
+    return [str(name) for name, value in flags.items() if value]
 
 
 def _trade_feature_values(
@@ -1133,6 +1214,43 @@ def _write_feature_quality_checks(
             if values.get("import_volume_1m") is not None
             else None,
             "trade_missing_flags": values.get("trade_missing_flags"),
+        },
+        checked_at,
+    )
+    no_future_supply_demand = (
+        values.get("supply_demand_as_of_date") is None or values["supply_demand_as_of_date"] <= feature_date
+    )
+    _write_check(
+        session,
+        "daily_feature_no_future_supply_demand",
+        "pass" if no_future_supply_demand else "error",
+        "error" if not no_future_supply_demand else "info",
+        {
+            **details,
+            "supply_demand_as_of_date": values["supply_demand_as_of_date"].isoformat()
+            if values.get("supply_demand_as_of_date")
+            else None,
+            "supply_demand_missing_flags": values.get("supply_demand_missing_flags"),
+        },
+        checked_at,
+    )
+    _write_check(
+        session,
+        "daily_feature_supply_demand_coverage_recorded",
+        "pass",
+        "info",
+        {
+            **details,
+            "production_volume": str(values.get("production_volume"))
+            if values.get("production_volume") is not None
+            else None,
+            "ending_stocks": str(values.get("ending_stocks"))
+            if values.get("ending_stocks") is not None
+            else None,
+            "stock_to_use_ratio": str(values.get("stock_to_use_ratio"))
+            if values.get("stock_to_use_ratio") is not None
+            else None,
+            "supply_demand_missing_flags": values.get("supply_demand_missing_flags"),
         },
         checked_at,
     )

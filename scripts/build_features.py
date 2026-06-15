@@ -14,6 +14,7 @@ os.chdir(PROJECT_ROOT)
 from app.config.logging import setup_logging
 from app.features.daily import build_daily_features
 from app.features.news_daily import build_news_daily_features
+from app.features.supply_demand_daily import build_supply_demand_daily_features
 from app.features.trade_daily import build_trade_daily_features
 from app.features.weather_daily import build_weather_daily_features
 
@@ -37,6 +38,10 @@ def main() -> None:
     trade_daily.add_argument("--product", help="Optional product code.")
     trade_daily.add_argument("--from-date", help="Inclusive start date as YYYY-MM-DD.")
     trade_daily.add_argument("--to-date", help="Inclusive end date as YYYY-MM-DD.")
+    supply_demand_daily = subparsers.add_parser("supply_demand_daily", help="Build daily product supply-demand features.")
+    supply_demand_daily.add_argument("--product", help="Optional product code.")
+    supply_demand_daily.add_argument("--from-date", help="Inclusive start date as YYYY-MM-DD.")
+    supply_demand_daily.add_argument("--to-date", help="Inclusive end date as YYYY-MM-DD.")
     args = parser.parse_args()
 
     setup_logging()
@@ -114,6 +119,26 @@ def main() -> None:
         print(f"rows_skipped={result.rows_skipped}")
         print(f"warnings_count={result.warnings_count}")
         print(f"missing_trade_products={','.join(result.missing_trade_products)}")
+    elif args.command == "supply_demand_daily":
+        from_date = _parse_date_arg(parser, "--from-date", args.from_date)
+        to_date = _parse_date_arg(parser, "--to-date", args.to_date)
+        if (from_date is None) != (to_date is None):
+            parser.error("--from-date and --to-date must be provided together")
+        if from_date is not None and to_date is not None and from_date > to_date:
+            parser.error("--from-date must be on or before --to-date")
+        result = build_supply_demand_daily_features(
+            product_code=args.product,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        print(f"products_processed={result.products_processed}")
+        print(f"dates_processed={result.dates_processed}")
+        print(f"rows_created={result.rows_created}")
+        print(f"rows_updated={result.rows_updated}")
+        print(f"rows_skipped={result.rows_skipped}")
+        print(f"warnings_count={result.warnings_count}")
+        print(f"missing_products={','.join(result.missing_products)}")
+        print(f"observations_used={result.observations_used}")
 
 
 def _parse_date_arg(parser: argparse.ArgumentParser, name: str, value: str | None) -> date | None:

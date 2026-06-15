@@ -25,6 +25,7 @@ REQUIRED_FEATURE_GROUPS = (
     "weather",
     "news_events",
     "trade",
+    "supply_demand",
 )
 ASOF_MARKERS = (
     "energy_as_of_date",
@@ -32,6 +33,7 @@ ASOF_MARKERS = (
     "weather_as_of_date",
     "news_as_of_date",
     "trade_as_of_date",
+    "supply_demand_as_of_date",
 )
 MISSING_FLAG_MARKERS = (
     "energy_missing_flags",
@@ -39,6 +41,7 @@ MISSING_FLAG_MARKERS = (
     "weather_missing_flags",
     "news_missing_flags",
     "trade_missing_flags",
+    "supply_demand_missing_flags",
 )
 LINEAGE_MARKERS = (
     "current price",
@@ -48,6 +51,7 @@ LINEAGE_MARKERS = (
     "open-meteo",
     "gdelt",
     "un comtrade",
+    "usda psd",
 )
 LEAKAGE_MARKERS = (
     "price",
@@ -57,6 +61,7 @@ LEAKAGE_MARKERS = (
     "weather",
     "news",
     "trade",
+    "supply-demand",
     "export",
     "no feature may use source data known after feature_date",
 )

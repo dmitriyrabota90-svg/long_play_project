@@ -1598,8 +1598,35 @@ The collector rejects scheduled runs. Duplicate rows are idempotent. If an
 existing identity is found with a changed `source_record_hash`, the collector
 writes a quality warning and does not overwrite the stored observation.
 
+## Phase 6.7E Daily Supply-Demand Features
+
+Phase 6.7E adds the local daily supply-demand feature layer and export
+integration. It builds nullable `daily_supply_demand_features` from
+`supply_demand_observations` and `product_supply_demand_weights`, then the
+normal daily product feature builder copies as-of-safe supply-demand values into
+`daily_product_features`.
+
+```bash
+python scripts/build_features.py supply_demand_daily
+python scripts/build_features.py supply_demand_daily --product soybean_oil --from-date 2026-06-01 --to-date 2026-06-30
+python scripts/build_features.py daily
+```
+
+The supply-demand daily builder uses `report_published_at` date, falling back
+to `published_at` date and then `fetched_at` date, so
+`supply_demand_as_of_date` is never later than the feature date. Forecast
+revision fields compare only previous eligible report vintages. Export v1 now
+includes nullable supply-demand columns such as `production_volume`,
+`domestic_consumption`, `ending_stocks`, `stock_to_use_ratio`,
+`production_forecast_revision`, `supply_demand_as_of_date`,
+`supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.
+
+Phase 6.7E does not add ML targets, does not add scheduler jobs, and does not
+run collectors by itself. Server execution remains a later controlled batch.
+
 ## Next Phase
 
-After Phase 6.7D, the next recommended phase is Phase 6.7E: supply-demand
-daily feature and export integration. Do that only after source parsing,
-revisions, and as-of policy are proven with controlled USDA PSD data.
+After Phase 6.7E, the next recommended step is a controlled server batch:
+deploy the local code, apply the migration, run `supply_demand_daily`, rebuild
+daily features, export `daily_features`, and validate reports. Do not start ML
+or target engineering before that production export is checked.

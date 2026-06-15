@@ -53,7 +53,7 @@ def test_source_lineage_mentions_major_sources_and_builders() -> None:
 
     for marker in LINEAGE_MARKERS:
         assert marker in text
-    for builder in ("daily", "weather_daily", "news_daily", "trade_daily", "daily_features"):
+    for builder in ("daily", "weather_daily", "news_daily", "trade_daily", "supply_demand_daily", "daily_features"):
         assert builder in text
 
 
@@ -61,7 +61,7 @@ def test_leakage_audit_mentions_no_future_leakage_and_all_groups() -> None:
     text = _read_doc("docs/LEAKAGE_AND_ASOF_AUDIT.md")
 
     assert "no feature may use source data known after feature_date" in text
-    for topic in ("price", "fx", "energy", "benchmark", "weather", "news", "trade", "export"):
+    for topic in ("price", "fx", "energy", "benchmark", "weather", "news", "trade", "supply-demand", "export"):
         assert topic in text
 
 

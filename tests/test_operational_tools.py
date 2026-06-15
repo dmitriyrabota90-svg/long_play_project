@@ -90,6 +90,11 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["daily_product_features"]["trade_coverage"]["rows_with_import_volume_1m"] == 0
     assert report["daily_product_features"]["trade_coverage"]["rows_with_trade_as_of_date"] == 0
     assert report["daily_product_features"]["trade_coverage"]["latest_product_trade_feature_date"] is None
+    assert report["daily_product_features"]["supply_demand_coverage"]["rows_with_production_volume"] == 0
+    assert report["daily_product_features"]["supply_demand_coverage"]["rows_with_ending_stocks"] == 0
+    assert report["daily_product_features"]["supply_demand_coverage"]["rows_with_stock_to_use_ratio"] == 0
+    assert report["daily_product_features"]["supply_demand_coverage"]["rows_with_supply_demand_as_of_date"] == 0
+    assert report["daily_product_features"]["supply_demand_coverage"]["latest_product_supply_demand_feature_date"] is None
     assert report["energy_prices"]["count"] == 0
     assert report["energy_prices"]["instruments_count"] == 0
     assert report["energy_prices"]["first_period_start"] is None
@@ -166,6 +171,10 @@ def test_operational_report_handles_empty_database(tmp_path: Path) -> None:
     assert report["supply_demand_revisions"]["count"] == 0
     assert report["product_supply_demand_weights"]["count"] == 0
     assert report["daily_supply_demand_features"]["count"] == 0
+    assert report["daily_supply_demand_features"]["products_count"] == 0
+    assert report["daily_supply_demand_features"]["first_feature_date"] is None
+    assert report["daily_supply_demand_features"]["last_feature_date"] is None
+    assert report["daily_supply_demand_features"]["latest_supply_demand_as_of_date"] is None
 
 
 def test_operational_report_includes_product_trade_coverage() -> None:
@@ -340,6 +349,19 @@ def test_operational_report_includes_supply_demand_counts() -> None:
                     missing_flags=None,
                     metadata_json={"source": "test"},
                 ),
+                DailyProductFeature(
+                    product_id=product.id,
+                    feature_date=date(2026, 6, 14),
+                    as_of_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+                    features_json={"production_volume": "1000.00000000"},
+                    feature_version="daily_features_v1",
+                    price_last=Decimal("100.000000"),
+                    production_volume=Decimal("1000.00000000"),
+                    ending_stocks=Decimal("100.00000000"),
+                    stock_to_use_ratio=Decimal("0.20000000"),
+                    supply_demand_as_of_date=date(2026, 6, 12),
+                    supply_demand_missing_flags="missing_food_use",
+                ),
                 SupplyDemandRevision(
                     supply_demand_observation_id=observation.id,
                     revision_number=1,
@@ -363,6 +385,17 @@ def test_operational_report_includes_supply_demand_counts() -> None:
     assert report["supply_demand_revisions"]["count"] == 1
     assert report["product_supply_demand_weights"]["count"] == 1
     assert report["daily_supply_demand_features"]["count"] == 1
+    assert report["daily_supply_demand_features"]["products_count"] == 1
+    assert report["daily_supply_demand_features"]["first_feature_date"] == "2026-06-14"
+    assert report["daily_supply_demand_features"]["last_feature_date"] == "2026-06-14"
+    assert report["daily_supply_demand_features"]["latest_supply_demand_as_of_date"] == "2026-06-12"
+    coverage = report["daily_product_features"]["supply_demand_coverage"]
+    assert coverage["rows_with_production_volume"] == 1
+    assert coverage["rows_with_ending_stocks"] == 1
+    assert coverage["rows_with_stock_to_use_ratio"] == 1
+    assert coverage["rows_with_supply_demand_as_of_date"] == 1
+    assert coverage["rows_with_supply_demand_missing_flags"] == 1
+    assert coverage["latest_product_supply_demand_feature_date"] == "2026-06-14"
 
 
 def test_cleanup_operational_dry_run_does_not_delete_files(tmp_path: Path) -> None:

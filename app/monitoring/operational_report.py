@@ -126,6 +126,15 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
                 "rows_with_trade_as_of_date": 0,
                 "latest_product_trade_feature_date": None,
             },
+            "supply_demand_coverage": {
+                "rows_total": 0,
+                "rows_with_production_volume": 0,
+                "rows_with_ending_stocks": 0,
+                "rows_with_stock_to_use_ratio": 0,
+                "rows_with_supply_demand_as_of_date": 0,
+                "rows_with_supply_demand_missing_flags": 0,
+                "latest_product_supply_demand_feature_date": None,
+            },
         },
         "historical_price_bars": {
             "count": 0,
@@ -255,6 +264,10 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
         },
         "daily_supply_demand_features": {
             "count": 0,
+            "products_count": 0,
+            "first_feature_date": None,
+            "last_feature_date": None,
+            "latest_supply_demand_as_of_date": None,
         },
         "quality_checks": {
             "total_checks": 0,
@@ -448,6 +461,37 @@ def _fill_db_report(
         ),
         "latest_product_trade_feature_date": (
             latest_product_trade_feature_date.isoformat() if latest_product_trade_feature_date else None
+        ),
+    }
+    latest_product_supply_demand_feature_date = session.scalar(
+        select(func.max(DailyProductFeature.feature_date)).where(
+            or_(
+                DailyProductFeature.production_volume.is_not(None),
+                DailyProductFeature.ending_stocks.is_not(None),
+                DailyProductFeature.stock_to_use_ratio.is_not(None),
+                DailyProductFeature.supply_demand_as_of_date.is_not(None),
+            )
+        )
+    )
+    report["daily_product_features"]["supply_demand_coverage"] = {
+        "rows_total": session.scalar(select(func.count()).select_from(DailyProductFeature)),
+        "rows_with_production_volume": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.production_volume.is_not(None))
+        ),
+        "rows_with_ending_stocks": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.ending_stocks.is_not(None))
+        ),
+        "rows_with_stock_to_use_ratio": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.stock_to_use_ratio.is_not(None))
+        ),
+        "rows_with_supply_demand_as_of_date": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.supply_demand_as_of_date.is_not(None))
+        ),
+        "rows_with_supply_demand_missing_flags": session.scalar(
+            select(func.count()).select_from(DailyProductFeature).where(DailyProductFeature.supply_demand_missing_flags.is_not(None))
+        ),
+        "latest_product_supply_demand_feature_date": (
+            latest_product_supply_demand_feature_date.isoformat() if latest_product_supply_demand_feature_date else None
         ),
     }
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
@@ -662,6 +706,24 @@ def _fill_db_report(
     }
     report["daily_supply_demand_features"] = {
         "count": session.scalar(select(func.count()).select_from(DailySupplyDemandFeature)),
+        "products_count": session.scalar(
+            select(func.count(func.distinct(DailySupplyDemandFeature.product_id))).select_from(DailySupplyDemandFeature)
+        ),
+        "first_feature_date": (
+            first_supply_demand_feature_date.isoformat() if (first_supply_demand_feature_date := session.scalar(
+                select(func.min(DailySupplyDemandFeature.feature_date))
+            )) else None
+        ),
+        "last_feature_date": (
+            last_supply_demand_feature_date.isoformat() if (last_supply_demand_feature_date := session.scalar(
+                select(func.max(DailySupplyDemandFeature.feature_date))
+            )) else None
+        ),
+        "latest_supply_demand_as_of_date": (
+            latest_supply_demand_as_of_date.isoformat() if (latest_supply_demand_as_of_date := session.scalar(
+                select(func.max(DailySupplyDemandFeature.supply_demand_as_of_date))
+            )) else None
+        ),
     }
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
     report["last_24h"]["problematic_quality_checks"] = session.scalar(

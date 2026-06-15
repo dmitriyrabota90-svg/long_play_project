@@ -1042,6 +1042,25 @@ registration. If an existing observation identity changes hash, the collector
 writes `supply_demand_existing_observation_hash_changed` and does not silently
 overwrite.
 
+Phase 6.7E adds local daily supply-demand feature/export integration. It is not
+a collector deploy by itself and it does not add scheduler jobs or ML targets.
+After the reviewed code is deployed later, the controlled server sequence should
+run the migration, then:
+
+```bash
+python scripts/build_features.py supply_demand_daily
+python scripts/build_features.py daily
+python scripts/export_dataset.py daily_features --format csv --output-dir data/exports
+```
+
+`supply_demand_daily` reads `supply_demand_observations` and
+`product_supply_demand_weights`, writes `daily_supply_demand_features`, and the
+regular daily builder copies only rows with
+`supply_demand_as_of_date <= feature_date` into `daily_product_features`.
+Expected nullable export fields include production/use/crush/trade/stocks,
+stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
+`supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.
+
 ## Price Instrument Discovery
 
 Phase 4.0 discovery is manual and read-only. It is used to verify missing current-price product candidates before any production collector change.

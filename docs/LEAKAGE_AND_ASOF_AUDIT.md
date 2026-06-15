@@ -139,6 +139,29 @@ Missingness is represented in `trade_missing_flags`.
 Known limitation: latest local trade feature/export integration is awaiting
 server batch 6.6A before production export validation.
 
+## Supply-Demand
+
+Supply-demand features come from USDA PSD-style official balance observations,
+product supply-demand weights, and `daily_supply_demand_features`.
+
+Leakage controls:
+
+- source availability uses `report_published_at` date when present, otherwise
+  `published_at` date, otherwise `fetched_at` date;
+- availability date must be `<= feature_date`;
+- product-level daily rows copy only `daily_supply_demand_features` with
+  `supply_demand_as_of_date <= feature_date`;
+- forecast revisions compare current values only with previous report vintages
+  that were eligible by the same feature date;
+- `supply_demand_reporting_lag_days` records the gap between feature date and
+  latest eligible report availability;
+- `daily_feature_no_future_supply_demand` records the no-future-data check.
+
+Missingness is represented in `supply_demand_missing_flags`.
+
+Known limitation: latest local supply-demand daily feature/export integration is
+awaiting a server batch before production export validation.
+
 ## Export
 
 The export manifest should record:
@@ -161,8 +184,8 @@ Export modes to keep distinct in future work:
 
 - Some backfilled layers need explicit export mode labels before serious model
   training.
-- Server batch 6.6A is still pending for the latest local trade feature/export
-  integration.
+- Server batch is still pending for the latest local trade and supply-demand
+  feature/export integration.
 - Sparse data is expected until collectors and derived builders are run for
   enough history.
 - No target columns exist yet; target design must be a separate, audited phase.

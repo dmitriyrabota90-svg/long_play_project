@@ -166,6 +166,28 @@ DAILY_FEATURE_COLUMNS = [
     "trade_as_of_date",
     "reporting_lag_days",
     "trade_missing_flags",
+    "production_volume",
+    "domestic_consumption",
+    "food_use",
+    "feed_use",
+    "crush_volume",
+    "exports_volume",
+    "imports_volume",
+    "beginning_stocks",
+    "ending_stocks",
+    "stock_to_use_ratio",
+    "planted_area",
+    "harvested_area",
+    "yield_value",
+    "production_forecast_revision",
+    "ending_stocks_revision",
+    "stock_to_use_revision",
+    "forecast_month",
+    "marketing_year",
+    "report_published_at",
+    "supply_demand_as_of_date",
+    "supply_demand_reporting_lag_days",
+    "supply_demand_missing_flags",
     "created_at",
     "updated_at",
 ]
@@ -479,6 +501,28 @@ def _row_from_feature(feature: DailyProductFeature, product: Product) -> dict[st
         "trade_as_of_date": feature.trade_as_of_date,
         "reporting_lag_days": feature.reporting_lag_days,
         "trade_missing_flags": feature.trade_missing_flags,
+        "production_volume": feature.production_volume,
+        "domestic_consumption": feature.domestic_consumption,
+        "food_use": feature.food_use,
+        "feed_use": feature.feed_use,
+        "crush_volume": feature.crush_volume,
+        "exports_volume": feature.exports_volume,
+        "imports_volume": feature.imports_volume,
+        "beginning_stocks": feature.beginning_stocks,
+        "ending_stocks": feature.ending_stocks,
+        "stock_to_use_ratio": feature.stock_to_use_ratio,
+        "planted_area": feature.planted_area,
+        "harvested_area": feature.harvested_area,
+        "yield_value": feature.yield_value,
+        "production_forecast_revision": feature.production_forecast_revision,
+        "ending_stocks_revision": feature.ending_stocks_revision,
+        "stock_to_use_revision": feature.stock_to_use_revision,
+        "forecast_month": feature.forecast_month,
+        "marketing_year": feature.marketing_year,
+        "report_published_at": feature.report_published_at,
+        "supply_demand_as_of_date": feature.supply_demand_as_of_date,
+        "supply_demand_reporting_lag_days": feature.supply_demand_reporting_lag_days,
+        "supply_demand_missing_flags": feature.supply_demand_missing_flags,
         "created_at": feature.created_at,
         "updated_at": feature.updated_at,
     }
@@ -551,6 +595,9 @@ def _build_manifest(
             "trade_flows",
             "product_trade_code_weights",
             "trade_commodity_codes",
+            "supply_demand_observations",
+            "daily_supply_demand_features",
+            "product_supply_demand_weights",
         ],
         "row_count": len(rows),
         "column_count": len(DAILY_FEATURE_COLUMNS),
@@ -567,7 +614,8 @@ def _build_manifest(
             "World Bank commodity benchmarks, Open-Meteo-derived product weather features, and deterministic "
             "rule-based news/event features are used according to the current feature builder logic. "
             "Product trade aggregates are copied from daily_trade_features when their trade_as_of_date is "
-            "not later than the product feature_date."
+            "not later than the product feature_date. Supply-demand aggregates are copied from "
+            "daily_supply_demand_features when supply_demand_as_of_date is not later than the product feature_date."
         ),
         "leakage_note": (
             "Historical bars are not used in daily features v1. World Bank benchmark features use "
@@ -575,7 +623,8 @@ def _build_manifest(
             "weather_daily_features with feature_date <= product feature_date and weather_as_of_date <= "
             "product feature_date. News/event features use daily_news_features with news_as_of_date <= "
             "product feature_date. Trade features use daily_trade_features with trade_as_of_date <= "
-            "product feature_date. ML targets and future-looking labels are not included."
+            "product feature_date. Supply-demand features use daily_supply_demand_features with "
+            "supply_demand_as_of_date <= product feature_date. ML targets and future-looking labels are not included."
         ),
         "included_sources": [
             "daily_product_features",
@@ -586,6 +635,7 @@ def _build_manifest(
             "Open-Meteo region weather aggregates through product_weather_region_weights",
             "Rule-based commodity events and daily news aggregates through the feature builder",
             "UN Comtrade trade flows through daily_trade_features and product_trade_code_weights",
+            "USDA PSD supply-demand observations through daily_supply_demand_features and product_supply_demand_weights",
         ],
         "excluded_sources": [
             "historical_price_bars",
@@ -606,6 +656,9 @@ def _build_manifest(
             "News missing flags identify absent articles, absent events, or partial source coverage.",
             "Trade features are monthly aggregates forward-filled by strict as-of date and may lag source releases.",
             "Trade missing flags identify absent trade mappings, absent trade flows, or incomplete history windows.",
+            "Supply-demand features are official report/marketing-year values forward-filled daily only after source availability.",
+            "USDA PSD exact commodity/attribute mappings remain marked needs_verification until controlled source validation.",
+            "Supply-demand missing flags identify sparse observations, absent mappings, missing stock/use ratios, or missing revisions.",
             "Only products present in daily_product_features are exported.",
             "Sunflower products, ML targets, and ML outputs are not implemented in export v1.",
         ],

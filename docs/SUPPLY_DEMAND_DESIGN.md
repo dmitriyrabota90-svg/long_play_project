@@ -20,10 +20,11 @@ The proposed layer has five future tables:
 - `daily_supply_demand_features`: product-level daily as-of-safe supply-demand
   features for later copying into `daily_product_features` and export.
 
-Phase 6.7C should implement the reviewed schema only. Phase 6.7D should add the
-first controlled USDA PSD collector/prototype. Phase 6.7E should integrate
-supply-demand features and export columns only after source, revision, and
-as-of rules are reviewed.
+Phase 6.7C implemented the reviewed schema only. Phase 6.7D added the first
+controlled USDA PSD collector/prototype. Phase 6.7E implements the local
+supply-demand daily feature builder and export-column integration after source,
+revision, and as-of rules were reviewed; server execution remains a later
+batch.
 
 ## Why Supply-Demand / Production-Stocks Matter For Agricultural Commodity Price Forecasting
 
@@ -601,30 +602,30 @@ python scripts/run_collector.py usda_psd \
 `--live-probe` is an explicit opt-in. The collector has no broad crawler mode
 and no scheduler mode.
 
-## Future Feature Integration Into `daily_product_features`
+## Phase 6.7E Feature Integration Into `daily_product_features`
 
 Nearest-term behavior:
 
-- no change to `daily_product_features` in Phase 6.7B;
-- no supply-demand columns are added yet;
-- no feature builder is implemented yet.
-- Phase 6.7C creates `daily_supply_demand_features`, but does not populate it
-  and does not copy any columns into `daily_product_features`.
-- Phase 6.7D populates `supply_demand_observations` only; it still does not
-  populate `daily_supply_demand_features` and does not copy supply-demand
-  values into `daily_product_features`.
+- Phase 6.7C created `daily_supply_demand_features`, but did not populate it
+  or copy columns into `daily_product_features`.
+- Phase 6.7D populated `supply_demand_observations` only.
+- Phase 6.7E adds nullable supply-demand columns to `daily_product_features`,
+  implements `python scripts/build_features.py supply_demand_daily`, and lets
+  the main daily builder copy eligible rows into product daily features.
+- Server execution is not part of the local Phase 6.7E commit and must be a
+  later controlled batch.
 
-Future behavior:
+Implemented local behavior:
 
-- build `daily_supply_demand_features` first;
-- copy selected nullable columns into `daily_product_features` only after
-  schema and as-of policy are implemented;
+- build `daily_supply_demand_features` first with `supply_demand_daily`;
+- copy selected nullable columns into `daily_product_features` after schema and
+  as-of policy are implemented;
 - use `product_supply_demand_weights` to map official concepts to products;
 - forward-fill report/marketing-year rows daily only after publication/fetch;
 - keep `missing_flags` explicit;
-- add revision-aware features later, not during initial collection.
+- compute forecast revisions only against previous eligible report vintages.
 
-Candidate future product-level columns:
+Product-level columns:
 
 - `production_volume`
 - `domestic_consumption`
@@ -639,15 +640,19 @@ Candidate future product-level columns:
 - `production_forecast_revision`
 - `ending_stocks_revision`
 - `stock_to_use_revision`
-- `reporting_lag_days`
+- `forecast_month`
+- `marketing_year`
+- `report_published_at`
+- `supply_demand_reporting_lag_days`
 - `supply_demand_as_of_date`
 - `supply_demand_missing_flags`
 
-## Future Export Integration
+## Phase 6.7E Export Integration
 
-Export v1 should not add supply-demand columns until Phase 6.7E or later. When
-added, export columns should be nullable, documented in `DATASET_DICTIONARY.md`,
-and linked in `SOURCE_TO_FEATURE_LINEAGE.md`.
+Export v1 now includes nullable supply-demand columns locally. They are
+documented in `DATASET_DICTIONARY.md` and linked in
+`SOURCE_TO_FEATURE_LINEAGE.md`. Production export validation remains pending
+until the server batch runs.
 
 Future export manifests should preserve:
 
@@ -661,7 +666,9 @@ Future export manifests should preserve:
 - Phase 6.7C: supply-demand schema-only implementation, source seeds, mapping
   seeds, operational counts, and tests.
 - Phase 6.7D: first controlled USDA PSD collector/prototype.
-- Phase 6.7E: supply-demand daily features and export integration.
+- Phase 6.7E: local supply-demand daily features and export integration.
+- Later server batch: apply migration, run `supply_demand_daily`, rebuild daily
+  features, export, and validate operational/readiness reports.
 
 ## Non-Goals
 

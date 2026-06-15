@@ -114,6 +114,28 @@ def _seed_feature(
         trade_as_of_date=feature_date,
         reporting_lag_days=7,
         trade_missing_flags="missing_yoy_history",
+        production_volume=Decimal("1000.00000000"),
+        domestic_consumption=Decimal("500.00000000"),
+        food_use=None,
+        feed_use=None,
+        crush_volume=Decimal("450.00000000"),
+        exports_volume=Decimal("120.00000000"),
+        imports_volume=Decimal("30.00000000"),
+        beginning_stocks=Decimal("80.00000000"),
+        ending_stocks=Decimal("100.00000000"),
+        stock_to_use_ratio=Decimal("0.20000000"),
+        planted_area=Decimal("200.00000000"),
+        harvested_area=Decimal("190.00000000"),
+        yield_value=Decimal("5.50000000"),
+        production_forecast_revision=Decimal("10.00000000"),
+        ending_stocks_revision=Decimal("1.00000000"),
+        stock_to_use_revision=Decimal("0.01000000"),
+        forecast_month=6,
+        marketing_year="2025/26",
+        report_published_at=now,
+        supply_demand_as_of_date=feature_date,
+        supply_demand_reporting_lag_days=5,
+        supply_demand_missing_flags="missing_food_use",
         **calendar_values,
         created_at=now,
         updated_at=now,
@@ -155,6 +177,15 @@ def test_export_query_returns_rows_from_sample_db() -> None:
     assert rows[0]["trade_as_of_date"] == "2026-06-01"
     assert rows[0]["reporting_lag_days"] == 7
     assert rows[0]["trade_missing_flags"] == "missing_yoy_history"
+    assert rows[0]["production_volume"] == "1000.00000000"
+    assert rows[0]["domestic_consumption"] == "500.00000000"
+    assert rows[0]["ending_stocks"] == "100.00000000"
+    assert rows[0]["stock_to_use_ratio"] == "0.20000000"
+    assert rows[0]["forecast_month"] == 6
+    assert rows[0]["marketing_year"] == "2025/26"
+    assert rows[0]["supply_demand_as_of_date"] == "2026-06-01"
+    assert rows[0]["supply_demand_reporting_lag_days"] == 5
+    assert rows[0]["supply_demand_missing_flags"] == "missing_food_use"
     assert "historical_price_bars" not in rows[0]
 
 
@@ -200,6 +231,12 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "import_volume_1m" in header
     assert "trade_as_of_date" in header
     assert "trade_missing_flags" in header
+    assert "production_volume" in header
+    assert "domestic_consumption" in header
+    assert "ending_stocks" in header
+    assert "stock_to_use_ratio" in header
+    assert "supply_demand_as_of_date" in header
+    assert "supply_demand_missing_flags" in header
     assert "calendar_sin_day_of_year" in manifest["columns"]
     assert "energy_wti_delta_7d" in manifest["columns"]
     assert "benchmark_as_of_date" in manifest["columns"]
@@ -208,6 +245,8 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "sentiment_proxy_7d" in manifest["columns"]
     assert "export_volume_1m" in manifest["columns"]
     assert "trade_as_of_date" in manifest["columns"]
+    assert "production_volume" in manifest["columns"]
+    assert "supply_demand_as_of_date" in manifest["columns"]
     assert "commodity_benchmarks" in manifest["source_tables"]
     assert "weather_daily_features" in manifest["source_tables"]
     assert "product_weather_region_weights" in manifest["source_tables"]
@@ -218,10 +257,14 @@ def test_daily_features_export_creates_csv_manifest_and_sha256(tmp_path: Path) -
     assert "trade_flows" in manifest["source_tables"]
     assert "product_trade_code_weights" in manifest["source_tables"]
     assert "trade_commodity_codes" in manifest["source_tables"]
+    assert "supply_demand_observations" in manifest["source_tables"]
+    assert "daily_supply_demand_features" in manifest["source_tables"]
+    assert "product_supply_demand_weights" in manifest["source_tables"]
     assert "World Bank Pink Sheet commodity benchmarks through the feature builder" in manifest["included_sources"]
     assert "Open-Meteo region weather aggregates through product_weather_region_weights" in manifest["included_sources"]
     assert "Rule-based commodity events and daily news aggregates through the feature builder" in manifest["included_sources"]
     assert "UN Comtrade trade flows through daily_trade_features and product_trade_code_weights" in manifest["included_sources"]
+    assert "USDA PSD supply-demand observations through daily_supply_demand_features and product_supply_demand_weights" in manifest["included_sources"]
     assert "commodity_benchmarks" not in manifest["excluded_sources"]
     assert "weather_observations" not in manifest["excluded_sources"]
     assert "news_articles" not in manifest["excluded_sources"]

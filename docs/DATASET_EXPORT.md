@@ -17,6 +17,8 @@ Export v1 reads:
   feature builder
 - `daily_trade_features`, `trade_flows`, `product_trade_code_weights`, and
   `trade_commodity_codes` through the feature builder
+- `daily_supply_demand_features`, `supply_demand_observations`, and
+  `product_supply_demand_weights` through the feature builder
 
 It does not write PostgreSQL metadata in Phase 5.0 or Phase 6.3F. The JSON
 manifest beside the export file is the export metadata source.
@@ -58,6 +60,11 @@ The CSV includes:
   3-month averages, 12-month sums, net export/trade balance proxy,
   China/major-reporter volume proxies, unit values, YoY change,
   `trade_as_of_date`, `reporting_lag_days`, and `trade_missing_flags`
+- product-level supply-demand fields: production, domestic consumption, food
+  and feed use, crush, exports/imports, beginning/ending stocks,
+  stock-to-use, area/yield, forecast revisions, report vintage metadata,
+  `supply_demand_as_of_date`, `supply_demand_reporting_lag_days`, and
+  `supply_demand_missing_flags`
 - `created_at`
 - `updated_at`
 
@@ -108,6 +115,8 @@ Export v1 includes only sources already materialized into
   feature builder
 - UN Comtrade monthly trade flows through `daily_trade_features` and
   `product_trade_code_weights`
+- USDA PSD supply-demand observations through `daily_supply_demand_features`
+  and `product_supply_demand_weights`
 
 ## Sources Excluded
 
@@ -135,9 +144,12 @@ values use active/effective product-region weights and only
 `news_as_of_date <= product feature_date`. Trade values use
 `daily_trade_features.feature_date <= product feature_date` with
 `trade_as_of_date <= product feature_date`; monthly data is forward-filled only
-after source publication/fetch availability. Historical bars are not consumed
-by daily features yet, so the export cannot accidentally treat historical
-backfill as if it was available in the past.
+after source publication/fetch availability. Supply-demand values use
+`daily_supply_demand_features.feature_date <= product feature_date` with
+`supply_demand_as_of_date <= product feature_date`; official report vintages
+are forward-filled only after publication/fetch availability. Historical bars
+are not consumed by daily features yet, so the export cannot accidentally treat
+historical backfill as if it was available in the past.
 
 ## Known Limitations
 
@@ -156,6 +168,10 @@ backfill as if it was available in the past.
 - Trade features are monthly aggregates and may lag source publication. Missing
   mappings, missing flows, incomplete rolling windows, and unavailable reporter
   proxies are recorded in `trade_missing_flags`.
+- Supply-demand features are monthly/marketing-year report aggregates and may
+  lag source publication. Missing mappings, missing official metrics, missing
+  revisions, and missing publication dates are recorded in
+  `supply_demand_missing_flags`.
 - Sunflower products are not implemented.
 - This is a controlled file export, not a public API or dashboard.
 

@@ -205,11 +205,11 @@ def test_design_doc_marks_phase_67b_as_design_only() -> None:
 def test_design_doc_mentions_future_feature_and_export_integration() -> None:
     text = DESIGN_DOC.read_text(encoding="utf-8")
 
-    assert "Future Feature Integration Into `daily_product_features`" in text
+    assert "Phase 6.7E Feature Integration Into `daily_product_features`" in text
     assert "daily_supply_demand_features" in text
     assert "daily_product_features" in text
     assert "supply_demand_missing_flags" in text
-    assert "Future Export Integration" in text
+    assert "Phase 6.7E Export Integration" in text
     assert "DATASET_DICTIONARY.md" in text
     assert "SOURCE_TO_FEATURE_LINEAGE.md" in text
 
