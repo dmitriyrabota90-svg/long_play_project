@@ -41,7 +41,14 @@ from app.db.models import (
     WeatherRegion,
 )
 from app.db.session import session_scope
-from app.monitoring.quality_summary import build_quality_summary, problematic_quality_filter
+from app.monitoring.quality_summary import (
+    QUALITY_CLASS_ACTIVE_CURRENT_FAILURE,
+    QUALITY_CLASS_EXPECTED_DIAGNOSTIC_INCIDENT,
+    QUALITY_CLASS_KNOWN_HISTORICAL_INCIDENT,
+    build_quality_summary,
+    classify_quality_check,
+    problematic_quality_filter,
+)
 from app.monitoring.redaction import mask_database_url
 from app.operations.storage import directory_size_bytes
 
@@ -77,6 +84,8 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "daily_product_features": 0,
             "energy_prices": 0,
             "problematic_quality_checks": 0,
+            "active_problematic_quality_checks": 0,
+            "known_or_diagnostic_quality_incidents": 0,
         },
         "last_runs": {
             "success": None,
@@ -273,7 +282,11 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "total_checks": 0,
             "pass_checks": 0,
             "skip_checks": 0,
+            "info_checks": 0,
             "problematic_checks": 0,
+            "active_current_failures": 0,
+            "known_historical_incidents": 0,
+            "expected_diagnostic_incidents": 0,
             "conclusion": "ok",
             "message": "quality checks ok",
         },
@@ -293,7 +306,7 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "error": str(exc),
         }
 
-    if not report["database"].get("ok") or report["stale_products"]:
+    if not report["database"].get("ok") or report["stale_products"] or report["quality_checks"].get("active_current_failures", 0):
         report["status"] = "degraded"
     return report
 
@@ -726,19 +739,37 @@ def _fill_db_report(
         ),
     }
     report["cbr_fx"]["fx_rates_last_24h"] = report["last_24h"]["fx_rates"]
-    report["last_24h"]["problematic_quality_checks"] = session.scalar(
-        select(func.count())
-        .select_from(DataQualityCheck)
+    recent_problematic_quality_checks = session.scalars(
+        select(DataQualityCheck)
         .where(DataQualityCheck.checked_at >= cutoff, problematic_quality_filter())
+        .order_by(DataQualityCheck.checked_at.desc(), DataQualityCheck.id.desc())
+    ).all()
+    recent_quality_classes = [classify_quality_check(check) for check in recent_problematic_quality_checks]
+    report["last_24h"]["problematic_quality_checks"] = len(recent_problematic_quality_checks)
+    report["last_24h"]["active_problematic_quality_checks"] = recent_quality_classes.count(
+        QUALITY_CLASS_ACTIVE_CURRENT_FAILURE
     )
+    report["last_24h"]["known_or_diagnostic_quality_incidents"] = recent_quality_classes.count(
+        QUALITY_CLASS_KNOWN_HISTORICAL_INCIDENT
+    ) + recent_quality_classes.count(QUALITY_CLASS_EXPECTED_DIAGNOSTIC_INCIDENT)
     quality_summary = build_quality_summary(session=session)
     report["quality_checks"] = {
         "total_checks": quality_summary["total_checks"],
         "pass_checks": quality_summary["pass_checks"],
         "skip_checks": quality_summary["skip_checks"],
+        "info_checks": quality_summary["info_checks"],
+        "skip_info_checks": quality_summary["skip_info_checks"],
         "problematic_checks": quality_summary["problematic_checks"],
+        "active_current_failures": quality_summary["active_current_failures"],
+        "active_problematic_checks": quality_summary["active_problematic_checks"],
+        "known_historical_incidents": quality_summary["known_historical_incidents"],
+        "expected_diagnostic_incidents": quality_summary["expected_diagnostic_incidents"],
+        "classification_counts": quality_summary["classification_counts"],
+        "last_active_problematic_checks": quality_summary["last_active_problematic_checks"],
+        "last_known_historical_incidents": quality_summary["last_known_historical_incidents"],
+        "last_expected_diagnostic_incidents": quality_summary["last_expected_diagnostic_incidents"],
         "conclusion": quality_summary["conclusion"],
-        "message": "quality checks ok" if quality_summary["problematic_checks"] == 0 else "quality checks need review",
+        "message": quality_summary["message"],
     }
 
     for status in ("success", "partial_success", "error"):

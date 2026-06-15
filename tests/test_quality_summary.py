@@ -13,21 +13,30 @@ from sqlalchemy.orm import sessionmaker
 from app.db.models import Base, DataQualityCheck, Source
 from app.monitoring.current_price_report import build_current_price_health_report
 from app.monitoring.operational_report import build_operational_report
-from app.monitoring.quality_summary import build_quality_summary, is_problematic_quality_status
+from app.monitoring.quality_summary import build_quality_summary, classify_quality_check, is_problematic_quality_status
 from app.monitoring.redaction import mask_database_url
 
 
-def _add_check(session, *, status: str, severity: str = "info") -> None:
-    session.add(
-        DataQualityCheck(
-            table_name="price_observations",
-            check_name=f"check_{status}",
-            checked_at=datetime.now(timezone.utc),
-            status=status,
-            severity=severity,
-            details_json={"status": status},
-        )
+def _add_check(
+    session,
+    *,
+    status: str,
+    severity: str = "info",
+    table_name: str = "price_observations",
+    check_name: str | None = None,
+    checked_at: datetime | None = None,
+    details_json: dict | None = None,
+) -> DataQualityCheck:
+    check = DataQualityCheck(
+        table_name=table_name,
+        check_name=check_name or f"check_{status}",
+        checked_at=checked_at or datetime.now(timezone.utc),
+        status=status,
+        severity=severity,
+        details_json=details_json or {"status": status},
     )
+    session.add(check)
+    return check
 
 
 def _session_factory(database_url: str = "sqlite+pysqlite:///:memory:"):
@@ -39,6 +48,7 @@ def _session_factory(database_url: str = "sqlite+pysqlite:///:memory:"):
 def test_pass_and_skip_are_not_problematic() -> None:
     assert is_problematic_quality_status("pass") is False
     assert is_problematic_quality_status("skip") is False
+    assert is_problematic_quality_status("info") is False
 
 
 def test_failed_and_warning_are_problematic() -> None:
@@ -62,6 +72,9 @@ def test_quality_summary_counts_problematic_checks() -> None:
     assert summary["pass_checks"] == 1
     assert summary["skip_checks"] == 1
     assert summary["problematic_checks"] == 2
+    assert summary["active_current_failures"] == 2
+    assert summary["known_historical_incidents"] == 0
+    assert summary["expected_diagnostic_incidents"] == 0
     assert [item["status"] for item in summary["last_problematic_checks"]] == ["warning", "fail"]
     assert summary["conclusion"] == "error"
 
@@ -77,6 +90,134 @@ def test_quality_summary_ok_when_only_pass_and_skip() -> None:
 
     assert summary["problematic_checks"] == 0
     assert summary["conclusion"] == "ok"
+    assert summary["message"] == "quality checks ok"
+
+
+def test_quality_summary_classifies_known_historical_and_diagnostic_incidents() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        dns_check = _add_check(
+            session,
+            status="fail",
+            severity="error",
+            table_name="price_observations",
+            check_name="raw_response_present",
+            checked_at=datetime(2026, 5, 26, 9, 0, tzinfo=timezone.utc),
+            details_json={"raw_response_id": None, "product_id": 1},
+        )
+        mutable_check = _add_check(
+            session,
+            status="warning",
+            severity="warning",
+            table_name="historical_price_bars",
+            check_name="historical_existing_bar_hash_changed",
+            checked_at=datetime(2026, 5, 29, 12, 0, tzinfo=timezone.utc),
+            details_json={"bar_date": "2026-05-28", "policy_decision": "rejected_hash_conflict_no_overwrite"},
+        )
+        metadata_probe_check = _add_check(
+            session,
+            status="fail",
+            severity="error",
+            table_name="raw_responses",
+            check_name="supply_demand_normalized_rows_found",
+            checked_at=datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc),
+            details_json={
+                "error": "USDA PSD endpoint returned downloadable dataset metadata, not data rows",
+                "request": {"live_probe": True},
+            },
+        )
+        html_probe_check = _add_check(
+            session,
+            status="fail",
+            severity="warning",
+            table_name="raw_responses",
+            check_name="supply_demand_content_type_expected",
+            checked_at=datetime(2026, 6, 15, 12, 1, tzinfo=timezone.utc),
+            details_json={"content_type": "text/html; charset=utf-8", "request": {"live_probe": True}},
+        )
+        session.commit()
+
+        summary = build_quality_summary(session=session)
+
+    assert classify_quality_check(dns_check) == "known_historical_incident"
+    assert classify_quality_check(mutable_check) == "known_historical_incident"
+    assert classify_quality_check(metadata_probe_check) == "expected_diagnostic_incident"
+    assert classify_quality_check(html_probe_check) == "expected_diagnostic_incident"
+    assert summary["problematic_checks"] == 4
+    assert summary["active_current_failures"] == 0
+    assert summary["known_historical_incidents"] == 2
+    assert summary["expected_diagnostic_incidents"] == 2
+    assert summary["conclusion"] == "ok_with_known_incidents"
+    assert summary["message"] == "quality checks ok with known incidents"
+
+
+def test_quality_summary_keeps_fresh_unknown_failure_active() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _add_check(
+            session,
+            status="fail",
+            severity="error",
+            table_name="raw_responses",
+            check_name="new_source_parser_failed",
+            checked_at=datetime(2026, 6, 15, 13, 0, tzinfo=timezone.utc),
+            details_json={"error": "new failure"},
+        )
+        _add_check(
+            session,
+            status="fail",
+            severity="error",
+            table_name="raw_responses",
+            check_name="supply_demand_normalized_rows_found",
+            checked_at=datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc),
+            details_json={
+                "error": "USDA PSD endpoint returned HTML shell, not data rows",
+                "request": {"live_probe": True},
+            },
+        )
+        session.commit()
+
+        summary = build_quality_summary(session=session)
+
+    assert summary["problematic_checks"] == 2
+    assert summary["active_current_failures"] == 1
+    assert summary["expected_diagnostic_incidents"] == 1
+    assert summary["conclusion"] == "error"
+    assert summary["last_active_problematic_checks"][0]["check_name"] == "new_source_parser_failed"
+
+
+def test_operational_report_quality_status_allows_known_incidents() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        _add_check(
+            session,
+            status="fail",
+            severity="error",
+            table_name="price_observations",
+            check_name="price_is_not_null",
+            checked_at=datetime(2026, 5, 26, 9, 0, tzinfo=timezone.utc),
+            details_json={"raw_response_id": None, "product_id": 1},
+        )
+        _add_check(
+            session,
+            status="fail",
+            severity="error",
+            table_name="raw_responses",
+            check_name="supply_demand_normalized_rows_found",
+            checked_at=datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc),
+            details_json={
+                "error": "USDA PSD endpoint returned downloadable dataset metadata, not data rows",
+                "request": {"live_probe": True},
+            },
+        )
+        session.commit()
+
+        report = build_operational_report(freshness_hours=24, session=session)
+
+    assert report["quality_checks"]["conclusion"] == "ok_with_known_incidents"
+    assert report["quality_checks"]["active_current_failures"] == 0
+    assert report["quality_checks"]["known_historical_incidents"] == 1
+    assert report["quality_checks"]["expected_diagnostic_incidents"] == 1
 
 
 def test_current_price_health_uses_problematic_quality_filter() -> None:

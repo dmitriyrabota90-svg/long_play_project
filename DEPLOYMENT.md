@@ -66,7 +66,10 @@ Check quality status with:
 docker compose run --rm app python scripts/quality_summary.py
 ```
 
-`pass` and `skip` are successful quality statuses. Any other status is reported as problematic; if none exist, the CLI prints `quality checks ok`.
+`pass`, `skip`, and `info` are successful quality statuses. Other statuses are
+classified as active failures, known historical incidents, or expected
+diagnostic incidents. The CLI returns `ok`, `ok_with_known_incidents`, or
+`error`; old checks stay in the database and remain visible in the report.
 
 Diagnostic CSV exports for these rows should be named `quality_checks_problematic.csv`, not `quality_checks_failed.csv`.
 

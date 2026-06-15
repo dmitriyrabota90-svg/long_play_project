@@ -354,14 +354,27 @@ Do not add FX/news/weather/features/export sources as part of diagnostics cleanu
 
 ## Quality Summary
 
-Use the quality summary CLI to review checks without treating `pass` or `skip` rows as failures:
+Use the quality summary CLI to review checks without treating `pass`, `skip`,
+or `info` rows as failures:
 
 ```bash
 python scripts/quality_summary.py
 python scripts/quality_summary.py --limit 50
 ```
 
-The CLI prints total checks, checks by status, checks by severity, problematic checks, latest problematic checks, and a conclusion of `ok`, `warning`, or `error`. Statuses `pass` and `skip` are successful; any other status is considered problematic. When the problematic count is zero, the output includes `quality checks ok`.
+The CLI prints total checks, checks by status, checks by severity, problematic
+checks, latest problematic checks, and classified incident buckets. Problematic
+rows are split into `active_current_failure`, `known_historical_incident`, and
+`expected_diagnostic_incident`.
+
+Old checks are never deleted or hidden. Known historical incidents and expected
+diagnostic probe failures remain visible in the report, but they no longer make
+the operational conclusion look like a fresh active failure. Conclusions are:
+
+- `ok`: no active or known problematic checks.
+- `ok_with_known_incidents`: no active failures, but known historical or
+  expected diagnostic incidents remain in the database.
+- `error`: at least one fresh or unknown active problematic check exists.
 
 When exporting problematic quality checks for diagnostics, use `quality_checks_problematic.csv`; the old `quality_checks_failed.csv` name is intentionally avoided because `pass` and `skip` are not failures.
 

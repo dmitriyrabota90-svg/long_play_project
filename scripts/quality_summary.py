@@ -22,8 +22,6 @@ def main() -> None:
 
     setup_logging()
     summary = build_quality_summary(limit=args.limit)
-    if summary["problematic_checks"] == 0:
-        summary["message"] = "quality checks ok"
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
 
 
