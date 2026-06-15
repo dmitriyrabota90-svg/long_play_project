@@ -1,6 +1,6 @@
 """add product news feature columns
 
-Revision ID: 0015_product_news_features
+Revision ID: 0015_news_features
 Revises: 0014_news_events_schema
 Create Date: 2026-06-11 00:00:00.000000
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0015_product_news_features"
+revision = "0015_news_features"
 down_revision = "0014_news_events_schema"
 branch_labels = None
 depends_on = None

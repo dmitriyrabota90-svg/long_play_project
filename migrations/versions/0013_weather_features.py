@@ -1,6 +1,6 @@
 """add product weather features to daily product features
 
-Revision ID: 0013_product_weather_features
+Revision ID: 0013_weather_features
 Revises: 0012_weather_schema
 Create Date: 2026-06-11 00:00:00.000000
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0013_product_weather_features"
+revision = "0013_weather_features"
 down_revision = "0012_weather_schema"
 branch_labels = None
 depends_on = None

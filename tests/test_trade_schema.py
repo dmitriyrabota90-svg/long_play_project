@@ -151,7 +151,7 @@ def test_trade_schema_migration_revision_metadata() -> None:
     migration_text = Path(trade_schema_migration.__file__).read_text(encoding="utf-8")
 
     assert trade_schema_migration.revision == "0016_trade_schema"
-    assert trade_schema_migration.down_revision == "0015_product_news_features"
+    assert trade_schema_migration.down_revision == "0015_news_features"
     assert "op.create_table(\n        \"trade_commodity_codes\"" in migration_text
     assert "op.create_table(\n        \"trade_flows\"" in migration_text
     assert "op.create_table(\n        \"product_trade_code_weights\"" in migration_text

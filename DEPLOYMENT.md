@@ -652,7 +652,7 @@ does not add ML targets. Product-level weather feature/export integration is a
 later Phase 6.3F decision.
 
 Phase 6.3F adds product-level weather columns to `daily_product_features`
-through Alembic revision `0013_product_weather_features`, seeds first-version
+through Alembic revision `0013_weather_features`, seeds first-version
 equal product-region weather weights, and includes those weather columns in
 the `daily_features` export. Apply this migration only during a reviewed
 deploy:
@@ -912,7 +912,7 @@ docker compose run --rm app python -m app.db.seed
 The next steps are Phase 6.5D controlled UN Comtrade collection and Phase 6.5E
 trade feature/export integration.
 
-Phase 6.5E adds Alembic revision `0017_product_trade_features`, the
+Phase 6.5E adds Alembic revision `0017_trade_features`, the
 `trade_daily` feature builder, product-level trade columns in
 `daily_product_features`, and export/operational-report integration.
 

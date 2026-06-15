@@ -1201,7 +1201,7 @@ recorded in `missing_flags`.
 
 Phase 6.3F integrates region-level weather aggregates into product-level
 `daily_product_features` and the `daily_features` export. It adds Alembic
-revision `0013_product_weather_features` with nullable product-weather columns,
+revision `0013_weather_features` with nullable product-weather columns,
 idempotent equal-weight `product_weather_region_weights` seeds for soybean and
 rapeseed/canola products, and leakage-safe weighted aggregation in
 `python scripts/build_features.py daily`.

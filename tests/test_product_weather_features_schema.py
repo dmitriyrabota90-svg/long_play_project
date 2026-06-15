@@ -5,7 +5,7 @@ from importlib import import_module
 from app.db.models import DailyProductFeature
 
 
-product_weather_migration = import_module("migrations.versions.0013_product_weather_features")
+product_weather_migration = import_module("migrations.versions.0013_weather_features")
 
 
 PRODUCT_WEATHER_COLUMNS = {
@@ -34,7 +34,7 @@ def test_daily_product_feature_metadata_contains_product_weather_columns() -> No
 
 
 def test_product_weather_feature_migration_revision_metadata() -> None:
-    assert product_weather_migration.revision == "0013_product_weather_features"
+    assert product_weather_migration.revision == "0013_weather_features"
     assert product_weather_migration.down_revision == "0012_weather_schema"
 
 

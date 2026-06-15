@@ -1,6 +1,6 @@
 """add product trade feature columns
 
-Revision ID: 0017_product_trade_features
+Revision ID: 0017_trade_features
 Revises: 0016_trade_schema
 Create Date: 2026-06-11 00:00:00.000000
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0017_product_trade_features"
+revision = "0017_trade_features"
 down_revision = "0016_trade_schema"
 branch_labels = None
 depends_on = None
@@ -47,4 +47,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     for column_name, _column_type in reversed(TRADE_PRODUCT_COLUMNS):
         op.drop_column("daily_product_features", column_name)
-

@@ -605,7 +605,7 @@ a balanced bullish/bearish mix rather than missing event coverage.
 
 Phase 6.4F also adds nullable product-level news/event columns to
 `daily_product_features` through Alembic revision
-`0015_product_news_features` and includes those columns in export v1.
+`0015_news_features` and includes those columns in export v1.
 
 ## Future Feature Integration Into Daily Product Features
 
@@ -637,7 +637,7 @@ Rules:
 
 Export v1 includes news fields after Phase 6.4F:
 
-- schema migration `0015_product_news_features`;
+- schema migration `0015_news_features`;
 - controlled collector raw evidence in `news_articles`;
 - versioned event extraction rules in `commodity_events`;
 - `daily_news_features` product-level aggregates;

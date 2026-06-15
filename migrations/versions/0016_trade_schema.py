@@ -1,7 +1,7 @@
 """add trade schema
 
 Revision ID: 0016_trade_schema
-Revises: 0015_product_news_features
+Revises: 0015_news_features
 Create Date: 2026-06-11 00:00:00.000000
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 revision = "0016_trade_schema"
-down_revision = "0015_product_news_features"
+down_revision = "0015_news_features"
 branch_labels = None
 depends_on = None
 

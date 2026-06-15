@@ -161,7 +161,7 @@ def test_supply_demand_schema_migration_revision_metadata() -> None:
     migration_text = Path(supply_demand_schema_migration.__file__).read_text(encoding="utf-8")
 
     assert supply_demand_schema_migration.revision == "0018_supply_demand_schema"
-    assert supply_demand_schema_migration.down_revision == "0017_product_trade_features"
+    assert supply_demand_schema_migration.down_revision == "0017_trade_features"
     assert "op.create_table(\n        \"supply_demand_commodities\"" in migration_text
     assert "op.create_table(\n        \"supply_demand_observations\"" in migration_text
     assert "op.create_table(\n        \"supply_demand_revisions\"" in migration_text

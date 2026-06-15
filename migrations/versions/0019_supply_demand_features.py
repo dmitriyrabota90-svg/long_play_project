@@ -1,6 +1,6 @@
 """add product supply demand feature columns
 
-Revision ID: 0019_product_supply_demand_features
+Revision ID: 0019_supply_demand_features
 Revises: 0018_supply_demand_schema
 Create Date: 2026-06-14 00:00:00.000000
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0019_product_supply_demand_features"
+revision = "0019_supply_demand_features"
 down_revision = "0018_supply_demand_schema"
 branch_labels = None
 depends_on = None

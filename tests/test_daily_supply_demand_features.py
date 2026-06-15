@@ -26,7 +26,7 @@ from app.db.models import (
 from app.features.supply_demand_daily import build_supply_demand_daily_features
 
 
-product_supply_demand_migration = import_module("migrations.versions.0019_product_supply_demand_features")
+product_supply_demand_migration = import_module("migrations.versions.0019_supply_demand_features")
 
 
 def _session_factory(database_url: str = "sqlite+pysqlite:///:memory:"):
@@ -64,7 +64,7 @@ def test_product_supply_demand_feature_columns_and_migration_metadata() -> None:
     migration_text = Path(product_supply_demand_migration.__file__).read_text(encoding="utf-8")
 
     assert expected_columns <= set(table.c.keys())
-    assert product_supply_demand_migration.revision == "0019_product_supply_demand_features"
+    assert product_supply_demand_migration.revision == "0019_supply_demand_features"
     assert product_supply_demand_migration.down_revision == "0018_supply_demand_schema"
     assert "op.add_column(\"daily_product_features\"" in migration_text
     assert "supply_demand_missing_flags" in migration_text

@@ -16,7 +16,7 @@ from app.features.news_daily import NEWS_CATEGORY_FIELDS, build_news_daily_featu
 from app.storage.hashes import stable_json_hash
 
 
-product_news_migration = import_module("migrations.versions.0015_product_news_features")
+product_news_migration = import_module("migrations.versions.0015_news_features")
 
 
 PRODUCT_NEWS_COLUMNS = {
@@ -55,7 +55,7 @@ def test_daily_product_feature_metadata_contains_news_columns() -> None:
 def test_product_news_feature_migration_metadata_and_columns() -> None:
     migration_columns = {name for name, _column_type in product_news_migration.NEWS_PRODUCT_COLUMNS}
 
-    assert product_news_migration.revision == "0015_product_news_features"
+    assert product_news_migration.revision == "0015_news_features"
     assert product_news_migration.down_revision == "0014_news_events_schema"
     assert migration_columns == PRODUCT_NEWS_COLUMNS
 

@@ -171,7 +171,7 @@ def test_news_events_migration_revision_metadata_and_partial_index() -> None:
     migration_text = Path(news_events_migration.__file__).read_text(encoding="utf-8")
 
     assert news_events_migration.revision == "0014_news_events_schema"
-    assert news_events_migration.down_revision == "0013_product_weather_features"
+    assert news_events_migration.down_revision == "0013_weather_features"
     assert "op.create_table(\n        \"news_articles\"" in migration_text
     assert "op.create_table(\n        \"commodity_events\"" in migration_text
     assert "op.create_table(\n        \"daily_news_features\"" in migration_text

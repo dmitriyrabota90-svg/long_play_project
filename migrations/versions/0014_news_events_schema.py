@@ -1,7 +1,7 @@
 """add news events schema
 
 Revision ID: 0014_news_events_schema
-Revises: 0013_product_weather_features
+Revises: 0013_weather_features
 Create Date: 2026-06-11 00:00:00.000000
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 revision = "0014_news_events_schema"
-down_revision = "0013_product_weather_features"
+down_revision = "0013_weather_features"
 branch_labels = None
 depends_on = None
 
