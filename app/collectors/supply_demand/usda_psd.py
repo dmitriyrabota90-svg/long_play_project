@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import csv
+import io
+import zipfile
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -16,10 +19,12 @@ from app.collectors.base import BaseCollector, CollectorResult
 from app.collectors.supply_demand.usda_psd_config import (
     COLLECTOR_NAME,
     DEFAULT_MAXRECORDS,
+    DOWNLOADABLE_DATASET_ENDPOINT,
+    DOWNLOADABLE_OILSEEDS_COMMODITIES_BY_CODE,
     HEADERS,
-    LIVE_PROBE_ENDPOINT_CANDIDATE,
     MAX_MARKETING_YEARS_PER_RUN,
     MAX_MAXRECORDS,
+    OILSEEDS_DATASET_FILENAME,
     PARSER_VERSION,
     REQUEST_TIMEOUT,
     SOURCE_CODE,
@@ -404,17 +409,18 @@ class UsdaPsdCollector(BaseCollector):
         if request.fixture_file is not None:
             payload = request.fixture_file.read_bytes()
             http_request = httpx.Request("GET", f"file://{request.fixture_file}")
+            content_type = _content_type_for_fixture(request.fixture_file)
             return httpx.Response(
                 200,
                 content=payload,
-                headers={"content-type": "application/json; charset=utf-8"},
+                headers={"content-type": content_type},
                 request=http_request,
             )
         if not request.live_probe:
             raise ValueError("provide --fixture-file or explicitly opt in with --live-probe")
         params = build_usda_psd_live_probe_params(request)
         return self.http_client.get(
-            LIVE_PROBE_ENDPOINT_CANDIDATE,
+            DOWNLOADABLE_DATASET_ENDPOINT,
             params=params,
             headers=HEADERS,
             timeout=self.timeout,
@@ -434,7 +440,7 @@ class UsdaPsdCollector(BaseCollector):
             collector_run_id=collector_run.id,
             payload=response.content,
             fetched_at=fetched_at,
-            extension="json",
+            extension=_raw_response_extension(response),
             content_type=content_type,
         )
         raw_response = RawResponse(
@@ -496,6 +502,31 @@ def build_usda_psd_live_probe_params(request: UsdaPsdRequest) -> dict[str, str]:
         to_marketing_year=request.to_marketing_year,
         maxrecords=request.maxrecords,
     )
+
+
+def _content_type_for_fixture(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".zip":
+        return "application/zip"
+    if suffix == ".csv":
+        return "text/csv; charset=utf-8"
+    return "application/json; charset=utf-8"
+
+
+def _raw_response_extension(response: httpx.Response) -> str:
+    content_type = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if _is_zip_payload(response.content):
+        return "zip"
+    if content_type in {"application/zip", "application/x-zip-compressed"}:
+        return "zip"
+    if content_type == "text/csv":
+        return "csv"
+    url_path = str(response.url).split("?", 1)[0].lower()
+    if url_path.endswith(".zip"):
+        return "zip"
+    if url_path.endswith(".csv"):
+        return "csv"
+    return "json"
 
 
 def validate_marketing_year_range(
@@ -588,16 +619,17 @@ def parse_usda_psd_rows(
     request: UsdaPsdRequest,
     fetched_at: datetime,
 ) -> tuple[list[ParsedSupplyDemandRow], list[dict[str, Any]], bool, int]:
-    data = _json_payload(payload)
-    raw_rows = _raw_data_rows(data)
+    raw_rows = _raw_rows_from_payload(payload)
     rows_array_present = isinstance(raw_rows, list)
     if raw_rows is None:
-        raise UsdaPsdParseError("missing data/rows array")
+        raise UsdaPsdParseError("missing data/rows array or CSV rows")
     rows: list[ParsedSupplyDemandRow] = []
     malformed: list[dict[str, Any]] = []
     for index, raw_row in enumerate(raw_rows):
         if not isinstance(raw_row, dict):
             malformed.append({"index": index, "error": "supply-demand row is not an object", "raw_type": type(raw_row).__name__})
+            continue
+        if not _raw_row_in_requested_scope(raw_row, request):
             continue
         try:
             rows.append(_parse_supply_demand_row(raw_row, request=request, fetched_at=fetched_at))
@@ -632,30 +664,46 @@ def build_supply_demand_source_record_hash(
 
 
 def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fetched_at: datetime) -> ParsedSupplyDemandRow:
-    metric_name = _normalize_metric(_string_value(raw, "metric_name", "metric", "attribute", "attributeName", "psdAttributeName"))
+    commodity_mapping = _downloadable_commodity_from_raw(raw)
+    metric_name = _normalize_metric(
+        _string_value(
+            raw,
+            "metric_name",
+            "metric",
+            "attribute",
+            "attribute_name",
+            "attributename",
+            "attribute_description",
+            "attributedescription",
+            "attributeDescription",
+            "psdAttributeName",
+        )
+    )
     if metric_name is None or not is_supported_metric(metric_name):
         raise UsdaPsdParseError(f"unsupported or missing metric: {metric_name}")
-    metric_value = _decimal_or_none(_first_present(raw, "metric_value", "value", "Value", "amount"))
+    metric_value = _decimal_or_none(_first_present(raw, "metric_value", "metricvalue", "value", "Value", "amount"))
     if metric_value is None:
         raise UsdaPsdParseError("metric value is missing or invalid")
 
     country_code = _country_code(raw, request)
     country = resolve_country(country_code)
-    country_name = _string_value(raw, "country_name", "countryName", "country") or country.name
+    country_name = _string_value(raw, "country_name", "countryName", "countryname", "country") or country.name
     marketing_year = _marketing_year(raw)
-    report_published_at = _parse_datetime(_first_present(raw, "report_published_at", "reportPublishedAt", "publicationDate"))
+    report_published_at = _parse_datetime(
+        _first_present(raw, "report_published_at", "reportPublishedAt", "reportpublishedat", "publicationDate", "publicationdate")
+    )
     published_at = _parse_datetime(_first_present(raw, "published_at", "publishedAt")) or report_published_at
-    report_month = _integer_or_none(_first_present(raw, "report_month", "reportMonth", "forecast_month", "forecastMonth"))
+    report_month = _integer_or_none(_first_present(raw, "report_month", "reportMonth", "reportmonth", "forecast_month", "forecastMonth", "month"))
     if report_month is None:
         report_month = (published_at or fetched_at).month
-    report_year = _integer_or_none(_first_present(raw, "report_year", "reportYear"))
+    report_year = _integer_or_none(_first_present(raw, "report_year", "reportYear", "reportyear", "calendar_year", "calendaryear"))
     if report_year is None:
         report_year = (published_at or fetched_at).year
 
-    observed_period_start = _parse_date(_first_present(raw, "observed_period_start", "observedPeriodStart"))
-    observed_period_end = _parse_date(_first_present(raw, "observed_period_end", "observedPeriodEnd"))
-    marketing_year_start = _parse_date(_first_present(raw, "marketing_year_start", "marketingYearStart"))
-    marketing_year_end = _parse_date(_first_present(raw, "marketing_year_end", "marketingYearEnd"))
+    observed_period_start = _parse_date(_first_present(raw, "observed_period_start", "observedPeriodStart", "observedperiodstart"))
+    observed_period_end = _parse_date(_first_present(raw, "observed_period_end", "observedPeriodEnd", "observedperiodend"))
+    marketing_year_start = _parse_date(_first_present(raw, "marketing_year_start", "marketingYearStart", "marketingyearstart"))
+    marketing_year_end = _parse_date(_first_present(raw, "marketing_year_end", "marketingYearEnd", "marketingyearend"))
     if observed_period_start is None or observed_period_end is None:
         inferred_start, inferred_end = _marketing_year_bounds(marketing_year)
         observed_period_start = observed_period_start or inferred_start
@@ -664,16 +712,25 @@ def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fe
     marketing_year_end = marketing_year_end or observed_period_end
 
     estimate_type = _normalize_estimate_type(_string_value(raw, "estimate_type", "estimateType", "forecastType", "status"))
-    product_code = _string_value(raw, "product_code", "productCode") or request.commodity_family.product_code
+    product_code = (
+        _string_value(raw, "product_code", "productCode", "productcode")
+        or (commodity_mapping.product_code if commodity_mapping else None)
+        or request.commodity_family.product_code
+    )
+    commodity_family = (
+        _string_value(raw, "commodity_family", "commodityFamily", "commodityfamily")
+        or (commodity_mapping.commodity_family if commodity_mapping else None)
+        or request.commodity_family.commodity_family
+    )
     return ParsedSupplyDemandRow(
         source_record_id=_source_record_id(raw, request=request, metric_name=metric_name, marketing_year=marketing_year),
-        commodity_family=_string_value(raw, "commodity_family", "commodityFamily") or request.commodity_family.commodity_family,
+        commodity_family=commodity_family,
         product_code=product_code,
         metric_name=metric_name,
         country_code=country.code,
         country_name=country_name,
-        region_code=_string_value(raw, "region_code", "regionCode"),
-        region_name=_string_value(raw, "region_name", "regionName"),
+        region_code=_string_value(raw, "region_code", "regionCode", "regioncode"),
+        region_name=_string_value(raw, "region_name", "regionName", "regionname"),
         marketing_year=marketing_year,
         marketing_year_start=marketing_year_start,
         marketing_year_end=marketing_year_end,
@@ -685,7 +742,8 @@ def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fe
         frequency=_normalize_frequency(_string_value(raw, "frequency")),
         estimate_type=estimate_type,
         metric_value=metric_value,
-        metric_unit=_string_value(raw, "metric_unit", "unit", "unitDescription") or "unknown",
+        metric_unit=_string_value(raw, "metric_unit", "metricunit", "unit", "unitDescription", "unitdescription", "unit_description")
+        or "unknown",
         value_usd=_decimal_or_none(_first_present(raw, "value_usd", "valueUsd")),
         is_forecast=_bool_or_default(_first_present(raw, "is_forecast", "isForecast"), estimate_type in {"forecast", "projection"}),
         is_revision=_bool_or_default(_first_present(raw, "is_revision", "isRevision"), False),
@@ -1042,9 +1100,148 @@ def _raw_data_rows(data: dict[str, Any]) -> list[Any] | None:
     return None
 
 
+def _raw_rows_from_payload(payload: bytes | str | dict[str, Any]) -> list[Any] | None:
+    if isinstance(payload, bytes) and _is_zip_payload(payload):
+        return _csv_rows_from_zip(payload)
+    if isinstance(payload, bytes) and _looks_like_csv_payload(payload):
+        return _csv_rows_from_text(_decode_text_payload(payload), source_name="payload.csv")
+    if isinstance(payload, str) and _looks_like_csv_text(payload):
+        return _csv_rows_from_text(payload, source_name="payload.csv")
+    data = _json_payload(payload)
+    return _raw_data_rows(data)
+
+
+def _is_zip_payload(payload: bytes) -> bool:
+    return zipfile.is_zipfile(io.BytesIO(payload))
+
+
+def _looks_like_csv_payload(payload: bytes) -> bool:
+    stripped = payload[:256].lstrip()
+    return b"," in stripped and not stripped.startswith((b"{", b"[", b"<"))
+
+
+def _looks_like_csv_text(payload: str) -> bool:
+    stripped = payload[:256].lstrip()
+    return "," in stripped and not stripped.startswith(("{", "[", "<"))
+
+
+def _decode_text_payload(payload: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return payload.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return payload.decode("utf-8", errors="replace")
+
+
+def _csv_rows_from_zip(payload: bytes) -> list[dict[str, Any]]:
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        csv_names = [name for name in archive.namelist() if name.lower().endswith(".csv") and not name.endswith("/")]
+        if not csv_names:
+            raise UsdaPsdParseError("downloadable USDA PSD ZIP does not contain a CSV file")
+        csv_name = sorted(csv_names)[0]
+        text = _decode_text_payload(archive.read(csv_name))
+        return _csv_rows_from_text(text, source_name=csv_name)
+
+
+def _csv_rows_from_text(text: str, *, source_name: str) -> list[dict[str, Any]]:
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+    if not reader.fieldnames:
+        raise UsdaPsdParseError(f"CSV file has no header row: {source_name}")
+    rows: list[dict[str, Any]] = []
+    for index, raw_row in enumerate(reader, start=1):
+        if raw_row is None:
+            continue
+        cleaned = {str(key).strip(): (value.strip() if isinstance(value, str) else value) for key, value in raw_row.items() if key is not None}
+        if not any(value not in (None, "") for value in cleaned.values()):
+            continue
+        normalized = dict(cleaned)
+        for key, value in cleaned.items():
+            normalized.setdefault(_normalize_column_key(key), value)
+        normalized["_csv_source_name"] = source_name
+        normalized["_csv_row_number"] = index
+        rows.append(normalized)
+    return rows
+
+
+def _normalize_column_key(value: str) -> str:
+    characters = [char.lower() if char.isalnum() else "_" for char in value.strip()]
+    normalized = "".join(characters)
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    return normalized.strip("_")
+
+
+def _raw_row_in_requested_scope(raw: dict[str, Any], request: UsdaPsdRequest) -> bool:
+    commodity = _downloadable_commodity_from_raw(raw)
+    if commodity is not None:
+        requested_product = request.commodity_family.product_code
+        if requested_product is not None and commodity.product_code != requested_product:
+            return False
+        if requested_product is None and commodity.commodity_family != request.commodity_family.commodity_family:
+            return False
+    elif _source_commodity_code(raw):
+        return False
+
+    try:
+        if _country_code(raw, request) != request.country.code:
+            return False
+    except ValueError:
+        return False
+
+    year = _integer_or_none(_marketing_year_or_none(raw))
+    if year is not None and not (request.from_marketing_year <= year <= request.to_marketing_year):
+        return False
+    return True
+
+
+def _downloadable_commodity_from_raw(raw: dict[str, Any]):
+    code = _source_commodity_code(raw)
+    if code is None:
+        return None
+    return DOWNLOADABLE_OILSEEDS_COMMODITIES_BY_CODE.get(code)
+
+
+def _source_commodity_code(raw: dict[str, Any]) -> str | None:
+    value = _string_value(
+        raw,
+        "commodity_code",
+        "commodityCode",
+        "commoditycode",
+        "source_commodity_code",
+        "sourceCommodityCode",
+        "commodity",
+    )
+    if value is None:
+        return None
+    normalized = value.strip()
+    if normalized.isdigit():
+        return normalized.zfill(7)
+    return normalized
+
+
+def _marketing_year_or_none(raw: dict[str, Any]) -> str | None:
+    value = _first_present(raw, "marketing_year", "marketingYear", "marketingyear", "market_year", "marketYear", "marketyear", "year")
+    if value in (None, ""):
+        return None
+    return str(value).strip()
+
+
 def _content_type_check(content_type: str | None, *, commodity_family: str) -> PsdResponseCheck:
     normalized = (content_type or "").split(";")[0].strip().lower()
-    ok = normalized in {"application/json", "text/json", "text/plain"} or normalized.endswith("+json")
+    ok = normalized in {
+        "application/json",
+        "application/zip",
+        "application/x-zip-compressed",
+        "text/csv",
+        "text/json",
+        "text/plain",
+    } or normalized.endswith("+json")
     return PsdResponseCheck(
         "supply_demand_content_type_expected",
         "pass" if ok else "fail",
@@ -1069,24 +1266,33 @@ def _normalize_metric(value: str | None) -> str | None:
         "production_volume": "production_volume",
         "domestic_consumption": "domestic_consumption",
         "domestic_use": "domestic_consumption",
+        "dom_consumption": "domestic_consumption",
+        "domestic_cons": "domestic_consumption",
         "total_domestic_consumption": "domestic_consumption",
+        "total_dom_consumption": "domestic_consumption",
         "feed_use": "feed_use",
         "feed": "feed_use",
         "crush": "crush_volume",
         "crush_volume": "crush_volume",
         "exports": "exports_volume",
         "ty_exports": "exports_volume",
+        "my_exports": "exports_volume",
         "exports_volume": "exports_volume",
         "imports": "imports_volume",
         "ty_imports": "imports_volume",
+        "my_imports": "imports_volume",
         "imports_volume": "imports_volume",
         "beginning_stocks": "beginning_stocks",
+        "beginning_stock": "beginning_stocks",
         "ending_stocks": "ending_stocks",
         "ending_stock": "ending_stocks",
         "stock_to_use": "stock_to_use_ratio",
+        "stock_to_use_ratio_pct": "stock_to_use_ratio",
         "stock_to_use_ratio": "stock_to_use_ratio",
         "planted_area": "planted_area",
+        "area_planted": "planted_area",
         "harvested_area": "harvested_area",
+        "area_harvested": "harvested_area",
         "yield": "yield",
         "yield_value": "yield",
     }
@@ -1114,11 +1320,22 @@ def _normalize_frequency(value: str | None) -> str:
 
 
 def _country_code(raw: dict[str, Any], request: UsdaPsdRequest) -> str:
-    return (_string_value(raw, "country_code", "countryCode", "country") or request.country.code).upper()
+    value = _string_value(raw, "country_code", "countryCode", "countryCode".lower(), "country_code", "country", "Country Code")
+    name = _string_value(raw, "country_name", "countryName", "countryname", "country", "Country Name")
+    candidate = (value or name or request.country.code).strip().upper()
+    try:
+        return resolve_country(candidate).code
+    except ValueError:
+        if name:
+            try:
+                return resolve_country(name).code
+            except ValueError:
+                pass
+    return candidate
 
 
 def _marketing_year(raw: dict[str, Any]) -> str:
-    value = _first_present(raw, "marketing_year", "marketingYear", "marketYear", "year")
+    value = _first_present(raw, "marketing_year", "marketingYear", "marketingyear", "market_year", "marketYear", "marketyear", "year")
     if value in (None, ""):
         raise UsdaPsdParseError("marketing year is missing")
     return str(value).strip()
@@ -1135,10 +1352,11 @@ def _source_record_id(raw: dict[str, Any], *, request: UsdaPsdRequest, metric_na
     explicit = _string_value(raw, "id", "source_record_id", "sourceRecordId", "recordId")
     if explicit:
         return explicit
+    commodity_code = _source_commodity_code(raw) or request.commodity_family.code
     return "|".join(
         [
-            request.commodity_family.code,
-            request.country.code,
+            commodity_code,
+            _country_code(raw, request),
             marketing_year,
             metric_name,
         ]

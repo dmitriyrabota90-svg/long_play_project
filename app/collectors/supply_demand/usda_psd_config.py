@@ -7,8 +7,10 @@ COLLECTOR_NAME = "usda_psd"
 PARSER_VERSION = "usda_psd_v1"
 SOURCE_SCHEMA_STATUS = "needs_verification"
 
-BASE_URL = "https://apps.fas.usda.gov/psdonline/"
-LIVE_PROBE_ENDPOINT_CANDIDATE = "https://apps.fas.usda.gov/psdonline/app/index.html#/app/home"
+BASE_URL = "https://apps.fas.usda.gov/PSDOnlineApi/api"
+DOWNLOADABLE_DATASET_ENDPOINT = f"{BASE_URL}/downloadableData/GetDatasetContents"
+OILSEEDS_COMMODITY_GROUP_CODE = "oil"
+OILSEEDS_DATASET_FILENAME = "psd_oilseeds_csv.zip"
 REQUEST_TIMEOUT = 20.0
 DEFAULT_MAXRECORDS = 100
 MAX_MAXRECORDS = 500
@@ -43,6 +45,14 @@ class PsdCommodityFamily:
     display_name: str
 
 
+@dataclass(frozen=True)
+class PsdDownloadableCommodity:
+    source_commodity_code: str
+    source_commodity_name: str
+    commodity_family: str
+    product_code: str
+
+
 SUPPORTED_COMMODITY_FAMILIES = (
     PsdCommodityFamily("soybean", "soybean", None, "Soybean context"),
     PsdCommodityFamily("soybean_oil", "soybean", "soybean_oil", "Soybean oil"),
@@ -53,6 +63,16 @@ SUPPORTED_COMMODITY_FAMILIES = (
 )
 
 COMMODITY_FAMILIES_BY_CODE = {item.code: item for item in SUPPORTED_COMMODITY_FAMILIES}
+
+DOWNLOADABLE_OILSEEDS_COMMODITIES = (
+    PsdDownloadableCommodity("0813100", "Meal, Soybean", "soybean", "soybean_meal"),
+    PsdDownloadableCommodity("0813600", "Meal, Rapeseed", "rapeseed_canola", "rapeseed_meal"),
+    PsdDownloadableCommodity("4232000", "Oil, Soybean", "soybean", "soybean_oil"),
+    PsdDownloadableCommodity("4239100", "Oil, Rapeseed", "rapeseed_canola", "rapeseed_oil"),
+)
+DOWNLOADABLE_OILSEEDS_COMMODITIES_BY_CODE = {
+    item.source_commodity_code: item for item in DOWNLOADABLE_OILSEEDS_COMMODITIES
+}
 
 
 @dataclass(frozen=True)
@@ -73,7 +93,9 @@ SUPPORTED_COUNTRIES = (
 
 COUNTRIES_BY_CODE = {item.code: item for item in SUPPORTED_COUNTRIES}
 COUNTRY_ALIASES = {
+    "R00": COUNTRIES_BY_CODE["WLD"],
     "WORLD": COUNTRIES_BY_CODE["WLD"],
+    "WORLD TOTAL": COUNTRIES_BY_CODE["WLD"],
     "ALL": COUNTRIES_BY_CODE["WLD"],
     "US": COUNTRIES_BY_CODE["USA"],
     "UNITED STATES": COUNTRIES_BY_CODE["USA"],
@@ -124,10 +146,5 @@ def usda_psd_live_probe_params(
     maxrecords: int,
 ) -> dict[str, str]:
     return {
-        "commodity_family": commodity_family.code,
-        "country": country.code,
-        "from_marketing_year": str(from_marketing_year),
-        "to_marketing_year": str(to_marketing_year),
-        "maxrecords": str(maxrecords),
-        "source_schema_status": SOURCE_SCHEMA_STATUS,
+        "dataSetName": OILSEEDS_DATASET_FILENAME,
     }

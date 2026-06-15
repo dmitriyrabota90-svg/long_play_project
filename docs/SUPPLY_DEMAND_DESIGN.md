@@ -602,6 +602,43 @@ python scripts/run_collector.py usda_psd \
 `--live-probe` is an explicit opt-in. The collector has no broad crawler mode
 and no scheduler mode.
 
+## Phase 6.9C USDA PSD Downloadable Oilseeds Hotfix
+
+Phase 6.9A showed that the first live probe endpoint returned the PSD Online
+HTML application shell rather than a usable data payload. Phase 6.9B traced the
+frontend and found the real API base:
+
+```text
+https://apps.fas.usda.gov/PSDOnlineApi/api/
+```
+
+For the first production-safe hotfix, the collector intentionally avoids the
+discovered `api/query/RunQuery` POST endpoint. Instead, `--live-probe` fetches
+the bounded downloadable oilseeds dataset:
+
+```text
+downloadableData/GetDatasetContents?dataSetName=psd_oilseeds_csv.zip
+```
+
+The parser accepts ZIP payloads, extracts the CSV member, and normalizes only
+the reviewed oilseeds commodity codes:
+
+| PSD commodity code | PSD commodity | product_code |
+| --- | --- | --- |
+| `0813100` | Meal, Soybean | `soybean_meal` |
+| `0813600` | Meal, Rapeseed | `rapeseed_meal` |
+| `4232000` | Oil, Soybean | `soybean_oil` |
+| `4239100` | Oil, Rapeseed | `rapeseed_oil` |
+
+The collector still requires an explicit `--commodity-family`, country, and
+marketing-year window. Rows outside the requested product, country, and year
+range are ignored before normalization. Raw ZIP evidence is stored through the
+normal `RawStore` / `raw_responses` path.
+
+Fixture mode supports JSON, CSV, and ZIP files. Local tests use a small
+oilseeds CSV fixture zipped in memory. The live collector remains manual-only,
+has no scheduler registration, and does not update daily features or exports.
+
 ## Phase 6.7E Feature Integration Into `daily_product_features`
 
 Nearest-term behavior:

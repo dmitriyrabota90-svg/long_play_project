@@ -1012,6 +1012,13 @@ scheduled. It writes raw evidence, `raw_responses`, quality checks, and
 normalized `supply_demand_observations`; it does not rebuild
 `daily_product_features`, does not change exports, and does not add ML targets.
 
+Phase 6.9C changes the live USDA PSD source from the PSD Online HTML shell to
+the `PSDOnlineApi` downloadable oilseeds dataset. The controlled live probe
+downloads `psd_oilseeds_csv.zip`, stores the raw ZIP through `RawStore`, extracts
+the CSV, and normalizes only the reviewed soybean/rapeseed oil and meal
+commodity codes. The discovered `api/query/RunQuery` POST endpoint is not used
+in this hotfix.
+
 Use a reviewed fixture for local validation:
 
 ```bash
@@ -1020,11 +1027,11 @@ python scripts/run_collector.py usda_psd \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
   --country WLD \
-  --fixture-file tests/fixtures/usda_psd/sample.json
+  --fixture-file tests/fixtures/usda_psd/oilseeds_sample.csv
 ```
 
-Use `--live-probe` only after the USDA PSD endpoint contract has been manually
-reviewed for the target commodity/country/year window:
+Use `--live-probe` only after tests pass and a fresh controlled production
+probe has been explicitly approved:
 
 ```bash
 python scripts/run_collector.py usda_psd \

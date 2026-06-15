@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
+import io
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -27,8 +29,10 @@ from app.collectors.supply_demand.usda_psd import (
 )
 from app.collectors.supply_demand.usda_psd_config import (
     DEFAULT_MAXRECORDS,
+    DOWNLOADABLE_DATASET_ENDPOINT,
+    OILSEEDS_COMMODITY_GROUP_CODE,
+    OILSEEDS_DATASET_FILENAME,
     HEADERS,
-    LIVE_PROBE_ENDPOINT_CANDIDATE,
     MAX_MARKETING_YEARS_PER_RUN,
     MAX_MAXRECORDS,
     REQUEST_TIMEOUT,
@@ -135,6 +139,17 @@ def psd_json(
     return json.dumps({"data": rows}, separators=(",", ":")).encode("utf-8")
 
 
+def psd_oilseeds_csv() -> str:
+    return Path("tests/fixtures/usda_psd/oilseeds_sample.csv").read_text(encoding="utf-8")
+
+
+def psd_oilseeds_zip(csv_text: str | None = None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("psd_oilseeds.csv", csv_text if csv_text is not None else psd_oilseeds_csv())
+    return buffer.getvalue()
+
+
 def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert SOURCE_CODE == "usda_psd"
     assert SOURCE_SCHEMA_STATUS == "needs_verification"
@@ -142,6 +157,10 @@ def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert DEFAULT_MAXRECORDS == 100
     assert MAX_MAXRECORDS == 500
     assert MAX_MARKETING_YEARS_PER_RUN == 3
+    assert DOWNLOADABLE_DATASET_ENDPOINT == "https://apps.fas.usda.gov/PSDOnlineApi/api/downloadableData/GetDatasetContents"
+    assert OILSEEDS_COMMODITY_GROUP_CODE == "oil"
+    assert OILSEEDS_DATASET_FILENAME == "psd_oilseeds_csv.zip"
+    assert "psdonline/app/index.html" not in DOWNLOADABLE_DATASET_ENDPOINT.lower()
     assert "commodity-dataset-builder" in HEADERS["User-Agent"]
     assert {"WLD", "USA", "BRA", "ARG", "CAN", "CHN", "EU"} == {country.code for country in SUPPORTED_COUNTRIES}
     assert {
@@ -218,6 +237,27 @@ def test_usda_psd_parser_normalizes_fixture_rows() -> None:
     assert build_supply_demand_source_record_hash(source_code=SOURCE_CODE, row=rows[0], supply_demand_commodity_id=1)
 
 
+def test_usda_psd_parser_extracts_downloadable_oilseeds_zip_and_filters_scope() -> None:
+    request = _request()
+    rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
+        psd_oilseeds_zip(),
+        request=request,
+        fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+    )
+
+    assert rows_array_present is True
+    assert raw_rows_count == 7
+    assert malformed == []
+    assert [row.metric_name for row in rows] == ["production_volume", "exports_volume"]
+    assert {row.product_code for row in rows} == {"soybean_oil"}
+    assert {row.commodity_family for row in rows} == {"soybean"}
+    assert {row.country_code for row in rows} == {"WLD"}
+    assert {row.marketing_year for row in rows} == {"2023"}
+    assert rows[0].source_record_id == "4232000|WLD|2023|production_volume"
+    assert rows[0].metric_value == Decimal("1000.5")
+    assert rows[0].metric_unit == "1000 Metric Tons"
+
+
 def test_usda_psd_parser_reports_empty_and_unknown_formats() -> None:
     request = _request()
     rows, malformed, checks = assess_usda_psd_response(
@@ -278,6 +318,37 @@ def test_usda_psd_collector_inserts_observations_with_raw_and_quality_checks(tmp
     assert "supply_demand_raw_response_persisted" in check_names
     assert "supply_demand_source_record_hash_present" in check_names
     assert "supply_demand_live_probe_skipped_fixture_mode" in check_names
+
+
+def test_usda_psd_collector_inserts_from_zip_fixture_with_raw_zip_extension(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    fixture = _write_fixture(tmp_path, psd_oilseeds_zip(), name="psd_oilseeds_csv.zip")
+    try:
+        result = UsdaPsdCollector(
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+        ).run(
+            session,
+            commodity_family="soybean_oil",
+            from_marketing_year=2023,
+            to_marketing_year=2023,
+            country="WLD",
+            fixture_file=fixture,
+        )
+        rows = session.scalars(select(SupplyDemandObservation).order_by(SupplyDemandObservation.source_record_id)).all()
+        raw_response = session.scalar(select(RawResponse))
+        product_codes = {row.supply_demand_commodity.product_code for row in rows}
+    finally:
+        cleanup()
+
+    assert result.status == "success"
+    assert result.records_found == 2
+    assert result.records_written == 2
+    assert len(rows) == 2
+    assert raw_response is not None
+    assert raw_response.content_type == "application/zip"
+    assert raw_response.storage_path.endswith(".zip")
+    assert product_codes == {"soybean_oil"}
 
 
 def test_usda_psd_duplicate_retry_skips_existing_observations(tmp_path: Path) -> None:
@@ -380,7 +451,7 @@ def test_usda_psd_missing_source_returns_error_without_raw_write(tmp_path: Path)
 
 def test_usda_psd_mocked_live_probe_uses_bounded_params_and_headers(tmp_path: Path) -> None:
     session, cleanup = build_seeded_session()
-    client = FakePsdClient()
+    client = FakePsdClient(payload=psd_oilseeds_zip())
     try:
         collector = UsdaPsdCollector(
             http_client=client,
@@ -400,11 +471,13 @@ def test_usda_psd_mocked_live_probe_uses_bounded_params_and_headers(tmp_path: Pa
         cleanup()
 
     assert result.status == "success"
+    assert result.records_found == 2
     assert result.records_written == 2
-    assert client.calls[0][0] == LIVE_PROBE_ENDPOINT_CANDIDATE
+    assert client.calls[0][0] == DOWNLOADABLE_DATASET_ENDPOINT
     assert client.calls[0][1] == build_usda_psd_live_probe_params(_request())
     assert client.calls[0][2] == HEADERS
     assert client.calls[0][3] == REQUEST_TIMEOUT
+    assert client.calls[0][1] == {"dataSetName": OILSEEDS_DATASET_FILENAME}
 
 
 def test_usda_psd_cli_argument_parsing_supports_manual_fixture_mode() -> None:

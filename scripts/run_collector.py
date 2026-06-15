@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--to-marketing-year", type=int, help="Inclusive end marketing year for usda_psd.")
     parser.add_argument("--country", help="Country code for usda_psd, for example WLD.")
     parser.add_argument("--dry-run", action="store_true", help="Parse and persist raw evidence without normalized writes. Used by usda_psd.")
-    parser.add_argument("--fixture-file", help="Local USDA PSD fixture JSON file. Used by usda_psd.")
+    parser.add_argument("--fixture-file", help="Local USDA PSD fixture JSON, CSV, or ZIP file. Used by usda_psd.")
     parser.add_argument("--live-probe", action="store_true", help="Opt in to a bounded USDA PSD live probe. Used by usda_psd.")
     return parser
 

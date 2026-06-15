@@ -1570,6 +1570,19 @@ The first implementation is intentionally conservative:
 - default `--maxrecords`: 100, hard cap 500;
 - source schema status: `needs_verification`.
 
+Phase 6.9C updates the live source from the PSD Online HTML application shell to
+the PSDOnlineApi downloadable oilseeds dataset. `--live-probe` now requests the
+bounded `psd_oilseeds_csv.zip` dataset through `PSDOnlineApi` and parses the
+CSV inside the ZIP. The discovered `api/query/RunQuery` POST endpoint is not
+used in this first hotfix.
+
+Reviewed downloadable commodity codes:
+
+- `4232000` -> `soybean_oil`
+- `0813100` -> `soybean_meal`
+- `4239100` -> `rapeseed_oil`
+- `0813600` -> `rapeseed_meal`
+
 Run against a reviewed local fixture:
 
 ```bash
@@ -1578,7 +1591,7 @@ python scripts/run_collector.py usda_psd \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
   --country WLD \
-  --fixture-file tests/fixtures/usda_psd/sample.json
+  --fixture-file tests/fixtures/usda_psd/oilseeds_sample.csv
 ```
 
 Opt in to a bounded live probe only when the USDA PSD endpoint contract has
