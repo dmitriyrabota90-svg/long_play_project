@@ -178,7 +178,7 @@ def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert "getdatasetcontents" not in DOWNLOADABLE_DATASET_ENDPOINT.lower()
     assert DOWNLOADABLE_DATASET_ENDPOINT.endswith(OILSEEDS_DATASET_FILENAME)
     assert "commodity-dataset-builder" in HEADERS["User-Agent"]
-    assert {"WLD", "USA", "BRA", "ARG", "CAN", "CHN", "EU"} == {country.code for country in SUPPORTED_COUNTRIES}
+    assert {"WLD", "US", "BR", "AR", "CA", "CH", "EU"} == {country.code for country in SUPPORTED_COUNTRIES}
     assert {
         "production_volume",
         "domestic_consumption",
@@ -200,8 +200,28 @@ def test_usda_psd_request_validation_rejects_unbounded_or_unknown_inputs() -> No
         commodity_family="soybean_oil",
         from_marketing_year=2022,
         to_marketing_year=2024,
-        country="WLD",
+        country="US",
         maxrecords=100,
+    )
+    assert (
+        build_usda_psd_request(
+            commodity_family="soybean_oil",
+            from_marketing_year=2024,
+            to_marketing_year=2024,
+            country="United States",
+            maxrecords=100,
+        ).country.code
+        == "US"
+    )
+    assert (
+        build_usda_psd_request(
+            commodity_family="soybean_oil",
+            from_marketing_year=2024,
+            to_marketing_year=2024,
+            country="Brazil",
+            maxrecords=100,
+        ).country.code
+        == "BR"
     )
 
     with pytest.raises(ValueError, match="unsupported USDA PSD commodity family"):
@@ -254,7 +274,7 @@ def test_usda_psd_parser_normalizes_fixture_rows() -> None:
 
 
 def test_usda_psd_parser_extracts_downloadable_oilseeds_zip_and_filters_scope() -> None:
-    request = _request()
+    request = _request(country="US")
     rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
         psd_oilseeds_zip(),
         request=request,
@@ -262,16 +282,56 @@ def test_usda_psd_parser_extracts_downloadable_oilseeds_zip_and_filters_scope() 
     )
 
     assert rows_array_present is True
-    assert raw_rows_count == 7
+    assert raw_rows_count == 9
     assert malformed == []
     assert [row.metric_name for row in rows] == ["production_volume", "exports_volume"]
     assert {row.product_code for row in rows} == {"soybean_oil"}
     assert {row.commodity_family for row in rows} == {"soybean"}
-    assert {row.country_code for row in rows} == {"WLD"}
+    assert {row.country_code for row in rows} == {"US"}
     assert {row.marketing_year for row in rows} == {"2023"}
-    assert rows[0].source_record_id == "4232000|WLD|2023|production_volume"
+    assert rows[0].source_record_id == "4232000|US|2023|production_volume"
     assert rows[0].metric_value == Decimal("1000.5")
     assert rows[0].metric_unit == "1000 Metric Tons"
+
+
+def test_usda_psd_parser_extracts_brazil_country_level_rows() -> None:
+    request = _request(country="BR")
+    rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
+        psd_oilseeds_zip(),
+        request=request,
+        fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+    )
+
+    assert rows_array_present is True
+    assert raw_rows_count == 9
+    assert malformed == []
+    assert [row.metric_name for row in rows] == ["production_volume", "exports_volume"]
+    assert {row.country_code for row in rows} == {"BR"}
+    assert rows[0].source_record_id == "4232000|BR|2023|production_volume"
+    assert rows[0].metric_value == Decimal("1200.0")
+
+
+def test_usda_psd_parser_does_not_fabricate_world_rows_from_country_level_zip() -> None:
+    request = _request(country="WLD")
+    rows, malformed, checks = assess_usda_psd_response(
+        payload=psd_oilseeds_zip(),
+        content_type="application/zip",
+        status_code=200,
+        request=request,
+        fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+    )
+    normalized_check = next(check for check in checks if check.check_name == "supply_demand_normalized_rows_found")
+
+    assert rows == []
+    assert malformed == []
+    assert normalized_check.status == "fail"
+    assert normalized_check.severity == "warning"
+    assert normalized_check.details["raw_rows_count"] == 9
+    assert normalized_check.details["parsed_rows_count"] == 0
+    assert (
+        normalized_check.details["message"]
+        == "USDA PSD oilseeds ZIP has no WLD/World rows; use concrete country codes or explicit aggregation mode"
+    )
 
 
 def test_usda_psd_parser_rejects_downloadable_metadata_json() -> None:
@@ -393,7 +453,7 @@ def test_usda_psd_collector_inserts_from_zip_fixture_with_raw_zip_extension(tmp_
             commodity_family="soybean_oil",
             from_marketing_year=2023,
             to_marketing_year=2023,
-            country="WLD",
+            country="US",
             fixture_file=fixture,
         )
         rows = session.scalars(select(SupplyDemandObservation).order_by(SupplyDemandObservation.source_record_id)).all()
@@ -410,6 +470,33 @@ def test_usda_psd_collector_inserts_from_zip_fixture_with_raw_zip_extension(tmp_
     assert raw_response.content_type == "application/zip"
     assert raw_response.storage_path.endswith(".zip")
     assert product_codes == {"soybean_oil"}
+
+
+def test_usda_psd_collector_writes_concrete_brazil_rows_from_zip_fixture(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    fixture = _write_fixture(tmp_path, psd_oilseeds_zip(), name="psd_oilseeds_csv.zip")
+    try:
+        result = UsdaPsdCollector(
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+        ).run(
+            session,
+            commodity_family="soybean_oil",
+            from_marketing_year=2023,
+            to_marketing_year=2023,
+            country="BR",
+            fixture_file=fixture,
+        )
+        rows = session.scalars(select(SupplyDemandObservation).order_by(SupplyDemandObservation.source_record_id)).all()
+        metric_names = [row.supply_demand_commodity.metric_name for row in rows]
+    finally:
+        cleanup()
+
+    assert result.status == "success"
+    assert result.records_found == 2
+    assert result.records_written == 2
+    assert {row.country_code for row in rows} == {"BR"}
+    assert metric_names == ["exports_volume", "production_volume"]
 
 
 def test_usda_psd_duplicate_retry_skips_existing_observations(tmp_path: Path) -> None:
@@ -524,7 +611,7 @@ def test_usda_psd_mocked_live_probe_uses_bounded_params_and_headers(tmp_path: Pa
             commodity_family="soybean_oil",
             from_marketing_year=2023,
             to_marketing_year=2023,
-            country="WLD",
+            country="US",
             maxrecords=100,
             live_probe=True,
         )
@@ -535,7 +622,7 @@ def test_usda_psd_mocked_live_probe_uses_bounded_params_and_headers(tmp_path: Pa
     assert result.records_found == 2
     assert result.records_written == 2
     assert client.calls[0][0] == DOWNLOADABLE_DATASET_ENDPOINT
-    assert client.calls[0][1] == build_usda_psd_live_probe_params(_request())
+    assert client.calls[0][1] == build_usda_psd_live_probe_params(_request(country="US"))
     assert client.calls[0][2] == HEADERS
     assert client.calls[0][3] == REQUEST_TIMEOUT
     assert client.calls[0][1] == {}
@@ -554,7 +641,7 @@ def test_usda_psd_cli_argument_parsing_supports_manual_fixture_mode() -> None:
             "--to-marketing-year",
             "2023",
             "--country",
-            "WLD",
+            "US",
             "--fixture-file",
             "tests/fixtures/usda_psd/sample.json",
             "--maxrecords",
@@ -567,7 +654,7 @@ def test_usda_psd_cli_argument_parsing_supports_manual_fixture_mode() -> None:
     assert args.commodity_family == "soybean_oil"
     assert args.from_marketing_year == 2023
     assert args.to_marketing_year == 2023
-    assert args.country == "WLD"
+    assert args.country == "US"
     assert args.fixture_file == "tests/fixtures/usda_psd/sample.json"
     assert args.maxrecords == 100
     assert args.dry_run is True
@@ -600,7 +687,7 @@ def test_usda_psd_cli_requires_fixture_or_explicit_live_probe_without_db_access(
             "--to-marketing-year",
             "2023",
             "--country",
-            "WLD",
+            "US",
         ],
         check=False,
         capture_output=True,
@@ -645,12 +732,12 @@ def test_usda_psd_is_not_registered_in_scheduler() -> None:
     assert "usda_psd" not in scheduler_text
 
 
-def _request():
+def _request(*, country: str = "WLD"):
     return build_usda_psd_request(
         commodity_family="soybean_oil",
         from_marketing_year=2023,
         to_marketing_year=2023,
-        country="WLD",
+        country=country,
         maxrecords=100,
     )
 

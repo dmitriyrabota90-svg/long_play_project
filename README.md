@@ -1578,7 +1578,9 @@ The first implementation is intentionally conservative:
 
 - supported commodity families: `soybean`, `soybean_oil`, `soybean_meal`,
   `rapeseed_canola`, `rapeseed_canola_oil`, `rapeseed_canola_meal`;
-- supported countries: `WLD`, `USA`, `BRA`, `ARG`, `CAN`, `CHN`, `EU`;
+- supported concrete USDA PSD ZIP country codes: `US`, `BR`, `AR`, `CA`,
+  `CH`, plus `EU` where present; `WLD` is accepted only as an explicit
+  no-world-row request and is not synthesized from country rows;
 - max marketing-year window: 3 years;
 - default `--maxrecords`: 100, hard cap 500;
 - source schema status: `needs_verification`.
@@ -1594,6 +1596,12 @@ the CSV inside it. The `PSDOnlineApi/api/downloadableData/GetDatasetContents`
 route is intentionally not used because production validation showed it returns
 downloadable dataset metadata, not PSD data rows. The discovered
 `api/query/RunQuery` POST endpoint remains unused in this first collector.
+Production validation also showed the direct ZIP is country-level: it has rows
+for concrete USDA country codes such as `US`, `BR`, `AR`, `CA`, and `CH`, but
+does not contain `WLD`, `R00`, or `World` aggregate rows. `WLD` therefore does
+not fabricate data; world aggregation is deferred until the country set, metric
+aggregation rules, stock-to-use formula, unit normalization, coverage policy,
+and as-of behavior are explicitly designed.
 
 Reviewed downloadable commodity codes:
 
@@ -1609,7 +1617,7 @@ python scripts/run_collector.py usda_psd \
   --commodity-family soybean_oil \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
-  --country WLD \
+  --country US \
   --fixture-file tests/fixtures/usda_psd/oilseeds_sample.csv
 ```
 
@@ -1621,7 +1629,7 @@ python scripts/run_collector.py usda_psd \
   --commodity-family soybean_oil \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
-  --country WLD \
+  --country US \
   --maxrecords 100 \
   --live-probe
 ```

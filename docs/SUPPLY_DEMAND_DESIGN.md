@@ -587,14 +587,14 @@ python scripts/run_collector.py usda_psd \
   --commodity-family soybean_oil \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
-  --country WLD \
-  --fixture-file tests/fixtures/usda_psd/sample.json
+  --country US \
+  --fixture-file tests/fixtures/usda_psd/oilseeds_sample.csv
 
 python scripts/run_collector.py usda_psd \
   --commodity-family soybean_oil \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
-  --country WLD \
+  --country US \
   --maxrecords 100 \
   --live-probe
 ```
@@ -636,9 +636,19 @@ marketing-year window. Rows outside the requested product, country, and year
 range are ignored before normalization. Raw ZIP evidence is stored through the
 normal `RawStore` / `raw_responses` path.
 
+Phase 6.9F production validation confirmed that the direct ZIP is country-level:
+the `psd_oilseeds.csv` file contains concrete country rows such as `US`, `BR`,
+`AR`, `CA`, and `CH`, but no `WLD`, `R00`, or `World` aggregate rows for the
+checked soybean-oil slice. Phase 6.9G therefore treats `WLD` as a controlled
+no-data request when no world row exists and does not fabricate global rows.
+World aggregation is deferred until the included countries, metric aggregation
+rules, stock-to-use ratio formula, unit normalization, missing coverage policy,
+and as-of behavior are explicitly designed and tested.
+
 Fixture mode supports JSON, CSV, and ZIP files. Local tests use a small
-oilseeds CSV fixture zipped in memory. The live collector remains manual-only,
-has no scheduler registration, and does not update daily features or exports.
+country-level oilseeds CSV fixture zipped in memory. The live collector remains
+manual-only, has no scheduler registration, and does not update daily features
+or exports.
 
 ## Phase 6.7E Feature Integration Into `daily_product_features`
 

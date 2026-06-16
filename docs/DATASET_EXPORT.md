@@ -122,6 +122,10 @@ The USDA PSD collector source contract is the direct downloadable oilseeds ZIP
 (`https://apps.fas.usda.gov/psdonline/downloads/psd_oilseeds_csv.zip`).
 Metadata-only PSD API responses are rejected before normalization and are not
 valid export inputs.
+The direct ZIP is country-level. Current controlled USDA PSD probes should use
+concrete country codes such as `US`, `BR`, `AR`, `CA`, or `CH`. `WLD`/`World`
+rows are not present in the ZIP and are not synthesized; global aggregation is
+deferred until explicit aggregation and as-of rules are implemented.
 
 ## Sources Excluded
 

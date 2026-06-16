@@ -1,8 +1,10 @@
 Commodity Code,Commodity Name,Country Code,Country Name,Market Year,Attribute Description,Value,Unit Description,Month,Calendar Year,Status
-4232000,"Oil, Soybean",R00,World Total,2023,Production,1000.5,1000 Metric Tons,5,2024,Forecast
-4232000,"Oil, Soybean",R00,World Total,2023,Exports,210.75,1000 Metric Tons,5,2024,Forecast
-0813100,"Meal, Soybean",R00,World Total,2023,Production,700.25,1000 Metric Tons,5,2024,Forecast
-4239100,"Oil, Rapeseed",R00,World Total,2023,Production,111.0,1000 Metric Tons,5,2024,Forecast
-2222000,"Oilseed, Soybean",R00,World Total,2023,Production,999.0,1000 Metric Tons,5,2024,Forecast
-4232000,"Oil, Soybean",R00,World Total,2020,Production,1.0,1000 Metric Tons,5,2024,Forecast
-4232000,"Oil, Soybean",US,United States,2023,Production,2.0,1000 Metric Tons,5,2024,Forecast
+4232000,"Oil, Soybean",US,United States,2023,Production,1000.5,1000 Metric Tons,5,2024,Forecast
+4232000,"Oil, Soybean",US,United States,2023,Exports,210.75,1000 Metric Tons,5,2024,Forecast
+4232000,"Oil, Soybean",BR,Brazil,2023,Production,1200.0,1000 Metric Tons,5,2024,Forecast
+4232000,"Oil, Soybean",BR,Brazil,2023,Exports,300.25,1000 Metric Tons,5,2024,Forecast
+0813100,"Meal, Soybean",US,United States,2023,Production,700.25,1000 Metric Tons,5,2024,Forecast
+4239100,"Oil, Rapeseed",CA,Canada,2023,Production,111.0,1000 Metric Tons,5,2024,Forecast
+2222000,"Oilseed, Soybean",US,United States,2023,Production,999.0,1000 Metric Tons,5,2024,Forecast
+4232000,"Oil, Soybean",CA,Canada,2023,Production,2.0,1000 Metric Tons,5,2024,Forecast
+4232000,"Oil, Soybean",US,United States,2020,Production,1.0,1000 Metric Tons,5,2024,Forecast

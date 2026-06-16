@@ -1027,6 +1027,11 @@ meal commodity codes. The `PSDOnlineApi/api/downloadableData/GetDatasetContents`
 route is intentionally not used because it returns downloadable dataset
 metadata, not PSD data rows. The discovered `api/query/RunQuery` POST endpoint
 is not used in this hotfix.
+The direct ZIP is country-level. Use concrete USDA PSD country codes such as
+`US`, `BR`, `AR`, `CA`, and `CH` for controlled probes. `WLD`/`World` rows are
+not present in the ZIP and are not synthesized from country rows; explicit world
+aggregation is deferred until aggregation rules and coverage policy are
+designed.
 
 Use a reviewed fixture for local validation:
 
@@ -1035,7 +1040,7 @@ python scripts/run_collector.py usda_psd \
   --commodity-family soybean_oil \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
-  --country WLD \
+  --country US \
   --fixture-file tests/fixtures/usda_psd/oilseeds_sample.csv
 ```
 
@@ -1047,7 +1052,7 @@ python scripts/run_collector.py usda_psd \
   --commodity-family soybean_oil \
   --from-marketing-year 2023 \
   --to-marketing-year 2023 \
-  --country WLD \
+  --country US \
   --maxrecords 100 \
   --live-probe
 ```

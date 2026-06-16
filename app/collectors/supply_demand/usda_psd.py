@@ -601,11 +601,13 @@ def assess_usda_psd_response(
             "warning" if rows_array_present and not rows else "error" if not rows else "info",
             {
                 "commodity_family": request.commodity_family.code,
+                "country": request.country.code,
                 "rows_array_present": rows_array_present,
                 "raw_rows_count": raw_rows_count,
                 "parsed_rows_count": len(rows),
                 "malformed_rows_count": len(malformed),
                 "error": parse_error,
+                "message": _no_rows_message(request=request, rows_array_present=rows_array_present, raw_rows_count=raw_rows_count),
                 "source_schema_status": SOURCE_SCHEMA_STATUS,
             },
         )
@@ -1284,6 +1286,14 @@ def _has_parser_error(checks: list[PsdResponseCheck]) -> bool:
         check.check_name == "supply_demand_normalized_rows_found" and check.status == "fail" and check.severity == "error"
         for check in checks
     )
+
+
+def _no_rows_message(*, request: UsdaPsdRequest, rows_array_present: bool, raw_rows_count: int) -> str | None:
+    if request.country.code == "WLD" and rows_array_present and raw_rows_count > 0:
+        return "USDA PSD oilseeds ZIP has no WLD/World rows; use concrete country codes or explicit aggregation mode"
+    if rows_array_present and raw_rows_count > 0:
+        return "USDA PSD response contained rows, but none matched the requested commodity/country/year scope"
+    return None
 
 
 def _normalize_metric(value: str | None) -> str | None:
