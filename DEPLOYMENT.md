@@ -1078,6 +1078,11 @@ python scripts/export_dataset.py daily_features --format csv --output-dir data/e
 `product_supply_demand_weights`, writes `daily_supply_demand_features`, and the
 regular daily builder copies only rows with
 `supply_demand_as_of_date <= feature_date` into `daily_product_features`.
+If a newly fetched report has an as-of date later than the current product
+feature window, `supply_demand_daily` extends its default range to that first
+safe as-of date and marks earlier rows with
+`supply_demand_observations_after_feature_date_window` rather than backfilling
+future information.
 Expected nullable export fields include production/use/crush/trade/stocks,
 stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.

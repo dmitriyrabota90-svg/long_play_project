@@ -15,6 +15,7 @@ from app.config.settings import get_settings
 from app.db.models import (
     Base,
     CollectorRun,
+    DailyProductFeature,
     DailySupplyDemandFeature,
     Product,
     ProductSupplyDemandWeight,
@@ -166,6 +167,157 @@ def test_supply_demand_daily_builder_excludes_future_published_observations() ->
     assert feature.production_volume == Decimal("100.00000000")
     assert feature.supply_demand_as_of_date == date(2026, 6, 10)
     assert feature.reporting_lag_days == 5
+
+
+def test_supply_demand_daily_builder_marks_observations_after_feature_date_window() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="1000",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+            country_code="US",
+            country_name="United States",
+        )
+
+        result = build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 15),
+            to_date=date(2026, 6, 15),
+            session=session,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    assert result.observations_used == 0
+    assert feature.production_volume is None
+    assert feature.supply_demand_as_of_date is None
+    assert feature.missing_flags["supply_demand_observations_after_feature_date_window"] is True
+    assert "no_supply_demand_observations" not in feature.missing_flags
+    assert feature.metadata_json["future_supply_demand_as_of_dates"] == ["2026-06-16"]
+
+
+def test_supply_demand_daily_builder_uses_observation_on_same_as_of_date() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="1000",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+        )
+
+        result = build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 16),
+            to_date=date(2026, 6, 16),
+            session=session,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    assert result.observations_used == 1
+    assert feature.production_volume == Decimal("1000.00000000")
+    assert feature.supply_demand_as_of_date == date(2026, 6, 16)
+    assert feature.reporting_lag_days == 0
+
+
+def test_supply_demand_daily_builder_forwards_observation_after_as_of_date() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="1000",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+        )
+
+        result = build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 17),
+            to_date=date(2026, 6, 17),
+            session=session,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    assert result.observations_used == 1
+    assert feature.production_volume == Decimal("1000.00000000")
+    assert feature.supply_demand_as_of_date == date(2026, 6, 16)
+    assert feature.reporting_lag_days == 1
+
+
+def test_supply_demand_daily_builder_uses_country_rows_when_world_row_absent() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="1000",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+            country_code="US",
+            country_name="United States",
+        )
+
+        result = build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 16),
+            to_date=date(2026, 6, 16),
+            session=session,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    assert result.observations_used == 1
+    assert feature.production_volume == Decimal("1000.00000000")
+    assert feature.metadata_json["selected_country_policy"] == "prefer_WLD_else_weighted_latest_known_rows"
+
+
+def test_supply_demand_daily_default_bounds_extend_to_latest_observation_as_of_date() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        session.add(
+            DailyProductFeature(
+                product_id=context.product.id,
+                feature_date=date(2026, 6, 15),
+                as_of_at=datetime(2026, 6, 15, 15, tzinfo=timezone.utc),
+                features_json={"test": True},
+                feature_version="test",
+            )
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="1000",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+            country_code="US",
+            country_name="United States",
+        )
+
+        result = build_supply_demand_daily_features(product_code=context.product.code, session=session)
+        features = session.scalars(
+            select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id).order_by(DailySupplyDemandFeature.feature_date)
+        ).all()
+
+    assert result.dates_processed == 2
+    assert result.observations_used == 1
+    assert [feature.feature_date for feature in features] == [date(2026, 6, 15), date(2026, 6, 16)]
+    assert features[0].production_volume is None
+    assert features[0].missing_flags["supply_demand_observations_after_feature_date_window"] is True
+    assert features[1].production_volume == Decimal("1000.00000000")
+    assert features[1].supply_demand_as_of_date == date(2026, 6, 16)
 
 
 def test_supply_demand_daily_builder_derives_stock_to_use_when_source_ratio_missing() -> None:
@@ -365,6 +517,8 @@ def _add_observation(
     value: str,
     report_month: int,
     published_at: datetime | None = datetime(2026, 6, 12, tzinfo=timezone.utc),
+    country_code: str = "WLD",
+    country_name: str = "World",
 ) -> None:
     commodity = context.commodities[metric_name]
     session.add(
@@ -374,8 +528,8 @@ def _add_observation(
             collector_run_id=context.run.id,
             supply_demand_commodity_id=commodity.id,
             source_record_id=f"{metric_name}-{report_month}-{value}",
-            country_code="WLD",
-            country_name="World",
+            country_code=country_code,
+            country_name=country_name,
             region_code=None,
             region_name=None,
             marketing_year="2025/26",

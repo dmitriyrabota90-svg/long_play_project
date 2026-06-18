@@ -673,6 +673,16 @@ Implemented local behavior:
 - keep `missing_flags` explicit;
 - compute forecast revisions only against previous eligible report vintages.
 
+Phase 6.9I keeps the strict no-leakage rule and fixes the default builder
+window. When `supply_demand_daily` is run without an explicit date range, it
+now extends the end date to the latest eligible supply-demand availability date
+in addition to existing `daily_product_features` dates. This lets a newly
+fetched USDA report create a feature row for its first safe as-of date before
+the next `daily` rebuild copies it into `daily_product_features`. Feature dates
+before the report availability date remain empty and receive the explicit
+`supply_demand_observations_after_feature_date_window` missing flag instead of
+silently looking usable.
+
 Product-level columns:
 
 - `production_volume`

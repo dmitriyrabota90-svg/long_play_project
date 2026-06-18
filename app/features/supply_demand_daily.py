@@ -277,7 +277,18 @@ def _feature_values(
     values["marketing_year"] = _latest_marketing_year(used_rows)
 
     if not used_rows:
-        missing_flags["no_supply_demand_observations"] = True
+        future_as_of_dates = _future_availability_dates(
+            weights=active_weights,
+            observations=observations,
+            feature_date=feature_date,
+        )
+        if future_as_of_dates:
+            missing_flags["supply_demand_observations_after_feature_date_window"] = True
+            values["metadata_json"]["future_supply_demand_as_of_dates"] = [
+                item.isoformat() for item in future_as_of_dates
+            ]
+        else:
+            missing_flags["no_supply_demand_observations"] = True
     if values["production_volume"] is None:
         missing_flags["missing_production_volume"] = True
     if values["domestic_consumption"] is None:
@@ -396,10 +407,11 @@ def _feature_date_bounds(session: Session) -> tuple[date, date] | None:
     product_min, product_max = session.execute(
         select(func.min(DailyProductFeature.feature_date), func.max(DailyProductFeature.feature_date))
     ).one()
-    if product_min is not None and product_max is not None:
-        return product_min, product_max
     as_of_dates = [_availability_date(row) for row in session.scalars(select(SupplyDemandObservation)).all()]
     as_of_dates = [item for item in as_of_dates if item is not None]
+    if product_min is not None and product_max is not None:
+        end = max([product_max, *as_of_dates]) if as_of_dates else product_max
+        return product_min, end
     if not as_of_dates:
         return None
     return min(as_of_dates), max(as_of_dates)
@@ -467,6 +479,22 @@ def _eligible_rows(
             continue
         result.append(row)
     return result
+
+
+def _future_availability_dates(
+    *,
+    weights: list[_SupplyDemandWeight],
+    observations: dict[int, list[SupplyDemandObservation]],
+    feature_date: date,
+) -> list[date]:
+    commodity_ids = {weight.supply_demand_commodity_id for weight in weights}
+    dates: set[date] = set()
+    for commodity_id in commodity_ids:
+        for row in observations.get(commodity_id, []):
+            as_of_date = _availability_date(row)
+            if as_of_date is not None and as_of_date > feature_date:
+                dates.add(as_of_date)
+    return sorted(dates)
 
 
 def _latest_observation(rows: list[SupplyDemandObservation]) -> SupplyDemandObservation:

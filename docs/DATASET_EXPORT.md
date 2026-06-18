@@ -160,6 +160,14 @@ are forward-filled only after publication/fetch availability. Historical bars
 are not consumed by daily features yet, so the export cannot accidentally treat
 historical backfill as if it was available in the past.
 
+Phase 6.9I keeps that rule unchanged. It only aligns the
+`supply_demand_daily` default build window with newly available official report
+as-of dates, so a report fetched on `2026-06-16` can populate `2026-06-16` and
+later feature rows while `2026-06-15` and earlier remain empty. Rows before the
+report as-of date are marked with
+`supply_demand_observations_after_feature_date_window` in supply-demand missing
+metadata.
+
 ## Known Limitations
 
 - No labels or ML targets are included.

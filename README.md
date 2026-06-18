@@ -1661,6 +1661,13 @@ includes nullable supply-demand columns such as `production_volume`,
 `production_forecast_revision`, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.
 
+Phase 6.9I keeps strict as-of behavior and aligns the default
+`supply_demand_daily` build window with newly available supply-demand report
+dates. If a USDA report is fetched on `2026-06-16`, feature dates before that
+day remain empty and are marked with
+`supply_demand_observations_after_feature_date_window`; the `2026-06-16` row
+and later rows may safely use the observation.
+
 Phase 6.7E does not add ML targets, does not add scheduler jobs, and does not
 run collectors by itself. Server execution remains a later controlled batch.
 
