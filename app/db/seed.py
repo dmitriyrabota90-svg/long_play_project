@@ -353,6 +353,7 @@ PRODUCT_TRADE_CODE_WEIGHTS: tuple[ProductTradeCodeWeightSeed, ...] = (
 SUPPLY_DEMAND_METRIC_GROUPS: dict[str, str] = {
     "production_volume": "production",
     "domestic_consumption": "consumption_use",
+    "food_use": "consumption_use",
     "feed_use": "consumption_use",
     "crush_volume": "processing",
     "exports_volume": "trade",
@@ -374,6 +375,8 @@ SUPPLY_DEMAND_PRODUCT_METRICS: dict[str, tuple[str, ...]] = {
     "soybean_oil": (
         "production_volume",
         "domestic_consumption",
+        "food_use",
+        "crush_volume",
         "exports_volume",
         "imports_volume",
         "beginning_stocks",
@@ -392,6 +395,8 @@ SUPPLY_DEMAND_PRODUCT_METRICS: dict[str, tuple[str, ...]] = {
     "rapeseed_oil": (
         "production_volume",
         "domestic_consumption",
+        "food_use",
+        "crush_volume",
         "exports_volume",
         "imports_volume",
         "beginning_stocks",

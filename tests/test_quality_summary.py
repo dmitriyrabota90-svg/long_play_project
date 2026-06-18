@@ -186,6 +186,61 @@ def test_quality_summary_keeps_fresh_unknown_failure_active() -> None:
     assert summary["last_active_problematic_checks"][0]["check_name"] == "new_source_parser_failed"
 
 
+def test_quality_summary_classifies_known_usda_psd_skip_and_mapping_incidents() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        expected_skip_check = _add_check(
+            session,
+            status="fail",
+            severity="warning",
+            table_name="supply_demand_observations",
+            check_name="supply_demand_malformed_row_skipped",
+            checked_at=datetime(2026, 6, 16, 12, 0, tzinfo=timezone.utc),
+            details_json={
+                "error": "unsupported or missing metric: total_supply",
+                "request": {"live_probe": True},
+            },
+        )
+        mapping_gap_check = _add_check(
+            session,
+            status="fail",
+            severity="warning",
+            table_name="supply_demand_commodities",
+            check_name="supply_demand_mapping_found",
+            checked_at=datetime(2026, 6, 16, 12, 1, tzinfo=timezone.utc),
+            details_json={
+                "product_code": "soybean_oil",
+                "metric_name": "crush_volume",
+                "request": {"live_probe": True},
+            },
+        )
+        future_unknown_skip = _add_check(
+            session,
+            status="fail",
+            severity="warning",
+            table_name="supply_demand_observations",
+            check_name="supply_demand_malformed_row_skipped",
+            checked_at=datetime(2026, 6, 19, 12, 0, tzinfo=timezone.utc),
+            details_json={
+                "error": "unsupported metric: new_unknown_metric",
+                "request": {"live_probe": True},
+            },
+        )
+        session.commit()
+
+        summary = build_quality_summary(session=session)
+
+    assert classify_quality_check(expected_skip_check) == "expected_diagnostic_incident"
+    assert classify_quality_check(mapping_gap_check) == "expected_diagnostic_incident"
+    assert classify_quality_check(future_unknown_skip) == "active_current_failure"
+    assert summary["problematic_checks"] == 3
+    assert summary["expected_diagnostic_incidents"] == 2
+    assert summary["active_current_failures"] == 1
+    assert summary["last_expected_diagnostic_incidents"][0]["classification_reason"] == (
+        "expected_usda_psd_skip_or_mapping_incident_before_phase_6_9k_fix"
+    )
+
+
 def test_operational_report_quality_status_allows_known_incidents() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:

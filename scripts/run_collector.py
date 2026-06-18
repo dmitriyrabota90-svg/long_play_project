@@ -389,6 +389,8 @@ def main() -> None:
         print(f"conflicts_count={result.conflicts_count}")
     if hasattr(result, "skipped_malformed"):
         print(f"skipped_malformed={result.skipped_malformed}")
+    if hasattr(result, "skipped_expected"):
+        print(f"skipped_expected={result.skipped_expected}")
     if hasattr(result, "observed_at_values"):
         print(f"observed_at_values={','.join(result.observed_at_values)}")
     if hasattr(result, "currency_pairs"):

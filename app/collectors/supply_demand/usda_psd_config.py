@@ -24,6 +24,7 @@ HEADERS = {
 SUPPORTED_METRICS = (
     "production_volume",
     "domestic_consumption",
+    "food_use",
     "feed_use",
     "crush_volume",
     "exports_volume",
@@ -35,6 +36,14 @@ SUPPORTED_METRICS = (
     "harvested_area",
     "yield",
 )
+
+EXPECTED_UNSUPPORTED_METRICS = {
+    "total_supply": "aggregate_total_supply_not_feature_metric",
+    "total_distribution": "aggregate_total_distribution_not_feature_metric",
+    "industrial_dom._cons.": "industrial_use_split_not_modeled_yet",
+    "feed_waste_dom._cons.": "feed_waste_split_not_modeled_yet",
+    "extr._rate,_999.9999": "extraction_rate_not_modeled_yet",
+}
 
 
 @dataclass(frozen=True)
@@ -136,6 +145,10 @@ def resolve_country(value: str) -> PsdCountry:
 
 def is_supported_metric(value: str) -> bool:
     return value in SUPPORTED_METRICS
+
+
+def expected_unsupported_metric_reason(value: str) -> str | None:
+    return EXPECTED_UNSUPPORTED_METRICS.get(value)
 
 
 def usda_psd_live_probe_params(

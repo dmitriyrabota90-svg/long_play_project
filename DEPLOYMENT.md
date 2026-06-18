@@ -1033,6 +1033,14 @@ not present in the ZIP and are not synthesized from country rows; explicit world
 aggregation is deferred until aggregation rules and coverage policy are
 designed.
 
+Supported USDA PSD metrics are production, domestic consumption, food use, feed
+use, crush, exports, imports, beginning stocks, ending stocks, stock-to-use,
+planted area, harvested area, and yield. Known PSD aggregate/detail rows that
+are not current feature inputs are expected skipped rows, not active collector
+failures, as long as supported rows are normalized. Real malformed rows, mapping
+gaps for supported metrics, and unknown unsupported metrics still require
+review. Do not start broad backfill until skip-reason summaries are understood.
+
 Use a reviewed fixture for local validation:
 
 ```bash

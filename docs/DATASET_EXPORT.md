@@ -126,6 +126,10 @@ The direct ZIP is country-level. Current controlled USDA PSD probes should use
 concrete country codes such as `US`, `BR`, `AR`, `CA`, or `CH`. `WLD`/`World`
 rows are not present in the ZIP and are not synthesized; global aggregation is
 deferred until explicit aggregation and as-of rules are implemented.
+Expected skipped USDA PSD rows, such as aggregate totals and currently
+unmodeled detail splits, are diagnostics only and do not become export columns.
+Supported metric rows must still normalize into `daily_supply_demand_features`
+before they can appear in `daily_features` exports.
 
 ## Sources Excluded
 

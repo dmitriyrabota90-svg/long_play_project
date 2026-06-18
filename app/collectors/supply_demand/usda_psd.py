@@ -21,6 +21,7 @@ from app.collectors.supply_demand.usda_psd_config import (
     DEFAULT_MAXRECORDS,
     DOWNLOADABLE_DATASET_ENDPOINT,
     DOWNLOADABLE_OILSEEDS_COMMODITIES_BY_CODE,
+    EXPECTED_UNSUPPORTED_METRICS,
     HEADERS,
     MAX_MARKETING_YEARS_PER_RUN,
     MAX_MAXRECORDS,
@@ -32,6 +33,7 @@ from app.collectors.supply_demand.usda_psd_config import (
     SUPPORTED_METRICS,
     PsdCommodityFamily,
     PsdCountry,
+    expected_unsupported_metric_reason,
     is_supported_metric,
     resolve_commodity_family,
     resolve_country,
@@ -47,6 +49,16 @@ logger = logging.getLogger(__name__)
 
 class UsdaPsdParseError(ValueError):
     """Raised when a USDA PSD response cannot be parsed safely."""
+
+
+class UsdaPsdExpectedSkip(ValueError):
+    """Raised for valid PSD rows that are intentionally outside the current feature contract."""
+
+    def __init__(self, *, category: str, reason: str, metric_name: str | None = None) -> None:
+        super().__init__(reason)
+        self.category = category
+        self.reason = reason
+        self.metric_name = metric_name
 
 
 class HttpClient(Protocol):
@@ -123,6 +135,7 @@ class UsdaPsdCollectorResult(CollectorResult):
     skipped_existing: int = 0
     skipped_unmapped: int = 0
     skipped_malformed: int = 0
+    skipped_expected: int = 0
     conflicts_count: int = 0
 
 
@@ -133,6 +146,7 @@ class _PsdStats:
     skipped_existing: int = 0
     skipped_unmapped: int = 0
     skipped_malformed: int = 0
+    skipped_expected: int = 0
     conflicts_count: int = 0
     raw_response_ids: list[int] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -258,6 +272,7 @@ class UsdaPsdCollector(BaseCollector):
             skipped_existing=stats.skipped_existing,
             skipped_unmapped=stats.skipped_unmapped,
             skipped_malformed=stats.skipped_malformed,
+            skipped_expected=stats.skipped_expected,
             conflicts_count=stats.conflicts_count,
         )
 
@@ -279,7 +294,7 @@ class UsdaPsdCollector(BaseCollector):
         raw_response = self._save_raw_response(session, source, collector_run, response, fetched_at)
         stats.raw_response_ids.append(raw_response.id)
 
-        rows, malformed, checks = assess_usda_psd_response(
+        rows, malformed, expected_skips, checks = assess_usda_psd_response(
             payload=response.content,
             content_type=response.headers.get("content-type"),
             status_code=response.status_code,
@@ -287,6 +302,7 @@ class UsdaPsdCollector(BaseCollector):
             fetched_at=fetched_at,
         )
         stats.skipped_malformed = len(malformed)
+        stats.skipped_expected = len(expected_skips)
         _write_response_checks(
             session,
             source_id=source.id,
@@ -301,6 +317,14 @@ class UsdaPsdCollector(BaseCollector):
             raw_response_id=raw_response.id,
             request=request,
             malformed=malformed,
+            checked_at=fetched_at,
+        )
+        _write_expected_skipped_row_checks(
+            session,
+            source_id=source.id,
+            raw_response_id=raw_response.id,
+            request=request,
+            expected_skips=expected_skips,
             checked_at=fetched_at,
         )
 
@@ -556,7 +580,7 @@ def assess_usda_psd_response(
     status_code: int | None,
     request: UsdaPsdRequest,
     fetched_at: datetime,
-) -> tuple[list[ParsedSupplyDemandRow], list[dict[str, Any]], list[PsdResponseCheck]]:
+) -> tuple[list[ParsedSupplyDemandRow], list[dict[str, Any]], list[dict[str, Any]], list[PsdResponseCheck]]:
     checks = [
         PsdResponseCheck(
             "supply_demand_raw_response_non_empty",
@@ -580,12 +604,13 @@ def assess_usda_psd_response(
     ]
     rows: list[ParsedSupplyDemandRow] = []
     malformed: list[dict[str, Any]] = []
+    expected_skips: list[dict[str, Any]] = []
     rows_array_present = False
     raw_rows_count = 0
     parse_error: str | None = None
     if payload:
         try:
-            rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
+            rows, malformed, expected_skips, rows_array_present, raw_rows_count = _parse_usda_psd_rows_with_skips(
                 payload,
                 request=request,
                 fetched_at=fetched_at,
@@ -606,13 +631,32 @@ def assess_usda_psd_response(
                 "raw_rows_count": raw_rows_count,
                 "parsed_rows_count": len(rows),
                 "malformed_rows_count": len(malformed),
+                "expected_skipped_rows_count": len(expected_skips),
+                "expected_skip_reason_counts": _reason_counts(expected_skips),
                 "error": parse_error,
                 "message": _no_rows_message(request=request, rows_array_present=rows_array_present, raw_rows_count=raw_rows_count),
                 "source_schema_status": SOURCE_SCHEMA_STATUS,
             },
         )
     )
-    return rows, malformed, checks
+    checks.append(
+        PsdResponseCheck(
+            "supply_demand_expected_rows_skipped",
+            "skip" if expected_skips else "pass",
+            "info",
+            {
+                "commodity_family": request.commodity_family.code,
+                "country": request.country.code,
+                "expected_skipped_rows_count": len(expected_skips),
+                "expected_skip_reason_counts": _reason_counts(expected_skips),
+                "expected_skip_sample": expected_skips[:5],
+                "supported_metrics": list(SUPPORTED_METRICS),
+                "expected_unsupported_metrics": EXPECTED_UNSUPPORTED_METRICS,
+                "source_schema_status": SOURCE_SCHEMA_STATUS,
+            },
+        )
+    )
+    return rows, malformed, expected_skips, checks
 
 
 def parse_usda_psd_rows(
@@ -621,23 +665,62 @@ def parse_usda_psd_rows(
     request: UsdaPsdRequest,
     fetched_at: datetime,
 ) -> tuple[list[ParsedSupplyDemandRow], list[dict[str, Any]], bool, int]:
+    rows, malformed, _expected_skips, rows_array_present, raw_rows_count = _parse_usda_psd_rows_with_skips(
+        payload,
+        request=request,
+        fetched_at=fetched_at,
+    )
+    return rows, malformed, rows_array_present, raw_rows_count
+
+
+def _parse_usda_psd_rows_with_skips(
+    payload: bytes | str | dict[str, Any],
+    *,
+    request: UsdaPsdRequest,
+    fetched_at: datetime,
+) -> tuple[list[ParsedSupplyDemandRow], list[dict[str, Any]], list[dict[str, Any]], bool, int]:
     raw_rows = _raw_rows_from_payload(payload)
     rows_array_present = isinstance(raw_rows, list)
     if raw_rows is None:
         raise UsdaPsdParseError("missing data/rows array or CSV rows")
     rows: list[ParsedSupplyDemandRow] = []
     malformed: list[dict[str, Any]] = []
+    expected_skips: list[dict[str, Any]] = []
     for index, raw_row in enumerate(raw_rows):
         if not isinstance(raw_row, dict):
-            malformed.append({"index": index, "error": "supply-demand row is not an object", "raw_type": type(raw_row).__name__})
+            malformed.append(
+                {
+                    "index": index,
+                    "category": "malformed_empty_or_missing_required",
+                    "error": "supply-demand row is not an object",
+                    "raw_type": type(raw_row).__name__,
+                }
+            )
             continue
         if not _raw_row_in_requested_scope(raw_row, request):
             continue
         try:
             rows.append(_parse_supply_demand_row(raw_row, request=request, fetched_at=fetched_at))
+        except UsdaPsdExpectedSkip as exc:
+            expected_skips.append(
+                {
+                    "index": index,
+                    "category": exc.category,
+                    "reason": exc.reason,
+                    "metric_name": exc.metric_name,
+                    "raw_keys": sorted(str(key) for key in raw_row.keys()),
+                }
+            )
         except UsdaPsdParseError as exc:
-            malformed.append({"index": index, "error": str(exc), "raw_keys": sorted(str(key) for key in raw_row.keys())})
-    return rows, malformed, rows_array_present, len(raw_rows)
+            malformed.append(
+                {
+                    "index": index,
+                    "category": "malformed_empty_or_missing_required",
+                    "error": str(exc),
+                    "raw_keys": sorted(str(key) for key in raw_row.keys()),
+                }
+            )
+    return rows, malformed, expected_skips, rows_array_present, len(raw_rows)
 
 
 def build_supply_demand_source_record_hash(
@@ -681,8 +764,17 @@ def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fe
             "psdAttributeName",
         )
     )
-    if metric_name is None or not is_supported_metric(metric_name):
-        raise UsdaPsdParseError(f"unsupported or missing metric: {metric_name}")
+    if metric_name is None:
+        raise UsdaPsdParseError("metric is missing")
+    if not is_supported_metric(metric_name):
+        reason = expected_unsupported_metric_reason(metric_name)
+        if reason is not None:
+            raise UsdaPsdExpectedSkip(
+                category="expected_unsupported_metric",
+                reason=reason,
+                metric_name=metric_name,
+            )
+        raise UsdaPsdParseError(f"unsupported metric: {metric_name}")
     metric_value = _decimal_or_none(_first_present(raw, "metric_value", "metricvalue", "value", "Value", "amount"))
     if metric_value is None:
         raise UsdaPsdParseError("metric value is missing or invalid")
@@ -901,6 +993,35 @@ def _write_malformed_row_checks(
             details={**item, "raw_response_id": raw_response_id, "request": _request_metadata(request)},
             checked_at=checked_at,
         )
+
+
+def _write_expected_skipped_row_checks(
+    session: Session,
+    *,
+    source_id: int,
+    raw_response_id: int,
+    request: UsdaPsdRequest,
+    expected_skips: list[dict[str, Any]],
+    checked_at: datetime,
+) -> None:
+    if not expected_skips:
+        return
+    _write_quality_check(
+        session,
+        source_id=source_id,
+        table_name="supply_demand_observations",
+        check_name="supply_demand_expected_rows_skipped",
+        status="skip",
+        severity="info",
+        details={
+            "raw_response_id": raw_response_id,
+            "expected_skipped_rows_count": len(expected_skips),
+            "expected_skip_reason_counts": _reason_counts(expected_skips),
+            "expected_skip_sample": expected_skips[:10],
+            "request": _request_metadata(request),
+        },
+        checked_at=checked_at,
+    )
 
 
 def _write_mapping_missing_quality_check(
@@ -1309,6 +1430,9 @@ def _normalize_metric(value: str | None) -> str | None:
         "domestic_cons": "domestic_consumption",
         "total_domestic_consumption": "domestic_consumption",
         "total_dom_consumption": "domestic_consumption",
+        "food_use": "food_use",
+        "food": "food_use",
+        "food_use_dom._cons.": "food_use",
         "feed_use": "feed_use",
         "feed": "feed_use",
         "crush": "crush_volume",
@@ -1336,6 +1460,14 @@ def _normalize_metric(value: str | None) -> str | None:
         "yield_value": "yield",
     }
     return aliases.get(normalized, normalized)
+
+
+def _reason_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        reason = str(item.get("reason") or item.get("category") or "unknown")
+        counts[reason] = counts.get(reason, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _normalize_estimate_type(value: str | None) -> str:

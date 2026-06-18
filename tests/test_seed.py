@@ -128,6 +128,7 @@ def test_seed_is_idempotent() -> None:
     assert {
         "production_volume",
         "domestic_consumption",
+        "food_use",
         "feed_use",
         "crush_volume",
         "exports_volume",

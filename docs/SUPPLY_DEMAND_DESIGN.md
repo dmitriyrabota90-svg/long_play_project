@@ -631,6 +631,18 @@ the reviewed oilseeds commodity codes:
 | `4232000` | Oil, Soybean | `soybean_oil` |
 | `4239100` | Oil, Rapeseed | `rapeseed_oil` |
 
+Supported feature-facing PSD metrics are production, domestic consumption,
+food use, feed use, crush, exports, imports, beginning stocks, ending stocks,
+stock-to-use, planted area, harvested area, and yield. Phase 6.9K separates
+valid-but-out-of-scope PSD rows from malformed rows: aggregate totals such as
+`total_supply` and `total_distribution`, unmodeled detail splits such as
+`industrial_dom._cons.` and `feed_waste_dom._cons.`, and extraction-rate rows
+are recorded as expected skipped rows instead of active parser failures when
+normalized supported rows are written. Truly invalid rows, such as non-numeric
+values for supported metrics, remain `supply_demand_malformed_row_skipped`
+warnings. Broad backfill should not start until the skip-reason summary for the
+target country/commodity is reviewed.
+
 The collector still requires an explicit `--commodity-family`, country, and
 marketing-year window. Rows outside the requested product, country, and year
 range are ignored before normalization. Raw ZIP evidence is stored through the
@@ -687,6 +699,8 @@ Product-level columns:
 
 - `production_volume`
 - `domestic_consumption`
+- `food_use`
+- `feed_use`
 - `crush_volume`
 - `exports_volume`
 - `imports_volume`

@@ -1610,6 +1610,15 @@ Reviewed downloadable commodity codes:
 - `4239100` -> `rapeseed_oil`
 - `0813600` -> `rapeseed_meal`
 
+Supported USDA PSD metrics are production, domestic consumption, food use, feed
+use, crush, exports, imports, beginning stocks, ending stocks, stock-to-use,
+planted area, harvested area, and yield. Phase 6.9K treats known PSD aggregate
+or detail rows that are not current feature inputs, such as `total_supply`,
+`total_distribution`, `industrial_dom._cons.`, `feed_waste_dom._cons.`, and
+`extr._rate,_999.9999`, as expected skipped rows when supported rows are also
+normalized. Invalid rows for supported metrics remain malformed-row warnings.
+Review skip-reason summaries before starting any broad supply-demand backfill.
+
 Run against a reviewed local fixture:
 
 ```bash

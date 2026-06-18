@@ -68,6 +68,8 @@ class FakePsdClient:
 def psd_json(
     *,
     production_value: str = "1000.5",
+    include_food_use: bool = False,
+    include_expected_unsupported: bool = False,
     include_malformed: bool = False,
     include_unmapped: bool = False,
 ) -> bytes:
@@ -110,6 +112,40 @@ def psd_json(
             "is_forecast": True,
         },
     ]
+    if include_food_use:
+        rows.append(
+            {
+                "id": "soybean-oil-wld-2023-food-use",
+                "commodity_family": "soybean",
+                "product_code": "soybean_oil",
+                "metric_name": "Food Use Dom. Cons.",
+                "country_code": "WLD",
+                "country_name": "World",
+                "marketing_year": "2023",
+                "report_month": 5,
+                "report_year": 2024,
+                "estimate_type": "forecast",
+                "metric_value": "55.5",
+                "metric_unit": "1000 metric tons",
+            }
+        )
+    if include_expected_unsupported:
+        rows.append(
+            {
+                "id": "soybean-oil-wld-2023-total-supply",
+                "commodity_family": "soybean",
+                "product_code": "soybean_oil",
+                "metric_name": "total_supply",
+                "country_code": "WLD",
+                "country_name": "World",
+                "marketing_year": "2023",
+                "report_month": 5,
+                "report_year": 2024,
+                "estimate_type": "forecast",
+                "metric_value": "1200",
+                "metric_unit": "1000 metric tons",
+            }
+        )
     if include_malformed:
         rows.append(
             {
@@ -182,6 +218,7 @@ def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert {
         "production_volume",
         "domestic_consumption",
+        "food_use",
         "feed_use",
         "crush_volume",
         "exports_volume",
@@ -313,7 +350,7 @@ def test_usda_psd_parser_extracts_brazil_country_level_rows() -> None:
 
 def test_usda_psd_parser_does_not_fabricate_world_rows_from_country_level_zip() -> None:
     request = _request(country="WLD")
-    rows, malformed, checks = assess_usda_psd_response(
+    rows, malformed, expected_skips, checks = assess_usda_psd_response(
         payload=psd_oilseeds_zip(),
         content_type="application/zip",
         status_code=200,
@@ -324,6 +361,7 @@ def test_usda_psd_parser_does_not_fabricate_world_rows_from_country_level_zip() 
 
     assert rows == []
     assert malformed == []
+    assert expected_skips == []
     assert normalized_check.status == "fail"
     assert normalized_check.severity == "warning"
     assert normalized_check.details["raw_rows_count"] == 9
@@ -336,7 +374,7 @@ def test_usda_psd_parser_does_not_fabricate_world_rows_from_country_level_zip() 
 
 def test_usda_psd_parser_rejects_downloadable_metadata_json() -> None:
     request = _request()
-    rows, malformed, checks = assess_usda_psd_response(
+    rows, malformed, expected_skips, checks = assess_usda_psd_response(
         payload=psd_downloadable_metadata_json(),
         content_type="application/json",
         status_code=200,
@@ -347,6 +385,7 @@ def test_usda_psd_parser_rejects_downloadable_metadata_json() -> None:
 
     assert rows == []
     assert malformed == []
+    assert expected_skips == []
     assert normalized_check.status == "fail"
     assert normalized_check.severity == "error"
     assert normalized_check.details["error"] == "USDA PSD endpoint returned downloadable dataset metadata, not data rows"
@@ -361,7 +400,7 @@ def test_usda_psd_parser_rejects_downloadable_metadata_json() -> None:
 def test_usda_psd_parser_rejects_html_shell() -> None:
     request = _request()
     payload = b"<!DOCTYPE html><html><head><title>PSD Online</title></head><body></body></html>"
-    rows, malformed, checks = assess_usda_psd_response(
+    rows, malformed, expected_skips, checks = assess_usda_psd_response(
         payload=payload,
         content_type="text/html",
         status_code=200,
@@ -372,6 +411,7 @@ def test_usda_psd_parser_rejects_html_shell() -> None:
 
     assert rows == []
     assert malformed == []
+    assert expected_skips == []
     assert normalized_check.status == "fail"
     assert normalized_check.severity == "error"
     assert normalized_check.details["error"] == "USDA PSD endpoint returned HTML shell, not data rows"
@@ -381,7 +421,7 @@ def test_usda_psd_parser_rejects_html_shell() -> None:
 
 def test_usda_psd_parser_reports_empty_and_unknown_formats() -> None:
     request = _request()
-    rows, malformed, checks = assess_usda_psd_response(
+    rows, malformed, expected_skips, checks = assess_usda_psd_response(
         payload=b"",
         content_type="application/json",
         status_code=200,
@@ -391,10 +431,35 @@ def test_usda_psd_parser_reports_empty_and_unknown_formats() -> None:
 
     assert rows == []
     assert malformed == []
+    assert expected_skips == []
     assert {check.check_name: check.status for check in checks}["supply_demand_raw_response_non_empty"] == "fail"
     assert {check.check_name: check.status for check in checks}["supply_demand_normalized_rows_found"] == "fail"
     with pytest.raises(UsdaPsdParseError):
         parse_usda_psd_rows(b'{"not_data":[]}', request=request, fetched_at=datetime.now(timezone.utc))
+
+
+def test_usda_psd_parser_separates_expected_skips_from_malformed_rows() -> None:
+    request = _request()
+    rows, malformed, expected_skips, checks = assess_usda_psd_response(
+        payload=psd_json(include_food_use=True, include_expected_unsupported=True, include_malformed=True),
+        content_type="application/json",
+        status_code=200,
+        request=request,
+        fetched_at=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+    )
+    normalized_check = next(check for check in checks if check.check_name == "supply_demand_normalized_rows_found")
+    expected_skip_check = next(check for check in checks if check.check_name == "supply_demand_expected_rows_skipped")
+
+    assert [row.metric_name for row in rows] == ["production_volume", "exports_volume", "food_use"]
+    assert len(malformed) == 1
+    assert malformed[0]["error"] == "metric value is missing or invalid"
+    assert len(expected_skips) == 1
+    assert expected_skips[0]["category"] == "expected_unsupported_metric"
+    assert expected_skips[0]["metric_name"] == "total_supply"
+    assert normalized_check.details["parsed_rows_count"] == 3
+    assert normalized_check.details["malformed_rows_count"] == 1
+    assert normalized_check.details["expected_skipped_rows_count"] == 1
+    assert expected_skip_check.status == "skip"
 
 
 def test_usda_psd_collector_inserts_observations_with_raw_and_quality_checks(tmp_path: Path) -> None:
@@ -425,6 +490,7 @@ def test_usda_psd_collector_inserts_observations_with_raw_and_quality_checks(tmp
     assert result.records_written == 2
     assert result.skipped_existing == 0
     assert result.conflicts_count == 0
+    assert result.skipped_expected == 0
     assert result.fixture_file == str(fixture)
     assert result.live_probe is False
     assert len(rows) == 2
@@ -439,6 +505,71 @@ def test_usda_psd_collector_inserts_observations_with_raw_and_quality_checks(tmp
     assert "supply_demand_raw_response_persisted" in check_names
     assert "supply_demand_source_record_hash_present" in check_names
     assert "supply_demand_live_probe_skipped_fixture_mode" in check_names
+
+
+def test_usda_psd_collector_writes_supported_rows_and_expected_skips_do_not_fail_run(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    fixture = _write_fixture(tmp_path, psd_json(include_food_use=True, include_expected_unsupported=True))
+    try:
+        result = UsdaPsdCollector(
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+        ).run(
+            session,
+            commodity_family="soybean_oil",
+            from_marketing_year=2023,
+            to_marketing_year=2023,
+            country="WLD",
+            fixture_file=fixture,
+        )
+        rows = session.scalars(select(SupplyDemandObservation).order_by(SupplyDemandObservation.source_record_id)).all()
+        metric_names = {row.supply_demand_commodity.metric_name for row in rows}
+        expected_skip_check = session.scalar(
+            select(DataQualityCheck).where(DataQualityCheck.check_name == "supply_demand_expected_rows_skipped")
+        )
+    finally:
+        cleanup()
+
+    assert result.status == "success"
+    assert result.records_found == 3
+    assert result.records_written == 3
+    assert result.skipped_expected == 1
+    assert result.skipped_malformed == 0
+    assert result.skipped_unmapped == 0
+    assert metric_names == {"production_volume", "exports_volume", "food_use"}
+    assert expected_skip_check is not None
+    assert expected_skip_check.status == "skip"
+    assert expected_skip_check.details_json["expected_skip_reason_counts"] == {"aggregate_total_supply_not_feature_metric": 1}
+
+
+def test_usda_psd_collector_keeps_real_malformed_rows_problematic(tmp_path: Path) -> None:
+    session, cleanup = build_seeded_session()
+    fixture = _write_fixture(tmp_path, psd_json(include_malformed=True))
+    try:
+        result = UsdaPsdCollector(
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+        ).run(
+            session,
+            commodity_family="soybean_oil",
+            from_marketing_year=2023,
+            to_marketing_year=2023,
+            country="WLD",
+            fixture_file=fixture,
+        )
+        warning = session.scalar(
+            select(DataQualityCheck).where(DataQualityCheck.check_name == "supply_demand_malformed_row_skipped")
+        )
+    finally:
+        cleanup()
+
+    assert result.status == "partial_success"
+    assert result.records_written == 2
+    assert result.skipped_malformed == 1
+    assert result.skipped_expected == 0
+    assert warning is not None
+    assert warning.status == "fail"
+    assert warning.details_json["category"] == "malformed_empty_or_missing_required"
 
 
 def test_usda_psd_collector_inserts_from_zip_fixture_with_raw_zip_extension(tmp_path: Path) -> None:

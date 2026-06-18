@@ -24,6 +24,7 @@ QUALITY_CLASS_INFO = "info"
 CURRENT_PRICE_DNS_INCIDENT_DATE = date(2026, 5, 26)
 HISTORICAL_MUTABLE_BAR_INCIDENT_DATE = date(2026, 5, 29)
 USDA_PSD_DIAGNOSTIC_INCIDENT_CUTOFF = date(2026, 6, 15)
+USDA_PSD_EXPECTED_SKIP_INCIDENT_CUTOFF = date(2026, 6, 18)
 
 CURRENT_PRICE_DNS_CHECKS = {
     "raw_response_present",
@@ -39,6 +40,14 @@ USDA_PSD_DIAGNOSTIC_CHECKS = {
     "supply_demand_content_type_expected",
     "supply_demand_normalized_rows_found",
 }
+USDA_PSD_EXPECTED_UNSUPPORTED_METRICS = {
+    "total_supply",
+    "total_distribution",
+    "industrial_dom._cons.",
+    "feed_waste_dom._cons.",
+    "extr._rate,_999.9999",
+}
+USDA_PSD_KNOWN_MAPPING_GAP_METRICS = {"crush_volume"}
 
 
 def is_problematic_quality_status(status: str) -> bool:
@@ -62,6 +71,8 @@ def classify_quality_check(check: DataQualityCheck) -> str:
     if _is_known_historical_mutable_bar_incident(check):
         return QUALITY_CLASS_KNOWN_HISTORICAL_INCIDENT
     if _is_expected_usda_psd_diagnostic_incident(check):
+        return QUALITY_CLASS_EXPECTED_DIAGNOSTIC_INCIDENT
+    if _is_expected_usda_psd_skip_or_mapping_incident(check):
         return QUALITY_CLASS_EXPECTED_DIAGNOSTIC_INCIDENT
     return QUALITY_CLASS_ACTIVE_CURRENT_FAILURE
 
@@ -190,6 +201,8 @@ def _classification_reason(check: DataQualityCheck, classification: str) -> str 
         if _is_known_historical_mutable_bar_incident(check):
             return "known_historical_mutable_latest_bar_incident_2026_05_29"
     if classification == QUALITY_CLASS_EXPECTED_DIAGNOSTIC_INCIDENT:
+        if _is_expected_usda_psd_skip_or_mapping_incident(check):
+            return "expected_usda_psd_skip_or_mapping_incident_before_phase_6_9k_fix"
         return "expected_usda_psd_diagnostic_probe_incident_before_zip_contract_fix"
     if classification == QUALITY_CLASS_ACTIVE_CURRENT_FAILURE:
         return "fresh_or_unknown_problematic_check"
@@ -232,6 +245,28 @@ def _is_expected_usda_psd_diagnostic_incident(check: DataQualityCheck) -> bool:
         or "metadata" in error
         or "text/html" in content_type
     )
+
+
+def _is_expected_usda_psd_skip_or_mapping_incident(check: DataQualityCheck) -> bool:
+    if _checked_date(check) > USDA_PSD_EXPECTED_SKIP_INCIDENT_CUTOFF:
+        return False
+    details = _details(check)
+    request = details.get("request")
+    if not isinstance(request, dict) or request.get("live_probe") is not True:
+        return False
+
+    if check.table_name == "supply_demand_observations" and check.check_name == "supply_demand_malformed_row_skipped":
+        if details.get("category") == "expected_unsupported_metric":
+            return True
+        error = str(details.get("error") or "").lower()
+        return any(metric in error for metric in USDA_PSD_EXPECTED_UNSUPPORTED_METRICS)
+
+    if check.table_name == "supply_demand_commodities" and check.check_name == "supply_demand_mapping_found":
+        metric_name = str(details.get("metric_name") or "")
+        product_code = str(details.get("product_code") or "")
+        return metric_name in USDA_PSD_KNOWN_MAPPING_GAP_METRICS and product_code in {"soybean_oil", "rapeseed_oil"}
+
+    return False
 
 
 def _checked_date(check: DataQualityCheck) -> date:
