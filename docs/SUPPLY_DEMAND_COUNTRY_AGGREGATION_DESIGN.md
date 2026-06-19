@@ -111,6 +111,19 @@ The initial policy is partial-basket renormalization with explicit provenance:
 - Add a missing flag so the feature is visibly incomplete.
 - If no configured country has an eligible row, the metric remains missing.
 
+Reviewed Phase 6.9U baskets add a runtime threshold:
+
+```text
+minimum_available_approved_basket_weight = 0.75
+```
+
+If available configured countries cover at least 75% of the approved selected
+basket weight, the builder renormalizes the available configured weights and
+records `supply_demand_global_basket_partial_weight` provenance. If the
+available selected weight is below 75%, the metric remains missing and records
+`supply_demand_global_basket_insufficient_weight`; it must not fall back to the
+newest country row.
+
 This avoids silent replacement by the newest country while still allowing bounded feature generation during staged data collection.
 
 ## Provenance
@@ -135,8 +148,13 @@ No new schema is required for this first local-only phase because `daily_supply_
 3. Keep the default active production basket empty until weights and the global basket policy are reviewed and approved.
 4. Add tests with explicit sample US/BR/AR/CA weights.
 5. After weight approval, decide whether to persist country weights in a new table or keep a versioned config file.
-6. Rebuild supply-demand features in a controlled production phase only after the country-weight policy is approved.
-7. Resume bounded CA probing only after the reviewed US+BR+AR basket is validated.
+6. Phase 6.9U implements the reviewed Tier A `soybean_oil` config locally for
+   `production_volume`, `crush_volume`, `domestic_consumption`, and
+   `exports_volume`; Tier B/C metrics remain disabled.
+7. Rebuild supply-demand features in a controlled production phase only after
+   explicit deployment approval.
+8. Resume bounded CA probing only after an approved policy requires CA; CA is
+   not selected for any Tier A metric.
 
 ## Open Questions
 

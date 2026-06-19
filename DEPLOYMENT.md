@@ -1099,6 +1099,13 @@ JSON output, and does not write to PostgreSQL or seed production weights. Do not
 enable country weights, rebuild supply-demand features, or resume CA probing
 until a proposal and the global basket policy in
 `docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md` have been reviewed and approved.
+Phase 6.9U adds local code config for the reviewed Tier A `soybean_oil`
+country baskets (`production_volume`, `crush_volume`,
+`domestic_consumption`, and `exports_volume`) under
+`supply_demand_global_basket_v1`. This does not seed DB weights, does not run a
+production rebuild, does not enable Tier B/C metrics, and does not require CA.
+Use a separate controlled deployment/rebuild phase before expecting production
+features or exports to reflect the config.
 Expected nullable export fields include production/use/crush/trade/stocks,
 stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.

@@ -703,6 +703,15 @@ country weights are generated and approved. See
 `docs/SUPPLY_DEMAND_COUNTRY_WEIGHT_METHODOLOGY.md` for the country-basket and
 weight-proposal policies.
 
+Phase 6.9U implements a local reviewed Tier A config for `soybean_oil` under
+policy version `supply_demand_global_basket_v1`. It covers only
+`production_volume`, `crush_volume`, `domestic_consumption`, and
+`exports_volume`, with metric-specific country sets from the Phase 6.9S
+diagnostic artifact. `food_use`, `beginning_stocks`, `ending_stocks`,
+`imports_volume`, and direct `stock_to_use_ratio` country weighting remain
+deferred. The config is code-only, not seeded into PostgreSQL, and requires an
+explicit future deployment/rebuild before it affects production features.
+
 Product-level columns:
 
 - `production_volume`

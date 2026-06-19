@@ -131,6 +131,14 @@ production country weights remain disabled. The Phase 6.9Q proposal generator
 creates review artifacts only; generated weight proposals are not export inputs
 until converted into reviewed config/seed data and rebuilt through the normal
 feature pipeline.
+Phase 6.9U adds a local reviewed Tier A `soybean_oil` basket config for
+`production_volume`, `crush_volume`, `domestic_consumption`, and
+`exports_volume` under `supply_demand_global_basket_v1`. The config preserves
+real `WLD` precedence, requires at least `0.75` available approved basket
+weight at feature time, and records basket provenance in
+`daily_supply_demand_features.metadata_json`. It is not a production export
+input until deployed and rebuilt explicitly; Tier B/C metrics and CA remain
+deferred.
 Expected skipped USDA PSD rows, such as aggregate totals and currently
 unmodeled detail splits, are diagnostics only and do not become export columns.
 Supported metric rows must still normalize into `daily_supply_demand_features`

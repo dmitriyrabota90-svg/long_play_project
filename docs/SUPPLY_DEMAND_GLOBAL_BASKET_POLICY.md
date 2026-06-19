@@ -82,6 +82,32 @@ evidence and review.
 | `imports_volume` | 14 | C | yes | no | Large, dispersed import basket; CA appears here only and separate policy is required. |
 | `stock_to_use_ratio` | n/a | C | n/a | no | Derived ratio only; never directly weighted. |
 
+## Phase 6.9U Local Tier A Config
+
+Phase 6.9U converts the reviewed Tier A discovery result into explicit local
+code config for `soybean_oil`. It does not seed DB rows, deploy production,
+rebuild features, or resume CA probing. Runtime use still requires passing the
+reviewed config deliberately to the supply-demand builder or a later approved
+deployment step.
+
+The first config version is `supply_demand_global_basket_v1` and uses the exact
+Phase 6.9S minimum-prefix 80% coverage country sets and weights:
+
+| metric | selected countries / weights | cumulative source coverage |
+|---|---|---:|
+| `production_volume` | `CH=0.30156174`, `US=0.20443230`, `BR=0.18026335`, `AR=0.11854805` | `0.80480543` |
+| `crush_volume` | `CH=0.31002524`, `US=0.19838896`, `BR=0.17250566`, `AR=0.11500740`, `IN=0.03274302` | `0.82867026` |
+| `domestic_consumption` | `CH=0.30853244`, `US=0.20406072`, `BR=0.14997310`, `IN=0.09387629`, `AR=0.03480292`, `MX=0.02218114` | `0.81342660` |
+| `exports_volume` | `AR=0.43476831`, `BR=0.19273543`, `RS=0.06502242`, `BL=0.04597907`, `PA=0.04158445`, `US=0.03748879` | `0.81757848` |
+
+CA is absent from all Tier A metrics. It remains deferred with `imports_volume`.
+
+The production seed currently maps `soybean_oil` supply-demand concepts under
+commodity family `soybean`; the config records the artifact family
+`soybean_oil` in provenance while using the runtime `soybean` key so the
+builder can join to existing product/commodity mappings when explicitly
+enabled.
+
 ## Coverage Rule At Feature Time
 
 Approved country baskets should be used only when enough selected countries are
@@ -106,6 +132,14 @@ renormalize by available approved weights. The feature metadata must record:
 If available selected countries cover less than 75% of approved basket weight,
 the metric must remain missing and the builder must record explicit provenance
 and a missing flag. It must not silently fall back to the latest country row.
+
+Phase 6.9U emits structured provenance decisions:
+
+- `supply_demand_global_basket_v1`
+- `supply_demand_global_basket_partial_weight`
+- `supply_demand_global_basket_insufficient_weight`
+- `supply_demand_real_wld`
+- `supply_demand_latest_country_fallback`
 
 ## WLD Precedence
 

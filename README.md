@@ -1686,6 +1686,19 @@ Production country weights remain disabled until a proposal and policy are
 reviewed and converted into explicit config or seed data; CA probing remains
 paused until that review is complete.
 
+Phase 6.9U adds a local reviewed Tier A `soybean_oil` basket config:
+
+- enabled metrics in config: `production_volume`, `crush_volume`,
+  `domestic_consumption`, `exports_volume`;
+- policy version: `supply_demand_global_basket_v1`;
+- runtime availability threshold: `0.75` of approved selected basket weight;
+- real `WLD` rows still override baskets;
+- Tier B/C metrics, direct `stock_to_use_ratio` weighting, CA probing, seed
+  data, production rebuild, and scheduler changes remain deferred.
+
+The config is explicit in code and tested locally, but production export values
+do not change until a later approved deploy and feature rebuild.
+
 ```bash
 python scripts/propose_supply_demand_country_weights.py \
   --input /tmp/historical_supply_demand.json \

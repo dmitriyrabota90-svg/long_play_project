@@ -24,7 +24,13 @@ from app.db.models import (
     SupplyDemandCommodity,
     SupplyDemandObservation,
 )
-from app.features.supply_demand_daily import SupplyDemandCountryWeight, build_supply_demand_daily_features
+from app.features.supply_demand_daily import (
+    REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
+    SUPPLY_DEMAND_GLOBAL_BASKET_POLICY_VERSION,
+    SUPPLY_DEMAND_TIER_A_GLOBAL_BASKET_METRICS,
+    SupplyDemandCountryWeight,
+    build_supply_demand_daily_features,
+)
 
 
 product_supply_demand_migration = import_module("migrations.versions.0019_supply_demand_features")
@@ -447,6 +453,268 @@ def test_supply_demand_daily_builder_renormalizes_missing_country_and_blocks_fut
     assert "10000.00000000" not in {str(feature.production_volume)}
 
 
+def test_supply_demand_reviewed_tier_a_config_uses_exact_metric_specific_weights() -> None:
+    weights = REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS[("soybean_oil", "soybean")]
+    by_metric: dict[str, list[SupplyDemandCountryWeight]] = {}
+    for item in weights:
+        by_metric.setdefault(item.metric_code or "", []).append(item)
+
+    assert set(by_metric) == SUPPLY_DEMAND_TIER_A_GLOBAL_BASKET_METRICS
+    assert [item.country_code for item in by_metric["production_volume"]] == ["CH", "US", "BR", "AR"]
+    assert [item.weight for item in by_metric["production_volume"]] == [
+        Decimal("0.30156174"),
+        Decimal("0.20443230"),
+        Decimal("0.18026335"),
+        Decimal("0.11854805"),
+    ]
+    assert [item.country_code for item in by_metric["crush_volume"]] == ["CH", "US", "BR", "AR", "IN"]
+    assert [item.country_code for item in by_metric["domestic_consumption"]] == ["CH", "US", "BR", "IN", "AR", "MX"]
+    assert [item.country_code for item in by_metric["exports_volume"]] == ["AR", "BR", "RS", "BL", "PA", "US"]
+    assert all(item.policy_version == SUPPLY_DEMAND_GLOBAL_BASKET_POLICY_VERSION for item in weights)
+    assert all(item.minimum_available_weight == Decimal("0.75") for item in weights)
+    assert all(item.country_code != "CA" for item in weights)
+
+
+def test_supply_demand_reviewed_tier_a_wld_overrides_basket() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="1000",
+            report_month=5,
+            country_code="WLD",
+            country_name="World",
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="9999",
+            report_month=5,
+            country_code="CH",
+            country_name="China",
+        )
+
+        build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 15),
+            to_date=date(2026, 6, 15),
+            session=session,
+            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    provenance = feature.metadata_json["country_aggregation"]["production_volume"]["components"][0]
+    assert feature.production_volume == Decimal("1000.00000000")
+    assert provenance["mode"] == "WLD"
+    assert provenance["policy_decision"] == "supply_demand_real_wld"
+
+
+def test_supply_demand_reviewed_tier_a_full_basket_aggregates_and_records_provenance() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(
+            session,
+            metrics=("production_volume", "crush_volume", "domestic_consumption", "exports_volume"),
+        )
+        _add_country_metric_rows(
+            session,
+            context=context,
+            metric_name="production_volume",
+            values={"CH": "100", "US": "200", "BR": "300", "AR": "400", "MX": "9999"},
+        )
+        _add_country_metric_rows(
+            session,
+            context=context,
+            metric_name="crush_volume",
+            values={"CH": "10", "US": "20", "BR": "30", "AR": "40", "IN": "50"},
+        )
+        _add_country_metric_rows(
+            session,
+            context=context,
+            metric_name="domestic_consumption",
+            values={"CH": "500", "US": "400", "BR": "300", "IN": "200", "AR": "100", "MX": "50"},
+        )
+        _add_country_metric_rows(
+            session,
+            context=context,
+            metric_name="exports_volume",
+            values={"AR": "60", "BR": "50", "RS": "40", "BL": "30", "PA": "20", "US": "10"},
+        )
+
+        result = build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 15),
+            to_date=date(2026, 6, 15),
+            session=session,
+            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    production_weights = _reviewed_metric_weights("production_volume")
+    expected_production = _weighted_average({"CH": "100", "US": "200", "BR": "300", "AR": "400"}, production_weights)
+    assert result.observations_used == 21
+    assert feature.production_volume == expected_production
+    assert feature.crush_volume is not None
+    assert feature.domestic_consumption is not None
+    assert feature.exports_volume is not None
+    production = feature.metadata_json["country_aggregation"]["production_volume"]["components"][0]
+    exports = feature.metadata_json["country_aggregation"]["exports_volume"]["components"][0]
+    assert production["policy_decision"] == "supply_demand_global_basket_v1"
+    assert production["selected_countries"] == ["CH", "US", "BR", "AR"]
+    assert exports["selected_countries"] == ["AR", "BR", "RS", "BL", "PA", "US"]
+    assert "MX" not in production["selected_countries"]
+    assert production["minimum_available_weight"] == "0.75"
+
+
+def test_supply_demand_reviewed_tier_a_partial_basket_renormalizes_above_threshold_without_future_leakage() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="100",
+            report_month=5,
+            published_at=datetime(2026, 6, 15, tzinfo=timezone.utc),
+            country_code="CH",
+            country_name="CH",
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="200",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+            country_code="US",
+            country_name="US",
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="300",
+            report_month=5,
+            published_at=datetime(2026, 6, 16, tzinfo=timezone.utc),
+            country_code="BR",
+            country_name="BR",
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="10000",
+            report_month=5,
+            published_at=datetime(2026, 6, 20, tzinfo=timezone.utc),
+            country_code="AR",
+            country_name="AR",
+        )
+
+        build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 16),
+            to_date=date(2026, 6, 16),
+            session=session,
+            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    weights = _reviewed_metric_weights("production_volume")
+    expected = _weighted_average({"CH": "100", "US": "200", "BR": "300"}, weights)
+    provenance = feature.metadata_json["country_aggregation"]["production_volume"]["components"][0]
+    assert feature.production_volume == expected
+    assert feature.supply_demand_as_of_date == date(2026, 6, 16)
+    assert feature.missing_flags["supply_demand_global_basket_partial_weight"] is True
+    assert provenance["policy_decision"] == "supply_demand_global_basket_partial_weight"
+    assert provenance["missing_configured_countries"] == ["AR"]
+    assert "10000.00000000" not in {str(feature.production_volume)}
+
+
+def test_supply_demand_reviewed_tier_a_insufficient_weight_leaves_metric_missing_without_latest_fallback() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="100",
+            report_month=5,
+            country_code="CH",
+            country_name="CH",
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="production_volume",
+            value="9999",
+            report_month=6,
+            country_code="MX",
+            country_name="Mexico",
+        )
+
+        build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 15),
+            to_date=date(2026, 6, 15),
+            session=session,
+            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    provenance = feature.metadata_json["country_aggregation"]["production_volume"]["components"][0]
+    assert feature.production_volume is None
+    assert feature.missing_flags["supply_demand_global_basket_insufficient_weight"] is True
+    assert provenance["policy_decision"] == "supply_demand_global_basket_insufficient_weight"
+    assert provenance["selected_countries"] == ["CH"]
+    assert provenance["available_approved_basket_weight"] < "0.75"
+
+
+def test_supply_demand_reviewed_tier_a_keeps_tier_b_c_metrics_deferred() -> None:
+    SessionLocal = _session_factory()
+    with SessionLocal() as session:
+        context = _seed_base(session, metrics=("imports_volume", "stock_to_use_ratio"))
+        _add_observation(
+            session,
+            context=context,
+            metric_name="imports_volume",
+            value="111",
+            report_month=5,
+            country_code="US",
+            country_name="United States",
+        )
+        _add_observation(
+            session,
+            context=context,
+            metric_name="stock_to_use_ratio",
+            value="9.99",
+            report_month=5,
+            country_code="US",
+            country_name="United States",
+        )
+
+        build_supply_demand_daily_features(
+            product_code=context.product.code,
+            from_date=date(2026, 6, 15),
+            to_date=date(2026, 6, 15),
+            session=session,
+            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
+        )
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
+
+    configured_metrics = {item.metric_code for item in REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS[("soybean_oil", "soybean")]}
+    assert configured_metrics == SUPPLY_DEMAND_TIER_A_GLOBAL_BASKET_METRICS
+    assert "imports_volume" not in configured_metrics
+    assert "stock_to_use_ratio" not in configured_metrics
+    assert feature.imports_volume == Decimal("111.00000000")
+    assert feature.stock_to_use_ratio is None
+
+
 def test_supply_demand_daily_default_bounds_extend_to_latest_observation_as_of_date() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
@@ -690,6 +958,40 @@ def _country_basket(
             for country_code, weight in weights.items()
         )
     }
+
+
+def _reviewed_metric_weights(metric_code: str) -> dict[str, Decimal]:
+    return {
+        item.country_code: item.weight
+        for item in REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS[("soybean_oil", "soybean")]
+        if item.metric_code == metric_code
+    }
+
+
+def _weighted_average(values: dict[str, str], weights: dict[str, Decimal]) -> Decimal:
+    selected = {country_code: Decimal(value) for country_code, value in values.items() if country_code in weights}
+    denominator = sum((weights[country_code] for country_code in selected), Decimal("0"))
+    numerator = sum((selected[country_code] * weights[country_code] for country_code in selected), Decimal("0"))
+    return (numerator / denominator).quantize(Decimal("0.00000001"))
+
+
+def _add_country_metric_rows(
+    session,
+    *,
+    context: _Context,
+    metric_name: str,
+    values: dict[str, str],
+) -> None:
+    for country_code, value in values.items():
+        _add_observation(
+            session,
+            context=context,
+            metric_name=metric_name,
+            value=value,
+            report_month=5,
+            country_code=country_code,
+            country_name=country_code,
+        )
 
 
 def _add_observation(
