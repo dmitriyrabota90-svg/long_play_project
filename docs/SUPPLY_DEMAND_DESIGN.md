@@ -693,7 +693,15 @@ fetched USDA report create a feature row for its first safe as-of date before
 the next `daily` rebuild copies it into `daily_product_features`. Feature dates
 before the report availability date remain empty and receive the explicit
 `supply_demand_observations_after_feature_date_window` missing flag instead of
-silently looking usable.
+using future information.
+
+Phase 6.9P/6.9Q separates metric mapping weights from country aggregation
+weights. The builder can aggregate additive metrics by an explicit country
+basket when `WLD` is absent, but production baskets are disabled until reviewed
+country weights are generated and approved. See
+`docs/SUPPLY_DEMAND_COUNTRY_AGGREGATION_DESIGN.md` and
+`docs/SUPPLY_DEMAND_COUNTRY_WEIGHT_METHODOLOGY.md` for the country-basket and
+weight-proposal policies.
 
 Product-level columns:
 

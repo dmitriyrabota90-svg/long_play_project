@@ -1091,6 +1091,13 @@ feature window, `supply_demand_daily` extends its default range to that first
 safe as-of date and marks earlier rows with
 `supply_demand_observations_after_feature_date_window` rather than backfilling
 future information.
+
+Country-aware supply-demand aggregation is implemented but inactive unless
+explicit country weights are configured. The Phase 6.9Q proposal generator is a
+local review tool only: it reads JSON input, writes a caller-provided proposal
+JSON output, and does not write to PostgreSQL or seed production weights. Do not
+enable country weights, rebuild supply-demand features, or resume CA probing
+until a proposal has been reviewed and approved.
 Expected nullable export fields include production/use/crush/trade/stocks,
 stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.

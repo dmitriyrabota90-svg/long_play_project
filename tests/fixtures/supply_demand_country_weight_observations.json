@@ -1,0 +1,38 @@
+{
+  "observations": [
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "production_volume", "marketing_year": "2020", "value": "100", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "production_volume", "marketing_year": "2021", "value": "110", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "production_volume", "marketing_year": "2022", "value": "120", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "production_volume", "marketing_year": "2020", "value": "200", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "production_volume", "marketing_year": "2021", "value": "210", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "production_volume", "marketing_year": "2022", "value": "220", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "production_volume", "marketing_year": "2020", "value": "300", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "production_volume", "marketing_year": "2021", "value": "310", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "production_volume", "marketing_year": "2022", "value": "320", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "production_volume", "marketing_year": "2022", "value": "9999", "source_as_of_date": "2024-02-01"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "CA", "metric_code": "production_volume", "marketing_year": "2020", "value": "50", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "CA", "metric_code": "production_volume", "marketing_year": "2022", "value": "70", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "MX", "metric_code": "production_volume", "marketing_year": "2020", "value": "400", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "MX", "metric_code": "production_volume", "marketing_year": "2021", "value": "410", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "MX", "metric_code": "production_volume", "marketing_year": "2022", "value": "420", "source_as_of_date": "2023-03-15"},
+
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "exports_volume", "marketing_year": "2020", "value": "10", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "exports_volume", "marketing_year": "2021", "value": "10", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "exports_volume", "marketing_year": "2022", "value": "10", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "exports_volume", "marketing_year": "2020", "value": "80", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "exports_volume", "marketing_year": "2021", "value": "80", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "exports_volume", "marketing_year": "2022", "value": "80", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "exports_volume", "marketing_year": "2020", "value": "20", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "exports_volume", "marketing_year": "2021", "value": "20", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "AR", "metric_code": "exports_volume", "marketing_year": "2022", "value": "20", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "CA", "metric_code": "exports_volume", "marketing_year": "2020", "value": "5", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "CA", "metric_code": "exports_volume", "marketing_year": "2021", "value": "5", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "CA", "metric_code": "exports_volume", "marketing_year": "2022", "value": "5", "source_as_of_date": "2023-03-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "MX", "metric_code": "exports_volume", "marketing_year": "2020", "value": "100", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "MX", "metric_code": "exports_volume", "marketing_year": "2021", "value": "100", "source_as_of_date": "2023-02-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "MX", "metric_code": "exports_volume", "marketing_year": "2022", "value": "100", "source_as_of_date": "2023-03-15"},
+
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "US", "metric_code": "stock_to_use_ratio", "marketing_year": "2020", "value": "0.10", "source_as_of_date": "2023-01-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "country_code": "BR", "metric_code": "stock_to_use_ratio", "marketing_year": "2020", "value": "0.20", "source_as_of_date": "2023-01-15"}
+  ]
+}

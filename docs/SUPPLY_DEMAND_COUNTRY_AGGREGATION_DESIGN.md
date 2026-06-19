@@ -6,6 +6,8 @@ Phase 6.9O showed that the current supply-demand daily builder uses a representa
 
 Phase 6.9P introduces a local-only country-aware aggregation design. The production database schema does not need to change yet because `daily_supply_demand_features.metadata_json` already carries structured provenance and `product_supply_demand_weights` remains the metric mapping layer.
 
+Phase 6.9Q adds the reviewed country-weight methodology and a local proposal generator. Production weights remain disabled until a generated proposal is reviewed and converted into explicit config or seed data.
+
 ## Current Limitation
 
 The current fallback policy is collection-order sensitive:
@@ -48,7 +50,9 @@ The country aggregation layer is separate:
 product + commodity_family -> country_code -> country basket weight
 ```
 
-For Phase 6.9P, real production weights are intentionally not seeded. US, BR, AR, and CA weights require an approved economic basis, such as production share, trade exposure, or analyst-defined relevance. Tests use explicit sample weights only to validate behavior.
+For Phase 6.9P/6.9Q, real production weights are intentionally not seeded. US, BR, AR, and CA weights require an approved economic basis, such as historical metric share, production share, trade exposure, or analyst-defined relevance. Tests use explicit sample weights only to validate behavior.
+
+The companion methodology document is `docs/SUPPLY_DEMAND_COUNTRY_WEIGHT_METHODOLOGY.md`. It defines metric-specific historical-share proposals and the no-leakage rule for generating candidate weights.
 
 ## Additive And Derived Metrics
 
@@ -116,10 +120,12 @@ No new schema is required for this first local-only phase because `daily_supply_
 ## Rollout Plan
 
 1. Implement configurable country basket support in the local builder.
-2. Keep the default active production basket empty until weights are approved.
-3. Add tests with explicit sample US/BR/AR/CA weights.
-4. After weight approval, decide whether to persist country weights in a new table or keep a versioned config file.
-5. Rebuild supply-demand features in a controlled production phase only after the country-weight policy is approved.
+2. Generate a local proposal with the Phase 6.9Q proposal generator.
+3. Keep the default active production basket empty until weights are reviewed and approved.
+4. Add tests with explicit sample US/BR/AR/CA weights.
+5. After weight approval, decide whether to persist country weights in a new table or keep a versioned config file.
+6. Rebuild supply-demand features in a controlled production phase only after the country-weight policy is approved.
+7. Resume bounded CA probing only after the reviewed US+BR+AR basket is validated.
 
 ## Open Questions
 
