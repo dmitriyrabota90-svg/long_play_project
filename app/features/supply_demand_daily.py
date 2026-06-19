@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -56,6 +57,18 @@ SUPPLY_DEMAND_BASE_METRICS = (
 METRIC_FIELD_BY_NAME = {
     "yield": "yield_value",
 }
+COUNTRY_BASKET_ADDITIVE_METRICS = {
+    "production_volume",
+    "beginning_stocks",
+    "ending_stocks",
+    "imports_volume",
+    "exports_volume",
+    "domestic_consumption",
+    "crush_volume",
+    "food_use",
+}
+SUPPLY_DEMAND_COUNTRY_POLICY_LEGACY = "prefer_WLD_else_weighted_latest_known_rows"
+SUPPLY_DEMAND_COUNTRY_POLICY_BASKET = "prefer_WLD_else_configured_country_basket_else_latest_known_country"
 
 
 @dataclass(frozen=True)
@@ -74,11 +87,27 @@ class SupplyDemandDailyBuildResult:
 class _SupplyDemandWeight:
     product_id: int
     supply_demand_commodity_id: int
+    commodity_family: str
     metric_name: str
     metric_group: str
     weight: Decimal
     effective_from: date
     effective_to: date | None
+
+
+@dataclass(frozen=True)
+class SupplyDemandCountryWeight:
+    product_code: str
+    commodity_family: str
+    country_code: str
+    weight: Decimal
+    effective_from: date = date(2020, 1, 1)
+    effective_to: date | None = None
+    is_active: bool = True
+
+
+SupplyDemandCountryWeights = Mapping[tuple[str, str], tuple[SupplyDemandCountryWeight, ...]]
+DEFAULT_SUPPLY_DEMAND_COUNTRY_WEIGHTS: SupplyDemandCountryWeights = {}
 
 
 @dataclass(frozen=True)
@@ -89,6 +118,15 @@ class _MetricSelection:
     report_published_at: datetime | None
     forecast_month: int | None
     marketing_year: str | None
+    provenance: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _MetricComponent:
+    metric_weight: _SupplyDemandWeight
+    value: Decimal
+    rows: tuple[SupplyDemandObservation, ...]
+    provenance: dict[str, Any]
 
 
 def build_supply_demand_daily_features(
@@ -97,7 +135,9 @@ def build_supply_demand_daily_features(
     from_date: date | None = None,
     to_date: date | None = None,
     session: Session | None = None,
+    country_weights: SupplyDemandCountryWeights | None = None,
 ) -> SupplyDemandDailyBuildResult:
+    country_weights = DEFAULT_SUPPLY_DEMAND_COUNTRY_WEIGHTS if country_weights is None else country_weights
     if session is None:
         with session_scope() as scoped_session:
             return _build_supply_demand_daily_features_with_session(
@@ -105,12 +145,14 @@ def build_supply_demand_daily_features(
                 product_code=product_code,
                 from_date=from_date,
                 to_date=to_date,
+                country_weights=country_weights,
             )
     return _build_supply_demand_daily_features_with_session(
         session,
         product_code=product_code,
         from_date=from_date,
         to_date=to_date,
+        country_weights=country_weights,
     )
 
 
@@ -120,6 +162,7 @@ def _build_supply_demand_daily_features_with_session(
     product_code: str | None,
     from_date: date | None,
     to_date: date | None,
+    country_weights: SupplyDemandCountryWeights,
 ) -> SupplyDemandDailyBuildResult:
     products = _select_products(session, product_code=product_code)
     if not products:
@@ -156,6 +199,7 @@ def _build_supply_demand_daily_features_with_session(
                 feature_date=feature_date,
                 weights=product_weights,
                 observations=observations,
+                country_weights=country_weights,
             )
             observations_used.update(used_ids)
             if values["missing_flags"]:
@@ -199,6 +243,7 @@ def _feature_values(
     feature_date: date,
     weights: list[_SupplyDemandWeight],
     observations: dict[int, list[SupplyDemandObservation]],
+    country_weights: SupplyDemandCountryWeights,
 ) -> tuple[dict[str, Any], set[int]]:
     values: dict[str, Any] = {field: None for field in SUPPLY_DEMAND_NUMERIC_FIELDS}
     values.update(
@@ -226,17 +271,23 @@ def _feature_values(
         return values, used_ids
 
     selections: dict[str, _MetricSelection] = {}
+    country_selection_provenance: dict[str, Any] = {}
+    selected_country_policy = _selected_country_policy(product.code, weights, country_weights, feature_date)
     for metric_name in SUPPLY_DEMAND_BASE_METRICS:
         field_name = _field_name(metric_name)
         selection = _metric_selection(
+            product_code=product.code,
             metric_name=metric_name,
             feature_date=feature_date,
             weights=active_weights,
             observations=observations,
+            country_weights=country_weights,
         )
         selections[field_name] = selection
         values[field_name] = selection.value
         used_ids.update(row.id for row in selection.rows)
+        if selection.provenance:
+            country_selection_provenance[field_name] = selection.provenance
 
     if values["stock_to_use_ratio"] is None:
         derived_stock_to_use = _ratio(values["ending_stocks"], values["domestic_consumption"])
@@ -244,25 +295,31 @@ def _feature_values(
             values["stock_to_use_ratio"] = derived_stock_to_use
 
     values["production_forecast_revision"] = _revision_value(
+        product_code=product.code,
         metric_name="production_volume",
         current=selections["production_volume"],
         feature_date=feature_date,
         weights=active_weights,
         observations=observations,
+        country_weights=country_weights,
     )
     values["ending_stocks_revision"] = _revision_value(
+        product_code=product.code,
         metric_name="ending_stocks",
         current=selections["ending_stocks"],
         feature_date=feature_date,
         weights=active_weights,
         observations=observations,
+        country_weights=country_weights,
     )
     values["stock_to_use_revision"] = _revision_value(
+        product_code=product.code,
         metric_name="stock_to_use_ratio",
         current=selections["stock_to_use_ratio"],
         feature_date=feature_date,
         weights=active_weights,
         observations=observations,
+        country_weights=country_weights,
     )
 
     used_rows = [row for selection in selections.values() for row in selection.rows]
@@ -315,6 +372,8 @@ def _feature_values(
         missing_flags["missing_report_publication_date"] = True
     if values["supply_demand_as_of_date"] is None:
         missing_flags["missing_supply_demand_as_of_date"] = True
+    if _has_partial_country_basket(selections):
+        missing_flags["partial_country_basket"] = True
 
     values["missing_flags"] = missing_flags
     values["metadata_json"].update(
@@ -322,7 +381,8 @@ def _feature_values(
             "product_code": product.code,
             "active_supply_demand_commodity_ids": [weight.supply_demand_commodity_id for weight in active_weights],
             "used_observation_ids": sorted(used_ids),
-            "selected_country_policy": "prefer_WLD_else_weighted_latest_known_rows",
+            "selected_country_policy": selected_country_policy,
+            "country_aggregation": country_selection_provenance,
         }
     )
     return _normalize_feature_values(values), used_ids
@@ -330,14 +390,16 @@ def _feature_values(
 
 def _metric_selection(
     *,
+    product_code: str,
     metric_name: str,
     feature_date: date,
     weights: list[_SupplyDemandWeight],
     observations: dict[int, list[SupplyDemandObservation]],
+    country_weights: SupplyDemandCountryWeights,
     before_as_of: date | None = None,
 ) -> _MetricSelection:
     metric_weights = [weight for weight in weights if weight.metric_name == metric_name]
-    selected: list[tuple[_SupplyDemandWeight, SupplyDemandObservation]] = []
+    selected: list[_MetricComponent] = []
     for weight in metric_weights:
         candidates = _eligible_rows(
             observations.get(weight.supply_demand_commodity_id, []),
@@ -347,17 +409,39 @@ def _metric_selection(
         if not candidates:
             continue
         world_rows = [row for row in candidates if row.country_code == "WLD"]
-        selected.append((weight, _latest_observation(world_rows or candidates)))
+        if world_rows:
+            row = _latest_observation(world_rows)
+            selected.append(_single_row_component(weight, row, mode="WLD"))
+            continue
+        country_basket = _active_country_weights(
+            country_weights,
+            product_code=product_code,
+            commodity_family=weight.commodity_family,
+            feature_date=feature_date,
+        )
+        if country_basket:
+            component = _country_basket_component(
+                metric_weight=weight,
+                metric_name=metric_name,
+                rows=candidates,
+                country_basket=country_basket,
+            )
+            if component is not None:
+                selected.append(component)
+            continue
+        selected.append(_single_row_component(weight, _latest_observation(candidates), mode="latest_country_fallback"))
     if not selected:
         return _empty_selection()
 
     numerator = Decimal("0")
     denominator = Decimal("0")
     selected_rows: list[SupplyDemandObservation] = []
-    for weight, row in selected:
-        numerator += row.metric_value * weight.weight
-        denominator += weight.weight
-        selected_rows.append(row)
+    components: list[dict[str, Any]] = []
+    for component in selected:
+        numerator += component.value * component.metric_weight.weight
+        denominator += component.metric_weight.weight
+        selected_rows.extend(component.rows)
+        components.append(component.provenance)
     value = numerator / denominator if denominator else None
     as_of_dates = [_availability_date(row) for row in selected_rows]
     report_published_at = _latest_datetime([row.report_published_at for row in selected_rows])
@@ -368,24 +452,29 @@ def _metric_selection(
         report_published_at=report_published_at,
         forecast_month=_latest_int([row.report_month for row in selected_rows]),
         marketing_year=_latest_marketing_year(selected_rows),
+        provenance={"metric_name": metric_name, "components": components},
     )
 
 
 def _revision_value(
     *,
+    product_code: str,
     metric_name: str,
     current: _MetricSelection,
     feature_date: date,
     weights: list[_SupplyDemandWeight],
     observations: dict[int, list[SupplyDemandObservation]],
+    country_weights: SupplyDemandCountryWeights,
 ) -> Decimal | None:
     if current.value is None or current.as_of_date is None:
         return None
     previous = _metric_selection(
+        product_code=product_code,
         metric_name=metric_name,
         feature_date=feature_date,
         weights=weights,
         observations=observations,
+        country_weights=country_weights,
         before_as_of=current.as_of_date,
     )
     if previous.value is None:
@@ -430,6 +519,7 @@ def _load_product_supply_demand_weights(session: Session) -> dict[int, list[_Sup
             _SupplyDemandWeight(
                 product_id=weight.product_id,
                 supply_demand_commodity_id=weight.supply_demand_commodity_id,
+                commodity_family=commodity.commodity_family,
                 metric_name=commodity.metric_name,
                 metric_group=commodity.metric_group,
                 weight=weight.weight,
@@ -462,6 +552,117 @@ def _active_weights(weights: list[_SupplyDemandWeight], feature_date: date) -> l
         for weight in weights
         if weight.effective_from <= feature_date and (weight.effective_to is None or weight.effective_to >= feature_date)
     ]
+
+
+def _selected_country_policy(
+    product_code: str,
+    weights: list[_SupplyDemandWeight],
+    country_weights: SupplyDemandCountryWeights,
+    feature_date: date,
+) -> str:
+    for weight in weights:
+        if _active_country_weights(
+            country_weights,
+            product_code=product_code,
+            commodity_family=weight.commodity_family,
+            feature_date=feature_date,
+        ):
+            return SUPPLY_DEMAND_COUNTRY_POLICY_BASKET
+    return SUPPLY_DEMAND_COUNTRY_POLICY_LEGACY
+
+
+def _active_country_weights(
+    country_weights: SupplyDemandCountryWeights,
+    *,
+    product_code: str,
+    commodity_family: str,
+    feature_date: date,
+) -> tuple[SupplyDemandCountryWeight, ...]:
+    configured = country_weights.get((product_code, commodity_family), ())
+    return tuple(
+        item
+        for item in configured
+        if item.is_active
+        and item.product_code == product_code
+        and item.commodity_family == commodity_family
+        and item.effective_from <= feature_date
+        and (item.effective_to is None or item.effective_to >= feature_date)
+        and item.weight > 0
+    )
+
+
+def _single_row_component(
+    metric_weight: _SupplyDemandWeight,
+    row: SupplyDemandObservation,
+    *,
+    mode: str,
+) -> _MetricComponent:
+    return _MetricComponent(
+        metric_weight=metric_weight,
+        value=row.metric_value,
+        rows=(row,),
+        provenance={
+            "mode": mode,
+            "commodity_family": metric_weight.commodity_family,
+            "supply_demand_commodity_id": metric_weight.supply_demand_commodity_id,
+            "selected_countries": [row.country_code],
+            "used_observation_ids": [row.id],
+        },
+    )
+
+
+def _country_basket_component(
+    *,
+    metric_weight: _SupplyDemandWeight,
+    metric_name: str,
+    rows: list[SupplyDemandObservation],
+    country_basket: tuple[SupplyDemandCountryWeight, ...],
+) -> _MetricComponent | None:
+    configured_country_codes = [item.country_code for item in country_basket]
+    if metric_name not in COUNTRY_BASKET_ADDITIVE_METRICS:
+        return None
+
+    latest_by_country: dict[str, SupplyDemandObservation] = {}
+    for country_weight in country_basket:
+        country_rows = [row for row in rows if row.country_code == country_weight.country_code]
+        if country_rows:
+            latest_by_country[country_weight.country_code] = _latest_observation(country_rows)
+
+    selected_pairs = [(item, latest_by_country[item.country_code]) for item in country_basket if item.country_code in latest_by_country]
+    if not selected_pairs:
+        return None
+
+    denominator = sum((item.weight for item, _ in selected_pairs), Decimal("0"))
+    if denominator <= 0:
+        return None
+    numerator = sum((row.metric_value * item.weight for item, row in selected_pairs), Decimal("0"))
+    selected_rows = tuple(row for _, row in selected_pairs)
+    selected_country_codes = [row.country_code for row in selected_rows]
+    missing_country_codes = [country_code for country_code in configured_country_codes if country_code not in selected_country_codes]
+    return _MetricComponent(
+        metric_weight=metric_weight,
+        value=numerator / denominator,
+        rows=selected_rows,
+        provenance={
+            "mode": "configured_country_weighted_basket",
+            "commodity_family": metric_weight.commodity_family,
+            "supply_demand_commodity_id": metric_weight.supply_demand_commodity_id,
+            "configured_countries": configured_country_codes,
+            "selected_countries": selected_country_codes,
+            "missing_configured_countries": missing_country_codes,
+            "weights": {item.country_code: str(item.weight) for item in country_basket},
+            "renormalized": bool(missing_country_codes),
+            "used_observation_ids": [row.id for row in selected_rows],
+        },
+    )
+
+
+def _has_partial_country_basket(selections: dict[str, _MetricSelection]) -> bool:
+    for selection in selections.values():
+        for component in selection.provenance.get("components", []):
+            if component.get("mode") == "configured_country_weighted_basket" and component.get("missing_configured_countries"):
+                return True
+    return False
 
 
 def _eligible_rows(
@@ -531,6 +732,7 @@ def _empty_selection() -> _MetricSelection:
         report_published_at=None,
         forecast_month=None,
         marketing_year=None,
+        provenance={},
     )
 
 
