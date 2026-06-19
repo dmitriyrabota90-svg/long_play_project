@@ -1097,7 +1097,8 @@ explicit country weights are configured. The Phase 6.9Q proposal generator is a
 local review tool only: it reads JSON input, writes a caller-provided proposal
 JSON output, and does not write to PostgreSQL or seed production weights. Do not
 enable country weights, rebuild supply-demand features, or resume CA probing
-until a proposal has been reviewed and approved.
+until a proposal and the global basket policy in
+`docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md` have been reviewed and approved.
 Expected nullable export fields include production/use/crush/trade/stocks,
 stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.

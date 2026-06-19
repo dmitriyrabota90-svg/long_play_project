@@ -127,6 +127,11 @@ Imports are expected to be the hardest soybean-oil metric: imports can be spread
 across many consuming countries, so an 80% threshold may require a large basket
 or a separate metric policy.
 
+Phase 6.9T converts the discovery result into a draft governance policy in
+`docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md`. Discovery output does not
+automatically become production configuration; seed/config rollout requires a
+separate approval and implementation phase.
+
 ## Ratios
 
 The generator does not calculate direct country weights for `stock_to_use_ratio`.
@@ -202,6 +207,7 @@ Required sequence:
 ```text
 proposal generator
 -> reviewed country-weight configuration
+-> reviewed global basket policy
 -> explicit seed/config implementation
 -> deploy aggregation engine and weights
 -> rebuild existing supply-demand features

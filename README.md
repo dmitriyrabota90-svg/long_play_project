@@ -1680,9 +1680,11 @@ and later rows may safely use the observation.
 Phase 6.9P adds a country-aware aggregation engine: real `WLD` rows still have
 priority, and additive country rows can be aggregated only when an explicit
 country basket is configured. Phase 6.9Q adds a local proposal generator for
-reviewed country weights. Production country weights remain disabled until a
-proposal is reviewed and converted into explicit config or seed data; CA probing
-remains paused until that review is complete.
+reviewed country weights. Phase 6.9S/6.9T adds global basket discovery and a
+draft governance policy in `docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md`.
+Production country weights remain disabled until a proposal and policy are
+reviewed and converted into explicit config or seed data; CA probing remains
+paused until that review is complete.
 
 ```bash
 python scripts/propose_supply_demand_country_weights.py \

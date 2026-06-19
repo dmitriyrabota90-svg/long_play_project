@@ -14,6 +14,11 @@ explicit reviewed country set per metric, selected by source-data coverage, and
 it remains inactive until approved country sets and weights are explicitly
 seeded or configured.
 
+Phase 6.9T defines the first draft production governance policy in
+`docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md`. The policy separates metrics that
+are eligible for first rollout from metrics requiring review or deferral; it
+does not enable production baskets by itself.
+
 ## Current Limitation
 
 The current fallback policy is collection-order sensitive:
@@ -127,7 +132,7 @@ No new schema is required for this first local-only phase because `daily_supply_
 
 1. Implement configurable country basket support in the local builder.
 2. Generate a local proposal with the Phase 6.9Q/6.9S proposal generator.
-3. Keep the default active production basket empty until weights are reviewed and approved.
+3. Keep the default active production basket empty until weights and the global basket policy are reviewed and approved.
 4. Add tests with explicit sample US/BR/AR/CA weights.
 5. After weight approval, decide whether to persist country weights in a new table or keep a versioned config file.
 6. Rebuild supply-demand features in a controlled production phase only after the country-weight policy is approved.
