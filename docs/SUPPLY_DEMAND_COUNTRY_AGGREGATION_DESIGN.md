@@ -8,6 +8,12 @@ Phase 6.9P introduces a local-only country-aware aggregation design. The product
 
 Phase 6.9Q adds the reviewed country-weight methodology and a local proposal generator. Production weights remain disabled until a generated proposal is reviewed and converted into explicit config or seed data.
 
+Phase 6.9S adds coverage-driven global basket discovery. The global basket
+configuration is not equivalent to the current production fallback: it is an
+explicit reviewed country set per metric, selected by source-data coverage, and
+it remains inactive until approved country sets and weights are explicitly
+seeded or configured.
+
 ## Current Limitation
 
 The current fallback policy is collection-order sensitive:
@@ -120,7 +126,7 @@ No new schema is required for this first local-only phase because `daily_supply_
 ## Rollout Plan
 
 1. Implement configurable country basket support in the local builder.
-2. Generate a local proposal with the Phase 6.9Q proposal generator.
+2. Generate a local proposal with the Phase 6.9Q/6.9S proposal generator.
 3. Keep the default active production basket empty until weights are reviewed and approved.
 4. Add tests with explicit sample US/BR/AR/CA weights.
 5. After weight approval, decide whether to persist country weights in a new table or keep a versioned config file.

@@ -21,6 +21,17 @@ ADDITIVE_SUPPLY_DEMAND_METRICS = {
 RATIO_SUPPLY_DEMAND_METRICS = {
     "stock_to_use_ratio",
 }
+AGGREGATE_COUNTRY_CODES = {
+    "",
+    "ALL",
+    "E4",
+    "EU",
+    "EU27",
+    "EU-27",
+    "R00",
+    "WORLD",
+    "WLD",
+}
 
 
 @dataclass(frozen=True)
@@ -43,6 +54,17 @@ class SupplyDemandWeightProposalRequest:
     lookback_years: int
     candidate_countries: tuple[str, ...]
     minimum_share: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class SupplyDemandGlobalBasketDiscoveryRequest:
+    product_code: str
+    commodity_family: str
+    effective_as_of_date: date
+    completed_marketing_year: int
+    lookback_years: int
+    coverage_threshold: Decimal = Decimal("0.80")
+    max_countries: int | None = None
 
 
 def load_weight_observations_json(path: str | Path) -> list[SupplyDemandWeightObservation]:
@@ -83,7 +105,7 @@ def propose_supply_demand_country_weights(
     input_years = _input_marketing_years(request.completed_marketing_year, request.lookback_years)
     filtered = _latest_valid_rows_by_identity(observations, request=request, input_years=input_years)
     additive_metrics = sorted({key[0] for key in filtered if key[0] in ADDITIVE_SUPPLY_DEMAND_METRICS})
-    skipped_metrics = sorted({row.metric_code for row in observations if row.metric_code in RATIO_SUPPLY_DEMAND_METRICS})
+    skipped_metrics = _skipped_ratio_metrics(observations, request=request, input_years=input_years)
 
     proposals: list[dict[str, Any]] = []
     for metric_code in additive_metrics:
@@ -117,6 +139,59 @@ def propose_supply_demand_country_weights(
     }
 
 
+def discover_supply_demand_global_country_baskets(
+    observations: list[SupplyDemandWeightObservation],
+    request: SupplyDemandGlobalBasketDiscoveryRequest,
+) -> dict[str, Any]:
+    if request.lookback_years <= 0:
+        raise ValueError("lookback_years must be positive")
+    if request.coverage_threshold <= 0 or request.coverage_threshold > 1:
+        raise ValueError("coverage_threshold must be greater than 0 and <= 1")
+    if request.max_countries is not None and request.max_countries <= 0:
+        raise ValueError("max_countries must be positive when provided")
+
+    input_years = _input_marketing_years(request.completed_marketing_year, request.lookback_years)
+    filtered = _latest_valid_rows_by_identity(observations, request=request, input_years=input_years)
+    concrete_rows = {
+        key: row
+        for key, row in filtered.items()
+        if _is_concrete_country_code(key[1])
+    }
+    additive_metrics = sorted({key[0] for key in concrete_rows if key[0] in ADDITIVE_SUPPLY_DEMAND_METRICS})
+    skipped_metrics = _skipped_ratio_metrics(observations, request=request, input_years=input_years)
+    metric_baskets = [
+        _discover_metric_global_basket(metric_code=metric_code, rows=concrete_rows, request=request, input_years=input_years)
+        for metric_code in additive_metrics
+    ]
+
+    return {
+        "product_code": request.product_code,
+        "commodity_family": request.commodity_family,
+        "weight_effective_as_of_date": request.effective_as_of_date.isoformat(),
+        "completed_marketing_year": request.completed_marketing_year,
+        "lookback_years": request.lookback_years,
+        "input_marketing_years": input_years,
+        "coverage_threshold": str(_quant(request.coverage_threshold)),
+        "max_countries": request.max_countries,
+        "metric_baskets": metric_baskets,
+        "missing_metrics": sorted(ADDITIVE_SUPPLY_DEMAND_METRICS - set(additive_metrics)),
+        "skipped_metrics": [
+            {
+                "metric_code": metric_code,
+                "reason": "ratio_metric_not_weighted_directly",
+            }
+            for metric_code in skipped_metrics
+        ],
+        "methodology": {
+            "selection_rule": "rank concrete countries by metric share and select the smallest prefix reaching coverage_threshold",
+            "source_data_coverage": "sum(selected_country_metric_value) / sum(all_valid_concrete_country_metric_value)",
+            "excluded_country_codes": sorted(AGGREGATE_COUNTRY_CODES - {""}),
+            "no_leakage_rule": "source_as_of_date <= weight_effective_as_of_date",
+            "ratio_policy": "stock_to_use_ratio is derived after aggregation, not weighted directly",
+        },
+    }
+
+
 def _metric_country_proposals(
     *,
     metric_code: str,
@@ -127,8 +202,8 @@ def _metric_country_proposals(
     country_totals = _country_totals(metric_code=metric_code, rows=rows, countries=request.candidate_countries, input_years=input_years)
     all_country_total = sum(
         row.value
-        for (row_metric, _, _), row in rows.items()
-        if row_metric == metric_code
+        for (row_metric, country_code, _), row in rows.items()
+        if row_metric == metric_code and _is_concrete_country_code(country_code)
     )
     candidate_total = sum(country_totals.values())
     historical_shares = {
@@ -185,6 +260,105 @@ def _metric_country_proposals(
     return result
 
 
+def _discover_metric_global_basket(
+    *,
+    metric_code: str,
+    rows: dict[tuple[str, str, str], SupplyDemandWeightObservation],
+    request: SupplyDemandGlobalBasketDiscoveryRequest,
+    input_years: list[int],
+) -> dict[str, Any]:
+    countries = tuple(sorted({country_code for row_metric, country_code, _ in rows if row_metric == metric_code}))
+    country_totals = _country_totals(metric_code=metric_code, rows=rows, countries=countries, input_years=input_years)
+    all_country_total = sum(country_totals.values(), Decimal("0"))
+    ranked_countries = []
+    cumulative = Decimal("0")
+    for rank, (country_code, country_total) in enumerate(
+        sorted(country_totals.items(), key=lambda item: (-item[1], item[0])),
+        start=1,
+    ):
+        if country_total <= 0 or all_country_total <= 0:
+            continue
+        share = country_total / all_country_total
+        cumulative += share
+        source_as_of_coverage = _source_as_of_coverage(
+            metric_code=metric_code,
+            country_code=country_code,
+            rows=rows,
+            input_years=input_years,
+        )
+        ranked_countries.append(
+            {
+                "rank": rank,
+                "country_code": country_code,
+                "historical_total": str(_quant(country_total)),
+                "historical_share": str(_quant(share)),
+                "cumulative_coverage": str(_quant(cumulative)),
+                "available_marketing_years": _available_years(
+                    metric_code=metric_code,
+                    country_code=country_code,
+                    rows=rows,
+                    input_years=input_years,
+                ),
+                "missing_country_years": [
+                    year
+                    for year in input_years
+                    if (metric_code, country_code, str(year)) not in rows
+                ],
+                "source_as_of_coverage": source_as_of_coverage,
+                "maximum_source_as_of_date": _maximum_source_as_of_date(source_as_of_coverage),
+            }
+        )
+
+    required_count = _countries_required_for_threshold(ranked_countries, request.coverage_threshold)
+    selected_count = required_count if required_count is not None else len(ranked_countries)
+    if request.max_countries is not None:
+        selected_count = min(selected_count, request.max_countries)
+    selected_countries = ranked_countries[:selected_count]
+    selected_country_codes = {row["country_code"] for row in selected_countries}
+    cumulative_coverage = selected_countries[-1]["cumulative_coverage"] if selected_countries else None
+    threshold_reached = cumulative_coverage is not None and Decimal(cumulative_coverage) >= request.coverage_threshold
+    if threshold_reached:
+        proposal_status = "threshold_reached"
+    elif request.max_countries is not None:
+        proposal_status = "coverage_requires_review"
+    else:
+        proposal_status = "threshold_not_reached"
+
+    return {
+        "metric_code": metric_code,
+        "proposal_status": proposal_status,
+        "coverage_threshold": str(_quant(request.coverage_threshold)),
+        "threshold_reached": threshold_reached,
+        "cumulative_coverage": cumulative_coverage,
+        "country_count_required_for_threshold": required_count,
+        "country_count_selected": len(selected_countries),
+        "all_available_country_count": len(ranked_countries),
+        "input_marketing_years": input_years,
+        "maximum_source_as_of_date": _maximum_source_as_of_date(
+            {
+                row["country_code"]: str(row["maximum_source_as_of_date"])
+                for row in ranked_countries
+                if row["maximum_source_as_of_date"] is not None
+            }
+        ),
+        "selected_countries": [
+            {**row, "selected": True}
+            for row in selected_countries
+        ],
+        "ranked_countries": [
+            {**row, "selected": row["country_code"] in selected_country_codes}
+            for row in ranked_countries
+        ],
+    }
+
+
+def _countries_required_for_threshold(ranked_countries: list[dict[str, Any]], coverage_threshold: Decimal) -> int | None:
+    for index, row in enumerate(ranked_countries, start=1):
+        if Decimal(row["cumulative_coverage"]) >= coverage_threshold:
+            return index
+    return None
+
+
 def _final_included_weights(
     *,
     included_countries: list[str],
@@ -203,7 +377,7 @@ def _final_included_weights(
 def _latest_valid_rows_by_identity(
     observations: list[SupplyDemandWeightObservation],
     *,
-    request: SupplyDemandWeightProposalRequest,
+    request: SupplyDemandWeightProposalRequest | SupplyDemandGlobalBasketDiscoveryRequest,
     input_years: list[int],
 ) -> dict[tuple[str, str, str], SupplyDemandWeightObservation]:
     input_year_set = set(input_years)
@@ -221,6 +395,31 @@ def _latest_valid_rows_by_identity(
         if existing is None or row.source_as_of_date > existing.source_as_of_date:
             latest[key] = row
     return latest
+
+
+def _skipped_ratio_metrics(
+    observations: list[SupplyDemandWeightObservation],
+    *,
+    request: SupplyDemandWeightProposalRequest | SupplyDemandGlobalBasketDiscoveryRequest,
+    input_years: list[int],
+) -> list[str]:
+    input_year_set = set(input_years)
+    result = set()
+    for row in observations:
+        if row.product_code != request.product_code or row.commodity_family != request.commodity_family:
+            continue
+        if _marketing_year_int(row.marketing_year) not in input_year_set:
+            continue
+        if row.source_as_of_date > request.effective_as_of_date:
+            continue
+        if row.metric_code in RATIO_SUPPLY_DEMAND_METRICS:
+            result.add(row.metric_code)
+    return sorted(result)
+
+
+def _is_concrete_country_code(country_code: str) -> bool:
+    normalized = country_code.strip().upper()
+    return normalized not in AGGREGATE_COUNTRY_CODES
 
 
 def _input_marketing_years(completed_marketing_year: int, lookback_years: int) -> list[int]:

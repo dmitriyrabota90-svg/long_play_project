@@ -85,6 +85,48 @@ The proposal generator accepts an optional `--minimum-share` parameter. If it is
 
 Human review is required before enabling weights in production.
 
+## Coverage-Driven Global Basket Discovery
+
+Phase 6.9S adds a local discovery mode for global, metric-specific country
+baskets. This is not production configuration. It ranks all valid concrete
+country rows and proposes the smallest country prefix that reaches an explicit
+coverage threshold.
+
+Default review parameters for soybean oil are:
+
+```text
+coverage_threshold: 0.80
+completed_marketing_year: 2023
+lookback_years: 3
+input_marketing_years: 2021, 2022, 2023
+```
+
+For every additive metric, the discovery mode:
+
+1. filters rows by product, commodity family, marketing year, and no-leakage
+   source as-of date;
+2. excludes `WLD`, `R00`, world rows, and non-country aggregate rows such as
+   `EU`/`E4` from the country denominator;
+3. sums each concrete country's metric values over the lookback window;
+4. ranks countries by descending historical metric share;
+5. selects the smallest ranked prefix whose cumulative source-data coverage is
+   at least the requested threshold;
+6. reports the selected countries, cumulative coverage, country count required,
+   missing country-years, and maximum source as-of date.
+
+This means selected country sets may differ by metric. A country can be
+important for imports while nearly irrelevant for production or crush. One
+shared basket for every metric would hide that difference.
+
+The optional `--max-countries` flag is a review guard. If the threshold cannot
+be reached within the configured maximum, the proposal must report
+`coverage_requires_review`. The generator must not silently lower the threshold
+or choose a production limit automatically.
+
+Imports are expected to be the hardest soybean-oil metric: imports can be spread
+across many consuming countries, so an 80% threshold may require a large basket
+or a separate metric policy.
+
 ## Ratios
 
 The generator does not calculate direct country weights for `stock_to_use_ratio`.
@@ -122,6 +164,21 @@ python scripts/propose_supply_demand_country_weights.py \
   --completed-marketing-year 2022 \
   --lookback-years 3 \
   --candidate-countries US,BR,AR,CA
+```
+
+Global basket discovery example:
+
+```bash
+python scripts/propose_supply_demand_country_weights.py \
+  --input /tmp/soybean_oil_historical_rows.json \
+  --output /tmp/soybean_oil_global_basket.json \
+  --product-code soybean_oil \
+  --commodity-family soybean_oil \
+  --effective-as-of-date 2026-06-19 \
+  --completed-marketing-year 2023 \
+  --lookback-years 3 \
+  --discover-global-basket \
+  --coverage-threshold 0.80
 ```
 
 Input rows must have fields equivalent to:

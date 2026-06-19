@@ -5,7 +5,9 @@ from datetime import date
 from decimal import Decimal
 
 from app.features.supply_demand_country_weights import (
+    SupplyDemandGlobalBasketDiscoveryRequest,
     SupplyDemandWeightProposalRequest,
+    discover_supply_demand_global_country_baskets,
     load_weight_observations_json,
     propose_supply_demand_country_weights,
     write_weight_proposal_json,
@@ -21,14 +23,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--effective-as-of-date", required=True, help="Weight effective as-of date in YYYY-MM-DD format.")
     parser.add_argument("--completed-marketing-year", required=True, type=int, help="Last completed marketing year, e.g. 2022.")
     parser.add_argument("--lookback-years", required=True, type=int, help="Explicit lookback window length. No default is inferred.")
-    parser.add_argument("--candidate-countries", required=True, help="Comma-separated candidate country codes, e.g. US,BR,AR,CA.")
+    parser.add_argument("--candidate-countries", help="Comma-separated candidate country codes, e.g. US,BR,AR,CA.")
     parser.add_argument("--minimum-share", help="Optional minimum historical share for inclusion, e.g. 0.05.")
+    parser.add_argument("--discover-global-basket", action="store_true", help="Discover metric-specific country baskets from all concrete countries.")
+    parser.add_argument("--coverage-threshold", default="0.80", help="Coverage threshold for global basket discovery, e.g. 0.80.")
+    parser.add_argument("--max-countries", type=int, help="Optional maximum country count for global basket discovery review.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     observations = load_weight_observations_json(args.input)
+    if args.discover_global_basket:
+        request = SupplyDemandGlobalBasketDiscoveryRequest(
+            product_code=args.product_code,
+            commodity_family=args.commodity_family,
+            effective_as_of_date=date.fromisoformat(args.effective_as_of_date),
+            completed_marketing_year=args.completed_marketing_year,
+            lookback_years=args.lookback_years,
+            coverage_threshold=Decimal(args.coverage_threshold),
+            max_countries=args.max_countries,
+        )
+        proposal = discover_supply_demand_global_country_baskets(observations, request)
+        write_weight_proposal_json(args.output, proposal)
+        print(f"basket_metrics={len(proposal['metric_baskets'])}")
+        print(f"skipped_metrics={len(proposal['skipped_metrics'])}")
+        print(f"output={args.output}")
+        return
+
+    if not args.candidate_countries:
+        raise SystemExit("--candidate-countries is required unless --discover-global-basket is used")
     candidate_countries = tuple(country.strip() for country in args.candidate_countries.split(",") if country.strip())
     request = SupplyDemandWeightProposalRequest(
         product_code=args.product_code,
