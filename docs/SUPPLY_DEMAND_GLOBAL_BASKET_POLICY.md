@@ -198,6 +198,15 @@ Discovery output does not automatically become production configuration. A
 separate implementation phase must convert approved country sets and weights
 into explicit seed or versioned config data.
 
+Phase 6.9V-L adds the local readiness audit documented in
+`docs/SUPPLY_DEMAND_BASKET_READINESS_AUDIT.md`. It evaluates an explicit
+inventory export per Tier A metric and marketing year and proposes only the
+smallest missing approved-country set needed to reach the `0.75` runtime
+threshold. A `local_fixture` audit is demonstration evidence only. Production
+deployment/rebuild remains blocked until a separate read-only
+`production_inventory_export` audit confirms readiness or an approved bounded
+backfill plan is completed.
+
 ## Open Review Items
 
 - Confirm whether Tier A selected country sets should use exact Phase 6.9S

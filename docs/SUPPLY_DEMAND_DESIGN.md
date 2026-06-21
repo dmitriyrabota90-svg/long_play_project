@@ -712,6 +712,12 @@ diagnostic artifact. `food_use`, `beginning_stocks`, `ending_stocks`,
 deferred. The config is code-only, not seeded into PostgreSQL, and requires an
 explicit future deployment/rebuild before it affects production features.
 
+Phase 6.9V-L adds a pure inventory-based readiness matrix and bounded plan
+generator. It uses the reviewed config without importing DB/session/collector
+code, ignores future source-as-of rows, evaluates each required marketing year
+separately, and never treats fixture output as proof of production coverage.
+See `docs/SUPPLY_DEMAND_BASKET_READINESS_AUDIT.md`.
+
 Product-level columns:
 
 - `production_volume`

@@ -1106,6 +1106,12 @@ country baskets (`production_volume`, `crush_volume`,
 production rebuild, does not enable Tier B/C metrics, and does not require CA.
 Use a separate controlled deployment/rebuild phase before expecting production
 features or exports to reflect the config.
+Phase 6.9V-L adds a local inventory audit only. Do not treat a
+`local_fixture` result as production readiness. Before deploying/rebuilding the
+Tier A basket, obtain a separate read-only normalized production inventory,
+run the audit with `--audit-scope production_inventory_export`, and review the
+bounded country/year plan. The audit itself does not connect to PostgreSQL or
+execute collectors.
 Expected nullable export fields include production/use/crush/trade/stocks,
 stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.

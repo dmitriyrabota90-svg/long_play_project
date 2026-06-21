@@ -1699,6 +1699,26 @@ Phase 6.9U adds a local reviewed Tier A `soybean_oil` basket config:
 The config is explicit in code and tested locally, but production export values
 do not change until a later approved deploy and feature rebuild.
 
+Phase 6.9V-L adds a pure local readiness audit and bounded plan generator:
+
+```bash
+python scripts/audit_supply_demand_basket_readiness.py \
+  --input /tmp/supply_demand_inventory.json \
+  --output /tmp/tier_a_readiness.json \
+  --product-code soybean_oil \
+  --commodity-family soybean_oil \
+  --audit-as-of-date 2026-06-19 \
+  --required-marketing-years 2023 \
+  --audit-scope local_fixture \
+  --format json
+```
+
+It has no DB access and does not run collection. `local_fixture` is synthetic
+only; production deployment remains blocked until a later read-only
+`production_inventory_export` audit confirms coverage or yields an approved
+bounded backfill plan. See
+[`docs/SUPPLY_DEMAND_BASKET_READINESS_AUDIT.md`](docs/SUPPLY_DEMAND_BASKET_READINESS_AUDIT.md).
+
 ```bash
 python scripts/propose_supply_demand_country_weights.py \
   --input /tmp/historical_supply_demand.json \

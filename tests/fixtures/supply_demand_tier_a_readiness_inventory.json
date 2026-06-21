@@ -1,0 +1,31 @@
+{
+  "fixture_scope": "local_synthetic_only",
+  "notes": "Synthetic inventory for readiness tests. It does not describe production coverage.",
+  "observations": [
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "CH", "marketing_year": "2022", "source_as_of_date": "2026-06-10"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "US", "marketing_year": "2022", "source_as_of_date": "2026-06-10"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "BR", "marketing_year": "2022", "source_as_of_date": "2026-06-10"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "AR", "marketing_year": "2022", "source_as_of_date": "2026-06-10"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "WLD", "marketing_year": "2023", "source_as_of_date": "2026-06-18"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "US", "marketing_year": "2024", "source_as_of_date": "2026-06-18"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "BR", "marketing_year": "2024", "source_as_of_date": "2026-06-18"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "production_volume", "country_code": "AR", "marketing_year": "2024", "source_as_of_date": "2026-06-18"},
+
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "crush_volume", "country_code": "CH", "marketing_year": "2023", "source_as_of_date": "2026-06-17"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "crush_volume", "country_code": "US", "marketing_year": "2023", "source_as_of_date": "2026-06-17"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "crush_volume", "country_code": "BR", "marketing_year": "2023", "source_as_of_date": "2026-06-17"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "crush_volume", "country_code": "AR", "marketing_year": "2023", "source_as_of_date": "2026-06-17"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "crush_volume", "country_code": "IN", "marketing_year": "2023", "source_as_of_date": "2026-06-17"},
+
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "domestic_consumption", "country_code": "CH", "marketing_year": "2023", "source_as_of_date": "2026-06-16"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "domestic_consumption", "country_code": "US", "marketing_year": "2023", "source_as_of_date": "2026-06-16"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "domestic_consumption", "country_code": "BR", "marketing_year": "2023", "source_as_of_date": "2026-06-16"},
+
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "exports_volume", "country_code": "BR", "marketing_year": "2023", "source_as_of_date": "2026-06-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "exports_volume", "country_code": "US", "marketing_year": "2023", "source_as_of_date": "2026-06-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "exports_volume", "country_code": "RS", "marketing_year": "2023", "source_as_of_date": "2026-06-25"},
+
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "ending_stocks", "country_code": "US", "marketing_year": "2023", "source_as_of_date": "2026-06-15"},
+    {"product_code": "soybean_oil", "commodity_family": "soybean_oil", "metric_code": "imports_volume", "country_code": "CA", "marketing_year": "2023", "source_as_of_date": "2026-06-15"}
+  ]
+}
