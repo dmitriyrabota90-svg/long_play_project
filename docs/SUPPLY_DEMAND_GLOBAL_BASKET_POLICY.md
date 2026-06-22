@@ -207,6 +207,14 @@ deployment/rebuild remains blocked until a separate read-only
 `production_inventory_export` audit confirms readiness or an approved bounded
 backfill plan is completed.
 
+Phase 6.9V-P adds a separate local source-contract audit documented in
+`docs/USDA_PSD_TIER_A_SOURCE_CONTRACT_AUDIT.md`. It verifies the reviewed Tier
+A country/metric/year matrix against a current USDA PSD ZIP and the pure local
+normalization rules. It does not inspect production inventory. Source-ready
+candidate units from that audit are proposals only and must still be compared
+with a read-only production inventory before any bounded collection is
+approved.
+
 ## Open Review Items
 
 - Confirm whether Tier A selected country sets should use exact Phase 6.9S

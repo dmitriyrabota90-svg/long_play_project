@@ -1,0 +1,10 @@
+Commodity_Code,Commodity_Description,Country_Code,Country_Name,Market_Year,Calendar_Year,Month,Attribute_ID,Attribute_Description,Unit_ID,Unit_Description,Value
+4232000,"Oil, Soybean",US,United States,2023,2024,06,028,Production,08,"(1000 MT)",1000.5000
+4232000,"Oil, Soybean",US,United States,2023,2024,06,088,Exports,08,"(1000 MT)",not-a-number
+4232000,"Oil, Soybean",US,United States,2023,2024,06,086,Total Supply,08,"(1000 MT)",1200.0000
+4232000,"Oil, Soybean",BR,Brazil,2023,2024,06,028,Production,08,"(1000 MT)",1200.0000
+4232000,"Oil, Soybean",CH,China,2023,2024,06,125,Domestic Consumption,08,"(1000 MT)",1800.0000
+4232000,"Oil, Soybean",AR,Argentina,2023,2024,06,088,Exports,08,"(1000 MT)",500.0000
+4232000,"Oil, Soybean",IN,India,2023,2024,06,007,Crush,08,"(1000 MT)",250.0000
+4232000,"Oil, Soybean",CA,Canada,2023,2024,06,057,Imports,08,"(1000 MT)",10.0000
+0813100,"Meal, Soybean",US,United States,2023,2024,06,028,Production,08,"(1000 MT)",700.0000

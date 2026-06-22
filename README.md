@@ -1719,6 +1719,23 @@ only; production deployment remains blocked until a later read-only
 bounded backfill plan. See
 [`docs/SUPPLY_DEMAND_BASKET_READINESS_AUDIT.md`](docs/SUPPLY_DEMAND_BASKET_READINESS_AUDIT.md).
 
+Phase 6.9V-P adds a pure local Tier A source-contract audit for the current
+USDA PSD oilseeds ZIP:
+
+```bash
+python scripts/audit_usda_psd_tier_a_source_contract.py \
+  --zip-path /tmp/cdb-tier-a-usda-contract/psd_oilseeds_csv.zip \
+  --output /tmp/cdb-tier-a-usda-contract/tier_a_source_contract.json \
+  --product-code soybean_oil \
+  --marketing-years 2021,2022,2023 \
+  --format json
+```
+
+It checks raw availability and current pure parser mappings only. It has no DB
+or collector orchestration access, excludes CA and Tier B/C metrics, and does
+not prove production inventory or authorize a backfill. See
+[`docs/USDA_PSD_TIER_A_SOURCE_CONTRACT_AUDIT.md`](docs/USDA_PSD_TIER_A_SOURCE_CONTRACT_AUDIT.md).
+
 ```bash
 python scripts/propose_supply_demand_country_weights.py \
   --input /tmp/historical_supply_demand.json \

@@ -35,6 +35,8 @@ from app.collectors.supply_demand.usda_psd_config import (
     PsdCountry,
     expected_unsupported_metric_reason,
     is_supported_metric,
+    normalize_usda_psd_column_key,
+    normalize_usda_psd_metric,
     resolve_commodity_family,
     resolve_country,
     usda_psd_live_probe_params,
@@ -1322,11 +1324,7 @@ def _csv_rows_from_text(text: str, *, source_name: str) -> list[dict[str, Any]]:
 
 
 def _normalize_column_key(value: str) -> str:
-    characters = [char.lower() if char.isalnum() else "_" for char in value.strip()]
-    normalized = "".join(characters)
-    while "__" in normalized:
-        normalized = normalized.replace("__", "_")
-    return normalized.strip("_")
+    return normalize_usda_psd_column_key(value)
 
 
 def _raw_row_in_requested_scope(raw: dict[str, Any], request: UsdaPsdRequest) -> bool:
@@ -1418,48 +1416,7 @@ def _no_rows_message(*, request: UsdaPsdRequest, rows_array_present: bool, raw_r
 
 
 def _normalize_metric(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "production": "production_volume",
-        "production_volume": "production_volume",
-        "domestic_consumption": "domestic_consumption",
-        "domestic_use": "domestic_consumption",
-        "dom_consumption": "domestic_consumption",
-        "domestic_cons": "domestic_consumption",
-        "total_domestic_consumption": "domestic_consumption",
-        "total_dom_consumption": "domestic_consumption",
-        "food_use": "food_use",
-        "food": "food_use",
-        "food_use_dom._cons.": "food_use",
-        "feed_use": "feed_use",
-        "feed": "feed_use",
-        "crush": "crush_volume",
-        "crush_volume": "crush_volume",
-        "exports": "exports_volume",
-        "ty_exports": "exports_volume",
-        "my_exports": "exports_volume",
-        "exports_volume": "exports_volume",
-        "imports": "imports_volume",
-        "ty_imports": "imports_volume",
-        "my_imports": "imports_volume",
-        "imports_volume": "imports_volume",
-        "beginning_stocks": "beginning_stocks",
-        "beginning_stock": "beginning_stocks",
-        "ending_stocks": "ending_stocks",
-        "ending_stock": "ending_stocks",
-        "stock_to_use": "stock_to_use_ratio",
-        "stock_to_use_ratio_pct": "stock_to_use_ratio",
-        "stock_to_use_ratio": "stock_to_use_ratio",
-        "planted_area": "planted_area",
-        "area_planted": "planted_area",
-        "harvested_area": "harvested_area",
-        "area_harvested": "harvested_area",
-        "yield": "yield",
-        "yield_value": "yield",
-    }
-    return aliases.get(normalized, normalized)
+    return normalize_usda_psd_metric(value)
 
 
 def _reason_counts(items: list[dict[str, Any]]) -> dict[str, int]:

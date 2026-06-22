@@ -1112,6 +1112,14 @@ Tier A basket, obtain a separate read-only normalized production inventory,
 run the audit with `--audit-scope production_inventory_export`, and review the
 bounded country/year plan. The audit itself does not connect to PostgreSQL or
 execute collectors.
+
+Phase 6.9V-P adds a second local-only gate: audit the current USDA PSD oilseeds
+ZIP with `scripts/audit_usda_psd_tier_a_source_contract.py` before proposing
+bounded Tier A collection. This audit reads only an explicit ZIP/CSV path,
+writes only an explicit output path, and does not use the DB, `RawStore`, or
+collector orchestration. A source-ready result is not evidence of a production
+gap; compare it with the separate read-only production inventory before any
+collection approval. See `docs/USDA_PSD_TIER_A_SOURCE_CONTRACT_AUDIT.md`.
 Expected nullable export fields include production/use/crush/trade/stocks,
 stock-to-use, area/yield, forecast revisions, `supply_demand_as_of_date`,
 `supply_demand_reporting_lag_days`, and `supply_demand_missing_flags`.
