@@ -1092,13 +1092,10 @@ safe as-of date and marks earlier rows with
 `supply_demand_observations_after_feature_date_window` rather than backfilling
 future information.
 
-Country-aware supply-demand aggregation is implemented but inactive unless
-explicit country weights are configured. The Phase 6.9Q proposal generator is a
-local review tool only: it reads JSON input, writes a caller-provided proposal
-JSON output, and does not write to PostgreSQL or seed production weights. Do not
-enable country weights, rebuild supply-demand features, or resume CA probing
-until a proposal and the global basket policy in
-`docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md` have been reviewed and approved.
+Country-aware supply-demand aggregation is implemented. The Phase 6.9Q
+proposal generator remains a local review tool only: it reads JSON input,
+writes a caller-provided proposal JSON output, and does not write PostgreSQL or
+seed production weights.
 Phase 6.9U adds local code config for the reviewed Tier A `soybean_oil`
 country baskets (`production_volume`, `crush_volume`,
 `domestic_consumption`, and `exports_volume`) under
@@ -1106,6 +1103,10 @@ country baskets (`production_volume`, `crush_volume`,
 production rebuild, does not enable Tier B/C metrics, and does not require CA.
 Use a separate controlled deployment/rebuild phase before expecting production
 features or exports to reflect the config.
+Phase 6.9X makes this reviewed Tier A config the default local input to
+`python scripts/build_features.py supply_demand_daily`; no CLI/env injection is
+required. This does not enable Tier B/C metrics, CA, scheduler jobs, or any
+production behavior before the separate controlled deployment/rebuild.
 Phase 6.9V-L adds a local inventory audit only. Do not treat a
 `local_fixture` result as production readiness. Before deploying/rebuilding the
 Tier A basket, obtain a separate read-only normalized production inventory,

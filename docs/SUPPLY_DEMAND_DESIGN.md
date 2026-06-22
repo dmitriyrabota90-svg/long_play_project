@@ -712,6 +712,11 @@ diagnostic artifact. `food_use`, `beginning_stocks`, `ending_stocks`,
 deferred. The config is code-only, not seeded into PostgreSQL, and requires an
 explicit future deployment/rebuild before it affects production features.
 
+Phase 6.9X wires the reviewed Tier A config into the default local
+`supply_demand_daily` path. The normal CLI therefore needs no hidden flag or
+environment variable. Metrics outside Tier A retain legacy behavior, and
+production remains unchanged until a separately approved deploy/rebuild.
+
 Phase 6.9V-L adds a pure inventory-based readiness matrix and bounded plan
 generator. It uses the reviewed config without importing DB/session/collector
 code, ignores future source-as-of rows, evaluates each required marketing year

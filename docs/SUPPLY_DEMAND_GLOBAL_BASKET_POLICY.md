@@ -86,9 +86,10 @@ evidence and review.
 
 Phase 6.9U converts the reviewed Tier A discovery result into explicit local
 code config for `soybean_oil`. It does not seed DB rows, deploy production,
-rebuild features, or resume CA probing. Runtime use still requires passing the
-reviewed config deliberately to the supply-demand builder or a later approved
-deployment step.
+rebuild features, or resume CA probing. Phase 6.9X makes this reviewed config
+the default for the ordinary local `supply_demand_daily` builder path. No CLI
+or environment injection is required; production still needs a separately
+approved deployment and rebuild.
 
 The first config version is `supply_demand_global_basket_v1` and uses the exact
 Phase 6.9S minimum-prefix 80% coverage country sets and weights:
@@ -106,7 +107,9 @@ The production seed currently maps `soybean_oil` supply-demand concepts under
 commodity family `soybean`; the config records the artifact family
 `soybean_oil` in provenance while using the runtime `soybean` key so the
 builder can join to existing product/commodity mappings when explicitly
-enabled.
+enabled. Phase 6.9X enables only this reviewed Tier A mapping by default;
+explicit `country_weights` overrides remain available for tests and controlled
+callers.
 
 ## Coverage Rule At Feature Time
 

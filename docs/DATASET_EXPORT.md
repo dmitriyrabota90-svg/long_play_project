@@ -124,13 +124,13 @@ Metadata-only PSD API responses are rejected before normalization and are not
 valid export inputs.
 The direct ZIP is country-level. Current controlled USDA PSD probes should use
 concrete country codes such as `US`, `BR`, `AR`, `CA`, or `CH`. `WLD`/`World`
-rows are not present in the ZIP and are not synthesized; global aggregation is
-deferred until explicit aggregation and as-of rules are implemented.
-Country-aware aggregation now exists in the local feature builder, but
-production country weights remain disabled. The Phase 6.9Q proposal generator
-creates review artifacts only; generated weight proposals are not export inputs
-until converted into reviewed config/seed data and rebuilt through the normal
-feature pipeline.
+rows are not present in the ZIP and are not synthesized. Reviewed country
+baskets supply product-level aggregation under explicit as-of and coverage
+rules.
+Country-aware aggregation exists in the local feature builder. The Phase 6.9Q
+proposal generator creates review artifacts only; generated weight proposals
+are not export inputs until converted into reviewed config and rebuilt through
+the normal feature pipeline.
 Phase 6.9U adds a local reviewed Tier A `soybean_oil` basket config for
 `production_volume`, `crush_volume`, `domestic_consumption`, and
 `exports_volume` under `supply_demand_global_basket_v1`. The config preserves
@@ -139,6 +139,9 @@ weight at feature time, and records basket provenance in
 `daily_supply_demand_features.metadata_json`. It is not a production export
 input until deployed and rebuilt explicitly; Tier B/C metrics and CA remain
 deferred.
+Phase 6.9X makes this reviewed Tier A config the default local builder input,
+so the ordinary `supply_demand_daily` command needs no config injection. This
+does not activate Tier B/C metrics or change production before deployment.
 Expected skipped USDA PSD rows, such as aggregate totals and currently
 unmodeled detail splits, are diagnostics only and do not become export columns.
 Supported metric rows must still normalize into `daily_supply_demand_features`

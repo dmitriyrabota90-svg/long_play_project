@@ -1682,9 +1682,8 @@ priority, and additive country rows can be aggregated only when an explicit
 country basket is configured. Phase 6.9Q adds a local proposal generator for
 reviewed country weights. Phase 6.9S/6.9T adds global basket discovery and a
 draft governance policy in `docs/SUPPLY_DEMAND_GLOBAL_BASKET_POLICY.md`.
-Production country weights remain disabled until a proposal and policy are
-reviewed and converted into explicit config or seed data; CA probing remains
-paused until that review is complete.
+Country weights remain disabled unless they are part of reviewed config; CA
+probing remains paused.
 
 Phase 6.9U adds a local reviewed Tier A `soybean_oil` basket config:
 
@@ -1698,6 +1697,13 @@ Phase 6.9U adds a local reviewed Tier A `soybean_oil` basket config:
 
 The config is explicit in code and tested locally, but production export values
 do not change until a later approved deploy and feature rebuild.
+
+Phase 6.9X makes the reviewed Tier A config the default for the ordinary local
+command `python scripts/build_features.py supply_demand_daily`. No CLI option
+or environment variable is required. WLD precedence, partial/insufficient
+coverage rules, and explicit overrides remain intact; Tier B/C metrics and CA
+remain disabled. Production is unchanged until a separate approved deploy and
+rebuild.
 
 Phase 6.9V-L adds a pure local readiness audit and bounded plan generator:
 

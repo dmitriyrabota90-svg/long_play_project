@@ -25,6 +25,7 @@ from app.db.models import (
     SupplyDemandObservation,
 )
 from app.features.supply_demand_daily import (
+    DEFAULT_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
     REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
     SUPPLY_DEMAND_GLOBAL_BASKET_POLICY_VERSION,
     SUPPLY_DEMAND_TIER_A_GLOBAL_BASKET_METRICS,
@@ -260,7 +261,7 @@ def test_supply_demand_daily_builder_forwards_observation_after_as_of_date() -> 
     assert feature.reporting_lag_days == 1
 
 
-def test_supply_demand_daily_builder_uses_country_rows_when_world_row_absent() -> None:
+def test_supply_demand_daily_builder_preserves_explicit_legacy_country_fallback() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         context = _seed_base(session, metrics=("production_volume",))
@@ -280,6 +281,7 @@ def test_supply_demand_daily_builder_uses_country_rows_when_world_row_absent() -
             from_date=date(2026, 6, 16),
             to_date=date(2026, 6, 16),
             session=session,
+            country_weights={},
         )
         feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
 
@@ -473,6 +475,7 @@ def test_supply_demand_reviewed_tier_a_config_uses_exact_metric_specific_weights
     assert all(item.policy_version == SUPPLY_DEMAND_GLOBAL_BASKET_POLICY_VERSION for item in weights)
     assert all(item.minimum_available_weight == Decimal("0.75") for item in weights)
     assert all(item.country_code != "CA" for item in weights)
+    assert DEFAULT_SUPPLY_DEMAND_COUNTRY_WEIGHTS is REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS
 
 
 def test_supply_demand_reviewed_tier_a_wld_overrides_basket() -> None:
@@ -503,7 +506,6 @@ def test_supply_demand_reviewed_tier_a_wld_overrides_basket() -> None:
             from_date=date(2026, 6, 15),
             to_date=date(2026, 6, 15),
             session=session,
-            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
         )
         feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
 
@@ -513,7 +515,7 @@ def test_supply_demand_reviewed_tier_a_wld_overrides_basket() -> None:
     assert provenance["policy_decision"] == "supply_demand_real_wld"
 
 
-def test_supply_demand_reviewed_tier_a_full_basket_aggregates_and_records_provenance() -> None:
+def test_supply_demand_default_path_uses_all_reviewed_tier_a_metric_baskets() -> None:
     SessionLocal = _session_factory()
     with SessionLocal() as session:
         context = _seed_base(
@@ -550,7 +552,6 @@ def test_supply_demand_reviewed_tier_a_full_basket_aggregates_and_records_proven
             from_date=date(2026, 6, 15),
             to_date=date(2026, 6, 15),
             session=session,
-            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
         )
         feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
 
@@ -561,13 +562,17 @@ def test_supply_demand_reviewed_tier_a_full_basket_aggregates_and_records_proven
     assert feature.crush_volume is not None
     assert feature.domestic_consumption is not None
     assert feature.exports_volume is not None
-    production = feature.metadata_json["country_aggregation"]["production_volume"]["components"][0]
-    exports = feature.metadata_json["country_aggregation"]["exports_volume"]["components"][0]
-    assert production["policy_decision"] == "supply_demand_global_basket_v1"
-    assert production["selected_countries"] == ["CH", "US", "BR", "AR"]
-    assert exports["selected_countries"] == ["AR", "BR", "RS", "BL", "PA", "US"]
-    assert "MX" not in production["selected_countries"]
-    assert production["minimum_available_weight"] == "0.75"
+    provenance = {
+        metric: feature.metadata_json["country_aggregation"][metric]["components"][0]
+        for metric in SUPPLY_DEMAND_TIER_A_GLOBAL_BASKET_METRICS
+    }
+    assert all(item["policy_decision"] == "supply_demand_global_basket_v1" for item in provenance.values())
+    assert provenance["production_volume"]["selected_countries"] == ["CH", "US", "BR", "AR"]
+    assert provenance["crush_volume"]["selected_countries"] == ["CH", "US", "BR", "AR", "IN"]
+    assert provenance["domestic_consumption"]["selected_countries"] == ["CH", "US", "BR", "IN", "AR", "MX"]
+    assert provenance["exports_volume"]["selected_countries"] == ["AR", "BR", "RS", "BL", "PA", "US"]
+    assert "MX" not in provenance["production_volume"]["selected_countries"]
+    assert provenance["production_volume"]["minimum_available_weight"] == "0.75"
 
 
 def test_supply_demand_reviewed_tier_a_partial_basket_renormalizes_above_threshold_without_future_leakage() -> None:
@@ -620,7 +625,6 @@ def test_supply_demand_reviewed_tier_a_partial_basket_renormalizes_above_thresho
             from_date=date(2026, 6, 16),
             to_date=date(2026, 6, 16),
             session=session,
-            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
         )
         feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
 
@@ -663,7 +667,6 @@ def test_supply_demand_reviewed_tier_a_insufficient_weight_leaves_metric_missing
             from_date=date(2026, 6, 15),
             to_date=date(2026, 6, 15),
             session=session,
-            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
         )
         feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
 
@@ -703,7 +706,6 @@ def test_supply_demand_reviewed_tier_a_keeps_tier_b_c_metrics_deferred() -> None
             from_date=date(2026, 6, 15),
             to_date=date(2026, 6, 15),
             session=session,
-            country_weights=REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS,
         )
         feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id))
 
@@ -713,6 +715,8 @@ def test_supply_demand_reviewed_tier_a_keeps_tier_b_c_metrics_deferred() -> None
     assert "stock_to_use_ratio" not in configured_metrics
     assert feature.imports_volume == Decimal("111.00000000")
     assert feature.stock_to_use_ratio is None
+    imports_provenance = feature.metadata_json["country_aggregation"]["imports_volume"]["components"][0]
+    assert imports_provenance["policy_decision"] == "supply_demand_latest_country_fallback"
 
 
 def test_supply_demand_daily_default_bounds_extend_to_latest_observation_as_of_date() -> None:
@@ -739,7 +743,11 @@ def test_supply_demand_daily_default_bounds_extend_to_latest_observation_as_of_d
             country_name="United States",
         )
 
-        result = build_supply_demand_daily_features(product_code=context.product.code, session=session)
+        result = build_supply_demand_daily_features(
+            product_code=context.product.code,
+            session=session,
+            country_weights={},
+        )
         features = session.scalars(
             select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == context.product.id).order_by(DailySupplyDemandFeature.feature_date)
         ).all()
@@ -819,8 +827,14 @@ def test_supply_demand_daily_cli(tmp_path: Path) -> None:
     database_url = f"sqlite+pysqlite:///{db_path}"
     SessionLocal = _session_factory(database_url)
     with SessionLocal() as session:
-        context = _seed_base(session)
-        _add_observation(session, context=context, metric_name="production_volume", value="1000", report_month=6)
+        context = _seed_base(session, metrics=("production_volume",))
+        _add_country_metric_rows(
+            session,
+            context=context,
+            metric_name="production_volume",
+            values={"CH": "100", "US": "200", "BR": "300", "AR": "400"},
+        )
+        product_id = context.product.id
         session.commit()
 
     env = {**os.environ, "DATABASE_URL": database_url, "LOG_DIR": str(tmp_path / "logs")}
@@ -845,9 +859,16 @@ def test_supply_demand_daily_cli(tmp_path: Path) -> None:
     )
     get_settings.cache_clear()
 
+    with SessionLocal() as session:
+        feature = session.scalar(select(DailySupplyDemandFeature).where(DailySupplyDemandFeature.product_id == product_id))
+        provenance = feature.metadata_json["country_aggregation"]["production_volume"]["components"][0]
+
     assert "products_processed=1" in result.stdout
     assert "rows_created=1" in result.stdout
-    assert "observations_used=1" in result.stdout
+    assert "observations_used=4" in result.stdout
+    assert provenance["policy_decision"] == "supply_demand_global_basket_v1"
+    assert provenance["selected_countries"] == ["CH", "US", "BR", "AR"]
+    assert provenance["policy_decision"] != "supply_demand_latest_country_fallback"
 
 
 class _Context:

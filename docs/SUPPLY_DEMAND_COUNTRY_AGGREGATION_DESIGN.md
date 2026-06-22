@@ -145,12 +145,16 @@ No new schema is required for this first local-only phase because `daily_supply_
 
 1. Implement configurable country basket support in the local builder.
 2. Generate a local proposal with the Phase 6.9Q/6.9S proposal generator.
-3. Keep the default active production basket empty until weights and the global basket policy are reviewed and approved.
+3. Keep the default empty until weights and the global basket policy are
+   reviewed; Phase 6.9X completes that gate by wiring only the reviewed Tier A
+   config into the normal local builder path.
 4. Add tests with explicit sample US/BR/AR/CA weights.
 5. After weight approval, decide whether to persist country weights in a new table or keep a versioned config file.
 6. Phase 6.9U implements the reviewed Tier A `soybean_oil` config locally for
    `production_volume`, `crush_volume`, `domestic_consumption`, and
    `exports_volume`; Tier B/C metrics remain disabled.
+   Phase 6.9X makes that reviewed config the default without enabling any other
+   metric or country.
 7. Rebuild supply-demand features in a controlled production phase only after
    explicit deployment approval.
 8. Resume bounded CA probing only after an approved policy requires CA; CA is

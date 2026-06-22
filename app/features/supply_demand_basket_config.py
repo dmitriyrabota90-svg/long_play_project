@@ -42,7 +42,6 @@ class SupplyDemandCountryWeight:
 
 
 SupplyDemandCountryWeights = Mapping[tuple[str, str], tuple[SupplyDemandCountryWeight, ...]]
-DEFAULT_SUPPLY_DEMAND_COUNTRY_WEIGHTS: SupplyDemandCountryWeights = {}
 
 
 def _reviewed_tier_a_country_weight(
@@ -150,6 +149,10 @@ REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS: SupplyDemandCountryWeights = {
         ),
     )
 }
+
+DEFAULT_SUPPLY_DEMAND_COUNTRY_WEIGHTS: SupplyDemandCountryWeights = (
+    REVIEWED_TIER_A_SUPPLY_DEMAND_COUNTRY_WEIGHTS
+)
 
 
 REVIEWED_BASKET_COMMODITY_FAMILY_ALIASES = {
