@@ -8,6 +8,8 @@ import zipfile
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from app.audits.usda_psd_tier_a_source_contract import (
     audit_usda_psd_tier_a_source_contract,
     render_usda_psd_tier_a_source_contract_markdown,
@@ -69,14 +71,30 @@ def test_expected_unsupported_metric_is_informational() -> None:
     assert expected[0]["reason"] == "aggregate_total_supply_not_feature_metric"
 
 
-def test_unsupported_country_mapping_is_explicit() -> None:
+@pytest.mark.parametrize(
+    ("metric_code", "country_code", "raw_country_name"),
+    (
+        ("crush_volume", "IN", "India"),
+        ("domestic_consumption", "IN", "India"),
+        ("domestic_consumption", "MX", "Mexico"),
+        ("exports_volume", "RS", "Russia"),
+        ("exports_volume", "BL", "Bolivia"),
+        ("exports_volume", "PA", "Paraguay"),
+    ),
+)
+def test_verified_tier_a_country_mapping_is_available(
+    metric_code: str,
+    country_code: str,
+    raw_country_name: str,
+) -> None:
     audit = _audit_fixture()
-    row = _cell(audit, "crush_volume", "IN", "2023")
+    row = _cell(audit, metric_code, country_code, "2023")
 
     assert row["raw_rows_found"] == 1
-    assert row["normalized_rows_available"] == 0
-    assert row["status"] == "unexpected_mapping_gap"
-    assert "unsupported USDA PSD country" in row["mapping_or_parser_issue"]
+    assert row["normalized_rows_available"] == 1
+    assert row["status"] == "available"
+    assert row["raw_country_name"] == raw_country_name
+    assert row["mapping_or_parser_issue"] is None
 
 
 def test_invalid_numeric_value_is_parser_failure() -> None:
@@ -172,6 +190,19 @@ def test_real_config_weights_remain_unchanged() -> None:
         "BR": Decimal("0.18026335"),
         "AR": Decimal("0.11854805"),
     }
+
+
+def test_country_mapping_fix_does_not_activate_tier_b_or_tier_c_metrics() -> None:
+    audit = _audit_fixture()
+
+    assert set(audit["tier_a_metrics"]) == {
+        "production_volume",
+        "crush_volume",
+        "domestic_consumption",
+        "exports_volume",
+    }
+    assert "imports_volume" not in audit["tier_a_metrics"]
+    assert "stock_to_use_ratio" not in audit["tier_a_metrics"]
 
 
 def _audit_fixture() -> dict:

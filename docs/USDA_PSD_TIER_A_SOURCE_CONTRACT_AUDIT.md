@@ -62,7 +62,7 @@ An already downloaded ZIP or extracted CSV may be audited with `--zip-path`
 or `--csv-path`. Output is written only to the explicit `--output` path.
 Markdown output uses `--format md`.
 
-## Current Local Result
+## Phase 6.9V-P Baseline
 
 The 2026-06-21 local run audited the current `psd_oilseeds.csv` member from a
 `3,838,477` byte ZIP:
@@ -94,12 +94,33 @@ is missing rows and they do not authorize a backfill.
 ## Safety And Rollout
 
 The audit module is deliberately independent of database sessions, collector
-classes, and raw production storage. Any future action must remain separate:
+classes, and raw production storage.
 
-1. Review and add explicit country mappings for the five blocked codes.
-2. Re-run this local source-contract audit and require zero unexpected issues.
-3. Compare the source-ready plan with a separate read-only production
+The follow-up country-mapping review rechecked the same ZIP bytes
+(`sha256=1aafe6c59700c954270662b63ff67f9f63c74209cda7557eefd1fc74f2525936`)
+and confirmed these source identities:
+
+| raw code | raw country name | project canonical code |
+|---|---|---|
+| `IN` | India | `IN` |
+| `MX` | Mexico | `MX` |
+| `RS` | Russia | `RS` |
+| `BL` | Bolivia | `BL` |
+| `PA` | Paraguay | `PA` |
+
+These are USDA PSD source codes. The project preserves them as canonical
+source-country codes instead of guessing ISO aliases. Only the exact raw
+country names above are accepted as new aliases; for example, `RUS` remains
+unsupported.
+
+After adding the verified mappings, the same 63-cell Tier A contract has 63
+available cells, zero mapping gaps, zero missing raw rows, and zero parser
+failures. No codes remain unresolved in this bounded five-code review.
+
+Any production action remains separate:
+
+1. Compare the source-ready plan with a separate read-only production
    inventory export.
-4. Approve bounded collection units explicitly before any production run.
+2. Approve bounded collection units explicitly before any production run.
 
 Do not infer production readiness from this report alone.

@@ -19,6 +19,12 @@ Phase 6.9T defines the first draft production governance policy in
 are eligible for first rollout from metrics requiring review or deferral; it
 does not enable production baskets by itself.
 
+The local country-mapping resolution confirms the five remaining Tier A USDA
+PSD source codes as `IN=India`, `MX=Mexico`, `RS=Russia`, `BL=Bolivia`, and
+`PA=Paraguay`. This only removes parser mapping gaps. It does not alter country
+weights, authorize collection, or claim that production inventory contains
+those countries.
+
 ## Current Limitation
 
 The current fallback policy is collection-order sensitive:

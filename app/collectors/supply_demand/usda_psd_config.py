@@ -137,6 +137,11 @@ SUPPORTED_COUNTRIES = (
     PsdCountry("CA", "Canada"),
     PsdCountry("CH", "China"),
     PsdCountry("EU", "European Union"),
+    PsdCountry("IN", "India"),
+    PsdCountry("MX", "Mexico"),
+    PsdCountry("RS", "Russia"),
+    PsdCountry("BL", "Bolivia"),
+    PsdCountry("PA", "Paraguay"),
 )
 
 COUNTRIES_BY_CODE = {item.code: item for item in SUPPORTED_COUNTRIES}
@@ -159,6 +164,11 @@ COUNTRY_ALIASES = {
     "CHINA": COUNTRIES_BY_CODE["CH"],
     "EUROPEAN UNION": COUNTRIES_BY_CODE["EU"],
     "EU-27": COUNTRIES_BY_CODE["EU"],
+    "INDIA": COUNTRIES_BY_CODE["IN"],
+    "MEXICO": COUNTRIES_BY_CODE["MX"],
+    "RUSSIA": COUNTRIES_BY_CODE["RS"],
+    "BOLIVIA": COUNTRIES_BY_CODE["BL"],
+    "PARAGUAY": COUNTRIES_BY_CODE["PA"],
 }
 for _country in SUPPORTED_COUNTRIES:
     COUNTRY_ALIASES[_country.code] = _country

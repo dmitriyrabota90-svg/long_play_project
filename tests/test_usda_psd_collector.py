@@ -40,6 +40,7 @@ from app.collectors.supply_demand.usda_psd_config import (
     SOURCE_SCHEMA_STATUS,
     SUPPORTED_COUNTRIES,
     SUPPORTED_METRICS,
+    resolve_country,
 )
 from app.db.models import Base, CollectorRun, DailySupplyDemandFeature, DataQualityCheck, RawResponse, SupplyDemandObservation
 from app.db.seed import seed_database
@@ -214,7 +215,9 @@ def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert "getdatasetcontents" not in DOWNLOADABLE_DATASET_ENDPOINT.lower()
     assert DOWNLOADABLE_DATASET_ENDPOINT.endswith(OILSEEDS_DATASET_FILENAME)
     assert "commodity-dataset-builder" in HEADERS["User-Agent"]
-    assert {"WLD", "US", "BR", "AR", "CA", "CH", "EU"} == {country.code for country in SUPPORTED_COUNTRIES}
+    assert {"WLD", "US", "BR", "AR", "CA", "CH", "EU", "IN", "MX", "RS", "BL", "PA"} == {
+        country.code for country in SUPPORTED_COUNTRIES
+    }
     assert {
         "production_volume",
         "domestic_consumption",
@@ -285,6 +288,51 @@ def test_usda_psd_request_validation_rejects_unbounded_or_unknown_inputs() -> No
             country="RUS",
             maxrecords=100,
         )
+
+
+@pytest.mark.parametrize(
+    ("raw_country_code", "raw_country_name"),
+    (
+        ("IN", "India"),
+        ("MX", "Mexico"),
+        ("RS", "Russia"),
+        ("BL", "Bolivia"),
+        ("PA", "Paraguay"),
+    ),
+)
+def test_usda_psd_parser_normalizes_verified_tier_a_country_mappings(
+    raw_country_code: str,
+    raw_country_name: str,
+) -> None:
+    csv_text = (
+        "Commodity_Code,Commodity_Description,Country_Code,Country_Name,Market_Year,"
+        "Calendar_Year,Month,Attribute_ID,Attribute_Description,Unit_ID,Unit_Description,Value\n"
+        f'4232000,"Oil, Soybean",{raw_country_code},{raw_country_name},2023,2024,06,'
+        '088,Exports,08,"(1000 MT)",10.0000\n'
+    )
+    rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
+        psd_oilseeds_zip(csv_text),
+        request=_request(country=raw_country_code),
+        fetched_at=datetime(2026, 6, 30, 12, tzinfo=timezone.utc),
+    )
+
+    assert rows_array_present is True
+    assert raw_rows_count == 1
+    assert malformed == []
+    assert len(rows) == 1
+    assert rows[0].country_code == raw_country_code
+    assert rows[0].country_name == raw_country_name
+
+
+def test_usda_psd_country_mapping_keeps_existing_codes_and_rejects_unverified_aliases() -> None:
+    assert {code: resolve_country(code).name for code in ("US", "BR", "AR", "CH")} == {
+        "US": "United States",
+        "BR": "Brazil",
+        "AR": "Argentina",
+        "CH": "China",
+    }
+    with pytest.raises(ValueError, match="unsupported USDA PSD country"):
+        resolve_country("RUS")
 
 
 def test_usda_psd_parser_normalizes_fixture_rows() -> None:

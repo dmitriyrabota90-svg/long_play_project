@@ -218,6 +218,12 @@ candidate units from that audit are proposals only and must still be compared
 with a read-only production inventory before any bounded collection is
 approved.
 
+The follow-up country-mapping review resolves the five source-contract codes
+using exact USDA PSD raw labels: `IN=India`, `MX=Mexico`, `RS=Russia`,
+`BL=Bolivia`, and `PA=Paraguay`. The reviewed Tier A country sets and weights
+remain unchanged. Mapping availability is not production inventory and does
+not authorize a backfill.
+
 ## Open Review Items
 
 - Confirm whether Tier A selected country sets should use exact Phase 6.9S
