@@ -12,20 +12,23 @@ from pathlib import Path
 from typing import Any, Iterator, TextIO
 
 from app.collectors.supply_demand.usda_psd_config import (
+    COUNTRY_IDENTITY_MISMATCH_REASON,
     DOWNLOADABLE_OILSEEDS_COMMODITIES_BY_CODE,
+    PsdCountryIdentityMismatch,
     expected_unsupported_metric_reason,
     is_supported_metric,
     normalize_usda_psd_column_key,
     normalize_usda_psd_metric,
-    resolve_country,
+    resolve_country_identity,
 )
 from app.features.supply_demand_basket_config import reviewed_tier_a_country_weights
 
 
-SOURCE_CONTRACT_SCHEMA_VERSION = "usda_psd_tier_a_source_contract_v1"
+SOURCE_CONTRACT_SCHEMA_VERSION = "usda_psd_tier_a_source_contract_v2"
 SOURCE_CONTRACT_STATUSES = frozenset(
     {
         "available",
+        COUNTRY_IDENTITY_MISMATCH_REASON,
         "missing_raw_row",
         "expected_unsupported_metric",
         "unexpected_mapping_gap",
@@ -142,7 +145,12 @@ def audit_usda_psd_tier_a_source_contract(
     unexpected_issues_count = sum(
         1
         for row in matrix
-        if row["status"] in {"unexpected_mapping_gap", "unexpected_parser_failure"}
+        if row["status"]
+        in {
+            COUNTRY_IDENTITY_MISMATCH_REASON,
+            "unexpected_mapping_gap",
+            "unexpected_parser_failure",
+        }
     ) + len(unexpected_metric_rows)
     return {
         "schema_version": SOURCE_CONTRACT_SCHEMA_VERSION,
@@ -299,14 +307,28 @@ def _contract_cell(
     if not raw_rows:
         status = "missing_raw_row"
     else:
-        try:
-            resolved_country = resolve_country(country_code)
-            if resolved_country.code != country_code:
-                issue = f"country resolver maps {country_code} to {resolved_country.code}"
-        except ValueError as exc:
-            issue = str(exc)
-        if issue is not None:
+        mismatch_issues: list[str] = []
+        mapping_issues: list[str] = []
+        for row in raw_rows:
+            try:
+                resolved_country = resolve_country_identity(
+                    country_code=str(row.get("country_code") or "").strip() or None,
+                    country_name=str(row.get("country_name") or "").strip() or None,
+                )
+                if resolved_country.code != country_code:
+                    mapping_issues.append(
+                        f"country resolver maps {country_code} row to {resolved_country.code}"
+                    )
+            except PsdCountryIdentityMismatch as exc:
+                mismatch_issues.append(str(exc))
+            except ValueError as exc:
+                mapping_issues.append(str(exc))
+        if mismatch_issues:
+            status = COUNTRY_IDENTITY_MISMATCH_REASON
+            issue = "; ".join(sorted(set(mismatch_issues)))
+        elif mapping_issues:
             status = "unexpected_mapping_gap"
+            issue = "; ".join(sorted(set(mapping_issues)))
         elif not is_supported_metric(metric_code):
             status = "unexpected_mapping_gap"
             issue = f"Tier A metric is not supported by current parser: {metric_code}"
@@ -349,7 +371,12 @@ def _metric_summary(
         if row["status"] != "available"
     ]
     unexpected = sum(
-        row["status"] in {"unexpected_mapping_gap", "unexpected_parser_failure"}
+        row["status"]
+        in {
+            COUNTRY_IDENTITY_MISMATCH_REASON,
+            "unexpected_mapping_gap",
+            "unexpected_parser_failure",
+        }
         for row in rows
     )
     return {

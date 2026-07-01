@@ -25,6 +25,13 @@ PSD source codes as `IN=India`, `MX=Mexico`, `RS=Russia`, `BL=Bolivia`, and
 weights, authorize collection, or claim that production inventory contains
 those countries.
 
+Phase 7.2 adds a strict parser boundary around those mappings. Raw
+`country_code` and `country_name` values are resolved independently through the
+same canonical mapping; a contradictory known pair is rejected as
+`country_identity_mismatch` before normalization. This parser hardening does
+not change Tier A country sets, metric weights, the `0.75` coverage threshold,
+Tier B/C status, or feature aggregation semantics.
+
 ## Current Limitation
 
 The current fallback policy is collection-order sensitive:
@@ -165,6 +172,9 @@ No new schema is required for this first local-only phase because `daily_supply_
    explicit deployment approval.
 8. Resume bounded CA probing only after an approved policy requires CA; CA is
    not selected for any Tier A metric.
+9. Do not authorize a new-country collector/backfill until the Phase 7.2
+   coherence fix is separately deployed and the bounded units are explicitly
+   approved.
 
 ## Open Questions
 

@@ -42,6 +42,9 @@ The audit excludes CA, Tier B/C metrics, `imports_volume`, and direct
   outside the modeled feature contract; this is informational.
 - `unexpected_mapping_gap`: the raw row exists but a current metric or country
   mapping is missing.
+- `country_identity_mismatch`: raw `country_code` and `country_name` both
+  resolve, but identify different canonical countries. The row is blocked
+  before metric/value normalization.
 - `unexpected_parser_failure`: the raw row exists but its value cannot be
   normalized safely.
 
@@ -117,10 +120,40 @@ After adding the verified mappings, the same 63-cell Tier A contract has 63
 available cells, zero mapping gaps, zero missing raw rows, and zero parser
 failures. No codes remain unresolved in this bounded five-code review.
 
+## Phase 7.2 Country Identity Coherence
+
+The parser and this source-contract audit now resolve a non-empty raw country
+code and country name independently through the same reviewed country mapping.
+When both resolve to the same canonical identity, parsing continues and stores
+the canonical country name. When they resolve to different identities, the row
+is rejected as `country_identity_mismatch` before metric support or numeric
+value parsing. Unknown aliases are not rescued through a different field;
+`RUS` remains unsupported. Future raw responses using this behavior are marked
+with parser version `usda_psd_v2`; existing `usda_psd_v1` evidence remains
+unchanged.
+
+The 2026-07-01 local revalidation downloaded the current ZIP to `/tmp` and
+rechecked the same bytes:
+
+- ZIP size: `3,838,477` bytes;
+- SHA-256:
+  `1aafe6c59700c954270662b63ff67f9f63c74209cda7557eefd1fc74f2525936`;
+- raw rows scanned: `801,669`;
+- Tier A rows in scope: `351`;
+- required matrix cells: `63`;
+- available cells: `63`;
+- unexpected issues: `0`;
+- country identity conflicts in the Tier A scope: `0`.
+
+A deliberate `RS` + `India` fixture is blocked as
+`country_identity_mismatch`, produces no normalized row, and is not classified
+as an unsupported metric or malformed numeric value.
+
 Any production action remains separate:
 
-1. Compare the source-ready plan with a separate read-only production
+1. Deploy the Phase 7.2 parser/audit fix through a separate approved change.
+2. Compare the source-ready plan with a separate read-only production
    inventory export.
-2. Approve bounded collection units explicitly before any production run.
+3. Approve bounded collection units explicitly before any production run.
 
 Do not infer production readiness from this report alone.

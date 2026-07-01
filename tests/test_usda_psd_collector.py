@@ -28,10 +28,12 @@ from app.collectors.supply_demand.usda_psd import (
     validate_maxrecords,
 )
 from app.collectors.supply_demand.usda_psd_config import (
+    COUNTRY_IDENTITY_MISMATCH_REASON,
     DEFAULT_MAXRECORDS,
     DOWNLOADABLE_DATASET_ENDPOINT,
     OILSEEDS_COMMODITY_GROUP_CODE,
     OILSEEDS_DATASET_FILENAME,
+    PARSER_VERSION,
     HEADERS,
     MAX_MARKETING_YEARS_PER_RUN,
     MAX_MAXRECORDS,
@@ -203,6 +205,7 @@ def psd_downloadable_metadata_json() -> bytes:
 
 def test_usda_psd_config_contains_controlled_defaults() -> None:
     assert SOURCE_CODE == "usda_psd"
+    assert PARSER_VERSION == "usda_psd_v2"
     assert SOURCE_SCHEMA_STATUS == "needs_verification"
     assert REQUEST_TIMEOUT == 20.0
     assert DEFAULT_MAXRECORDS == 100
@@ -293,6 +296,10 @@ def test_usda_psd_request_validation_rejects_unbounded_or_unknown_inputs() -> No
 @pytest.mark.parametrize(
     ("raw_country_code", "raw_country_name"),
     (
+        ("US", "United States"),
+        ("BR", "Brazil"),
+        ("AR", "Argentina"),
+        ("CH", "China"),
         ("IN", "India"),
         ("MX", "Mexico"),
         ("RS", "Russia"),
@@ -322,6 +329,77 @@ def test_usda_psd_parser_normalizes_verified_tier_a_country_mappings(
     assert len(rows) == 1
     assert rows[0].country_code == raw_country_code
     assert rows[0].country_name == raw_country_name
+
+
+def test_usda_psd_parser_accepts_country_identity_formatting_variants() -> None:
+    csv_text = (
+        "Commodity_Code,Commodity_Description,Country_Code,Country_Name,Market_Year,"
+        "Calendar_Year,Month,Attribute_ID,Attribute_Description,Unit_ID,Unit_Description,Value\n"
+        '4232000,"Oil, Soybean"," in "," iNdIa ",2023,2024,06,'
+        '007,Crush,08,"(1000 MT)",10.0000\n'
+    )
+    rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
+        psd_oilseeds_zip(csv_text),
+        request=_request(country="IN"),
+        fetched_at=datetime(2026, 6, 30, 12, tzinfo=timezone.utc),
+    )
+
+    assert rows_array_present is True
+    assert raw_rows_count == 1
+    assert malformed == []
+    assert len(rows) == 1
+    assert rows[0].country_code == "IN"
+    assert rows[0].country_name == "India"
+
+
+def test_usda_psd_parser_rejects_country_identity_mismatch_before_metric_parsing() -> None:
+    csv_text = (
+        "Commodity_Code,Commodity_Description,Country_Code,Country_Name,Market_Year,"
+        "Calendar_Year,Month,Attribute_ID,Attribute_Description,Unit_ID,Unit_Description,Value\n"
+        '4232000,"Oil, Soybean",RS,India,2023,2024,06,'
+        '086,Total Supply,08,"(1000 MT)",not-a-number\n'
+    )
+    rows, malformed, expected_skips, checks = assess_usda_psd_response(
+        payload=psd_oilseeds_zip(csv_text),
+        content_type="application/zip",
+        status_code=200,
+        request=_request(country="RS"),
+        fetched_at=datetime(2026, 6, 30, 12, tzinfo=timezone.utc),
+    )
+    normalized_check = next(check for check in checks if check.check_name == "supply_demand_normalized_rows_found")
+
+    assert rows == []
+    assert len(malformed) == 1
+    assert malformed[0]["category"] == COUNTRY_IDENTITY_MISMATCH_REASON
+    assert malformed[0]["reason"] == COUNTRY_IDENTITY_MISMATCH_REASON
+    assert malformed[0]["raw_country_code"] == "RS"
+    assert malformed[0]["raw_country_name"] == "India"
+    assert malformed[0]["code_country"] == "RS"
+    assert malformed[0]["name_country"] == "IN"
+    assert "metric value" not in malformed[0]["error"]
+    assert expected_skips == []
+    assert normalized_check.details["parsed_rows_count"] == 0
+    assert normalized_check.details["malformed_rows_count"] == 1
+    assert normalized_check.details["expected_skipped_rows_count"] == 0
+
+
+def test_usda_psd_parser_does_not_accept_unverified_raw_country_alias_via_name() -> None:
+    csv_text = (
+        "Commodity_Code,Commodity_Description,Country_Code,Country_Name,Market_Year,"
+        "Calendar_Year,Month,Attribute_ID,Attribute_Description,Unit_ID,Unit_Description,Value\n"
+        '4232000,"Oil, Soybean",RUS,Russia,2023,2024,06,'
+        '088,Exports,08,"(1000 MT)",10.0000\n'
+    )
+    rows, malformed, rows_array_present, raw_rows_count = parse_usda_psd_rows(
+        psd_oilseeds_zip(csv_text),
+        request=_request(country="RS"),
+        fetched_at=datetime(2026, 6, 30, 12, tzinfo=timezone.utc),
+    )
+
+    assert rows_array_present is True
+    assert raw_rows_count == 1
+    assert rows == []
+    assert malformed == []
 
 
 def test_usda_psd_country_mapping_keeps_existing_codes_and_rejects_unverified_aliases() -> None:
@@ -618,6 +696,55 @@ def test_usda_psd_collector_keeps_real_malformed_rows_problematic(tmp_path: Path
     assert warning is not None
     assert warning.status == "fail"
     assert warning.details_json["category"] == "malformed_empty_or_missing_required"
+
+
+def test_usda_psd_collector_records_country_identity_mismatch_without_normalized_row(
+    tmp_path: Path,
+) -> None:
+    csv_text = (
+        "Commodity_Code,Commodity_Description,Country_Code,Country_Name,Market_Year,"
+        "Calendar_Year,Month,Attribute_ID,Attribute_Description,Unit_ID,Unit_Description,Value\n"
+        '4232000,"Oil, Soybean",RS,India,2023,2024,06,'
+        '088,Exports,08,"(1000 MT)",10.0000\n'
+    )
+    session, cleanup = build_seeded_session()
+    fixture = _write_fixture(
+        tmp_path,
+        psd_oilseeds_zip(csv_text),
+        name="country_identity_mismatch.zip",
+    )
+    try:
+        result = UsdaPsdCollector(
+            raw_store=RawStore(base_dir=tmp_path / "raw"),
+            clock=lambda: datetime(2026, 6, 30, 12, tzinfo=timezone.utc),
+        ).run(
+            session,
+            commodity_family="soybean_oil",
+            from_marketing_year=2023,
+            to_marketing_year=2023,
+            country="RS",
+            fixture_file=fixture,
+        )
+        rows_count = session.scalar(select(func.count()).select_from(SupplyDemandObservation))
+        warning = session.scalar(
+            select(DataQualityCheck).where(
+                DataQualityCheck.check_name == "supply_demand_country_identity_mismatch"
+            )
+        )
+    finally:
+        cleanup()
+
+    assert result.status == "error"
+    assert result.records_written == 0
+    assert result.skipped_malformed == 1
+    assert result.skipped_expected == 0
+    assert rows_count == 0
+    assert warning is not None
+    assert warning.status == "fail"
+    assert warning.severity == "warning"
+    assert warning.details_json["category"] == COUNTRY_IDENTITY_MISMATCH_REASON
+    assert warning.details_json["raw_country_code"] == "RS"
+    assert warning.details_json["raw_country_name"] == "India"
 
 
 def test_usda_psd_collector_inserts_from_zip_fixture_with_raw_zip_extension(tmp_path: Path) -> None:

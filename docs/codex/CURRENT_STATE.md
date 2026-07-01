@@ -3,18 +3,19 @@
 Manually maintained snapshot. Validate time-sensitive production claims with a
 read-only audit before relying on them.
 
-Last reviewed: `2026-06-30`
+Last reviewed: `2026-07-01`
 
 ## Snapshot
 
 - Local branch: `main`
-- Local baseline HEAD at Phase 7.0 start:
-  `c48b8e71e81d6d4a618ca97b6753caafc08305ac`
-- Production HEAD: `5fb3221a8680341d6b1bc2923e12ee36b82eebc0`
+- Local baseline for Phase 7.2:
+  `dd483fe4e7f16c6c75c4c10ae6b09269822b205d`
+- Production HEAD: `dd483fe4e7f16c6c75c4c10ae6b09269822b205d`
 - Production Alembic revision: `0019_supply_demand_features`
-- Current context phase: Phase 7.0 repository-native Codex context architecture
-- Local mapping commit `c48b8e7` is not deployed and is not production
-  backfill authorization.
+- Current local phase: Phase 7.2 strict USDA country identity coherence
+  validation.
+- Mapping commit `c48b8e7` is deployed. The Phase 7.2 coherence fix is
+  local-only until a separate approved deploy.
 
 ## Production Baseline
 
@@ -73,9 +74,9 @@ hours. The overall quality conclusion may remain `error` because old pre-fix
 USDA diagnostic incidents remain stored. Distinguish historical incidents from
 new active failures before changing code or data.
 
-## Local-Only Mapping State
+## Country Mapping And Coherence State
 
-Commit `c48b8e7` verifies and maps these USDA PSD source codes:
+Deployed commit `c48b8e7` verifies and maps these USDA PSD source codes:
 
 - `IN=India`
 - `MX=Mexico`
@@ -83,16 +84,18 @@ Commit `c48b8e7` verifies and maps these USDA PSD source codes:
 - `BL=Bolivia`
 - `PA=Paraguay`
 
-The local Tier A source-contract audit moved from `45/63` to `63/63` available
-cells. This proves source/parser readiness only. It does not prove production
-inventory and does not authorize deploy, collection, or backfill.
+The local Phase 7.2 parser resolves raw code and name independently and rejects
+contradictory known identities as `country_identity_mismatch` before metric or
+numeric parsing. A current local ZIP revalidation reports `63/63` available
+Tier A cells and zero unexpected coherence issues. The fix is not deployed and
+does not authorize collection or backfill.
 
 ## Next Recommended Work
 
-1. Review mapping commit `c48b8e7`.
-2. Perform a structured architecture/code review using the safe review runbook.
-3. Obtain separate approval before deploying mappings.
-4. Obtain separate bounded approval before any collector run or backfill.
+1. Review and separately deploy the Phase 7.2 coherence fix.
+2. Keep USDA collection/backfill prohibited until that deploy is validated.
+3. Obtain separate bounded approval before any collector run or backfill.
+4. Address strict `as_collected` mode separately; it is outside Phase 7.2.
 
 ## Maintenance Contract
 

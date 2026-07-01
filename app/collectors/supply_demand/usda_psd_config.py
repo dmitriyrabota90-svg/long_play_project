@@ -4,8 +4,9 @@ from dataclasses import dataclass
 
 SOURCE_CODE = "usda_psd"
 COLLECTOR_NAME = "usda_psd"
-PARSER_VERSION = "usda_psd_v1"
+PARSER_VERSION = "usda_psd_v2"
 SOURCE_SCHEMA_STATUS = "needs_verification"
+COUNTRY_IDENTITY_MISMATCH_REASON = "country_identity_mismatch"
 
 BASE_URL = "https://apps.fas.usda.gov/psdonline"
 DOWNLOADABLE_DATASET_ENDPOINT = f"{BASE_URL}/downloads/psd_oilseeds_csv.zip"
@@ -129,6 +130,28 @@ class PsdCountry:
     name: str
 
 
+class PsdCountryIdentityMismatch(ValueError):
+    """Raised when raw USDA country code and name identify different countries."""
+
+    def __init__(
+        self,
+        *,
+        raw_country_code: str,
+        raw_country_name: str,
+        code_country: PsdCountry,
+        name_country: PsdCountry,
+    ) -> None:
+        self.raw_country_code = raw_country_code
+        self.raw_country_name = raw_country_name
+        self.code_country = code_country
+        self.name_country = name_country
+        super().__init__(
+            f"{COUNTRY_IDENTITY_MISMATCH_REASON}: "
+            f"country_code={raw_country_code!r} resolves to {code_country.code}/{code_country.name}; "
+            f"country_name={raw_country_name!r} resolves to {name_country.code}/{name_country.name}"
+        )
+
+
 SUPPORTED_COUNTRIES = (
     PsdCountry("WLD", "World"),
     PsdCountry("US", "United States"),
@@ -190,6 +213,29 @@ def resolve_country(value: str) -> PsdCountry:
         supported = ", ".join(sorted(COUNTRIES_BY_CODE))
         raise ValueError(f"unsupported USDA PSD country: {value}; supported codes: {supported}")
     return country
+
+
+def resolve_country_identity(
+    *,
+    country_code: str | None,
+    country_name: str | None,
+    fallback_country: PsdCountry | None = None,
+) -> PsdCountry:
+    raw_country_code = country_code.strip() if country_code else None
+    raw_country_name = country_name.strip() if country_name else None
+    code_country = resolve_country(raw_country_code) if raw_country_code else None
+    name_country = resolve_country(raw_country_name) if raw_country_name else None
+    if code_country is not None and name_country is not None and code_country.code != name_country.code:
+        raise PsdCountryIdentityMismatch(
+            raw_country_code=raw_country_code,
+            raw_country_name=raw_country_name,
+            code_country=code_country,
+            name_country=name_country,
+        )
+    resolved = code_country or name_country or fallback_country
+    if resolved is None:
+        raise ValueError("USDA PSD country identity is missing")
+    return resolved
 
 
 def is_supported_metric(value: str) -> bool:

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.collectors.base import BaseCollector, CollectorResult
 from app.collectors.supply_demand.usda_psd_config import (
     COLLECTOR_NAME,
+    COUNTRY_IDENTITY_MISMATCH_REASON,
     DEFAULT_MAXRECORDS,
     DOWNLOADABLE_DATASET_ENDPOINT,
     DOWNLOADABLE_OILSEEDS_COMMODITIES_BY_CODE,
@@ -33,12 +34,14 @@ from app.collectors.supply_demand.usda_psd_config import (
     SUPPORTED_METRICS,
     PsdCommodityFamily,
     PsdCountry,
+    PsdCountryIdentityMismatch,
     expected_unsupported_metric_reason,
     is_supported_metric,
     normalize_usda_psd_column_key,
     normalize_usda_psd_metric,
     resolve_commodity_family,
     resolve_country,
+    resolve_country_identity,
     usda_psd_live_probe_params,
 )
 from app.db.models import CollectorRun, DataQualityCheck, RawResponse, Source, SupplyDemandCommodity, SupplyDemandObservation
@@ -703,6 +706,20 @@ def _parse_usda_psd_rows_with_skips(
             continue
         try:
             rows.append(_parse_supply_demand_row(raw_row, request=request, fetched_at=fetched_at))
+        except PsdCountryIdentityMismatch as exc:
+            malformed.append(
+                {
+                    "index": index,
+                    "category": COUNTRY_IDENTITY_MISMATCH_REASON,
+                    "reason": COUNTRY_IDENTITY_MISMATCH_REASON,
+                    "error": str(exc),
+                    "raw_country_code": exc.raw_country_code,
+                    "raw_country_name": exc.raw_country_name,
+                    "code_country": exc.code_country.code,
+                    "name_country": exc.name_country.code,
+                    "raw_keys": sorted(str(key) for key in raw_row.keys()),
+                }
+            )
         except UsdaPsdExpectedSkip as exc:
             expected_skips.append(
                 {
@@ -752,6 +769,7 @@ def build_supply_demand_source_record_hash(
 
 def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fetched_at: datetime) -> ParsedSupplyDemandRow:
     commodity_mapping = _downloadable_commodity_from_raw(raw)
+    country = _country_identity(raw, request)
     metric_name = _normalize_metric(
         _string_value(
             raw,
@@ -781,9 +799,6 @@ def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fe
     if metric_value is None:
         raise UsdaPsdParseError("metric value is missing or invalid")
 
-    country_code = _country_code(raw, request)
-    country = resolve_country(country_code)
-    country_name = _string_value(raw, "country_name", "countryName", "countryname", "country") or country.name
     marketing_year = _marketing_year(raw)
     report_published_at = _parse_datetime(
         _first_present(raw, "report_published_at", "reportPublishedAt", "reportpublishedat", "publicationDate", "publicationdate")
@@ -824,7 +839,7 @@ def _parse_supply_demand_row(raw: dict[str, Any], *, request: UsdaPsdRequest, fe
         product_code=product_code,
         metric_name=metric_name,
         country_code=country.code,
-        country_name=country_name,
+        country_name=country.name,
         region_code=_string_value(raw, "region_code", "regionCode", "regioncode"),
         region_name=_string_value(raw, "region_name", "regionName", "regionname"),
         marketing_year=marketing_year,
@@ -985,11 +1000,16 @@ def _write_malformed_row_checks(
     checked_at: datetime,
 ) -> None:
     for item in malformed:
+        check_name = (
+            "supply_demand_country_identity_mismatch"
+            if item.get("category") == COUNTRY_IDENTITY_MISMATCH_REASON
+            else "supply_demand_malformed_row_skipped"
+        )
         _write_quality_check(
             session,
             source_id=source_id,
             table_name="supply_demand_observations",
-            check_name="supply_demand_malformed_row_skipped",
+            check_name=check_name,
             status="fail",
             severity="warning",
             details={**item, "raw_response_id": raw_response_id, "request": _request_metadata(request)},
@@ -1341,6 +1361,15 @@ def _raw_row_in_requested_scope(raw: dict[str, Any], request: UsdaPsdRequest) ->
     try:
         if _country_code(raw, request) != request.country.code:
             return False
+    except PsdCountryIdentityMismatch:
+        raw_country_code, _ = _raw_country_fields(raw)
+        if raw_country_code is None:
+            return False
+        try:
+            if resolve_country(raw_country_code).code != request.country.code:
+                return False
+        except ValueError:
+            return False
     except ValueError:
         return False
 
@@ -1448,18 +1477,36 @@ def _normalize_frequency(value: str | None) -> str:
 
 
 def _country_code(raw: dict[str, Any], request: UsdaPsdRequest) -> str:
-    value = _string_value(raw, "country_code", "countryCode", "countryCode".lower(), "country_code", "country", "Country Code")
-    name = _string_value(raw, "country_name", "countryName", "countryname", "country", "Country Name")
-    candidate = (value or name or request.country.code).strip().upper()
-    try:
-        return resolve_country(candidate).code
-    except ValueError:
-        if name:
-            try:
-                return resolve_country(name).code
-            except ValueError:
-                pass
-    return candidate
+    return _country_identity(raw, request).code
+
+
+def _country_identity(raw: dict[str, Any], request: UsdaPsdRequest) -> PsdCountry:
+    raw_country_code, raw_country_name = _raw_country_fields(raw)
+    return resolve_country_identity(
+        country_code=raw_country_code,
+        country_name=raw_country_name,
+        fallback_country=request.country,
+    )
+
+
+def _raw_country_fields(raw: dict[str, Any]) -> tuple[str | None, str | None]:
+    country_code = _string_value(
+        raw,
+        "country_code",
+        "countryCode",
+        "countrycode",
+        "Country Code",
+    )
+    country_name = _string_value(
+        raw,
+        "country_name",
+        "countryName",
+        "countryname",
+        "Country Name",
+    )
+    if country_code is None and country_name is None:
+        country_code = _string_value(raw, "country")
+    return country_code, country_name
 
 
 def _marketing_year(raw: dict[str, Any]) -> str:

@@ -107,6 +107,38 @@ def test_invalid_numeric_value_is_parser_failure() -> None:
     assert "metric value is invalid" in row["mapping_or_parser_issue"]
 
 
+def test_country_identity_mismatch_blocks_source_contract_cell(tmp_path: Path) -> None:
+    mismatch_fixture = tmp_path / "tier_a_country_mismatch.csv"
+    fixture_text = FIXTURE.read_text(encoding="utf-8")
+    mismatch_fixture.write_text(
+        fixture_text.replace(
+            "4232000,\"Oil, Soybean\",RS,Russia,2023",
+            "4232000,\"Oil, Soybean\",RS,India,2023",
+        ),
+        encoding="utf-8",
+    )
+
+    audit = audit_usda_psd_tier_a_source_contract(
+        source_path=mismatch_fixture,
+        product_code="soybean_oil",
+        marketing_years=("2023",),
+    )
+    row = _cell(audit, "exports_volume", "RS", "2023")
+
+    assert row["status"] == "country_identity_mismatch"
+    assert row["normalized_rows_available"] == 0
+    assert "country_identity_mismatch" in row["mapping_or_parser_issue"]
+    assert "RS/Russia" in row["mapping_or_parser_issue"]
+    assert "IN/India" in row["mapping_or_parser_issue"]
+    assert audit["unexpected_issues_count"] >= 1
+    assert any(
+        item["country_code"] == "RS"
+        and item["marketing_year"] == "2023"
+        and item["status"] == "blocked_source_candidate"
+        for item in audit["blocked_source_units"]
+    )
+
+
 def test_zip_input_and_markdown_output_are_supported(tmp_path: Path) -> None:
     zip_path = tmp_path / "psd_oilseeds_csv.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
