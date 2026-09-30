@@ -92,6 +92,16 @@ does not authorize collection or backfill.
 
 ## Next Recommended Work
 
+## Phase 9.2 Local Candidate (Not Deployed)
+
+Local code now contains a bounded Open-Meteo recovery planner, dry-run CLI,
+opt-in `weather_recovery_daily` scheduler callback, request/runtime budgets,
+retry/backoff, PostgreSQL advisory locking, region freshness reporting, and
+weather-only feature rebuilds. The scheduler remains disabled by default.
+No production connection, deployment, database write, collector run, restart,
+or configuration change was performed for this local candidate. Strict
+as-collected weather cutoff semantics remain a separate unimplemented mode.
+
 1. Review and separately deploy the Phase 7.2 coherence fix.
 2. Keep USDA collection/backfill prohibited until that deploy is validated.
 3. Obtain separate bounded approval before any collector run or backfill.

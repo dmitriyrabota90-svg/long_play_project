@@ -96,6 +96,22 @@ def daily_feature_builder_job() -> None:
         logger.exception("scheduler job failed job=daily_feature_builder")
 
 
+def weather_recovery_job() -> None:
+    from app.collectors.weather.recovery import WeatherRecoveryService
+
+    try:
+        logger.info("scheduler job started job=weather_recovery")
+        result = WeatherRecoveryService().run(mode="regular")
+        logger.info(
+            "scheduler job finished job=weather_recovery status=%s requests_completed=%s observations_written=%s "
+            "feature_rows_written=%s backlog_days=%s errors_count=%s",
+            result.status, result.requests_completed, result.observations_written, result.feature_rows_written,
+            result.plan.backlog_days, len(result.errors),
+        )
+    except Exception:
+        logger.exception("scheduler job failed job=weather_recovery")
+
+
 def current_price_source_test_interval_job() -> None:
     from app.collectors.prices.current_price_source import CurrentPriceSourceCollector
 

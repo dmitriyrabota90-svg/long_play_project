@@ -194,6 +194,13 @@ def build_operational_report(*, freshness_hours: int = 24, session: Session | No
             "last_feature_date": None,
             "latest_weather_as_of_date": None,
         },
+        "weather_freshness": {
+            "source_delay_days": get_settings().weather_source_delay_days,
+            "safe_observation_end": None,
+            "regions": [],
+            "stale_regions": [],
+            "note": "observation_date is event time; fetched_at controls as-collected availability",
+        },
         "product_weather_region_weights": {
             "count": 0,
             "active_count": 0,
@@ -320,6 +327,8 @@ def _fill_db_report(
 ) -> None:
     source = session.scalar(select(Source).where(Source.code == "current_price_source"))
     report["database"]["ok"] = True
+    source_safe_end = (datetime.now(timezone.utc).date() - timedelta(days=get_settings().weather_source_delay_days))
+    report["weather_freshness"]["safe_observation_end"] = source_safe_end.isoformat()
     report["last_24h"]["collector_runs"] = session.scalar(
         select(func.count()).select_from(CollectorRun).where(CollectorRun.started_at >= cutoff)
     )
@@ -507,6 +516,22 @@ def _fill_db_report(
             latest_product_supply_demand_feature_date.isoformat() if latest_product_supply_demand_feature_date else None
         ),
     }
+    weather_regions = session.scalars(select(WeatherRegion).where(WeatherRegion.is_active.is_(True)).order_by(WeatherRegion.region_code)).all()
+    freshness_rows: list[dict[str, Any]] = []
+    for region in weather_regions:
+        last_observation = session.scalar(select(func.max(WeatherObservation.observation_date)).where(WeatherObservation.region_id == region.id))
+        last_fetched = session.scalar(select(func.max(WeatherObservation.fetched_at)).where(WeatherObservation.region_id == region.id))
+        is_stale = last_observation is None or last_observation < source_safe_end
+        entry = {
+            "region_code": region.region_code,
+            "last_observation_date": last_observation.isoformat() if last_observation else None,
+            "last_fetched_at": _to_utc(last_fetched).isoformat() if last_fetched else None,
+            "is_stale": is_stale,
+            "as_collected_cutoff_safe": False,
+        }
+        freshness_rows.append(entry)
+    report["weather_freshness"]["regions"] = freshness_rows
+    report["weather_freshness"]["stale_regions"] = [entry["region_code"] for entry in freshness_rows if entry["is_stale"]]
     report["historical_price_bars"]["count"] = session.scalar(select(func.count()).select_from(HistoricalPriceBar))
     last_historical_bar_date = session.scalar(select(func.max(HistoricalPriceBar.bar_date)))
     last_historical_created_at = session.scalar(select(func.max(HistoricalPriceBar.created_at)))

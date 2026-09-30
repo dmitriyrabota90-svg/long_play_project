@@ -666,6 +666,41 @@ and leakage policy.
 
 ## Non-Goals
 
+## Phase 9.2 Bounded Recovery And Automation
+
+The Open-Meteo archive endpoint is used with explicit inclusive date ranges and
+UTC daily boundaries. Open-Meteo documents a five-day delay for the ERA5 and
+ERA5-Land historical reanalysis feeds; the application therefore computes a
+source-safe end date as current UTC date minus `WEATHER_SOURCE_DELAY_DAYS`
+(default `5`) and never asks the archive endpoint for later dates.
+
+`scripts/weather_recovery.py --mode catchup --from-date 2026-06-16 --dry-run`
+prints the bounded plan without HTTP, raw-store, or database writes. Removing
+`--dry-run` performs the same plan. Every request is at most
+`WEATHER_MAX_DAYS_PER_REQUEST` days (default `45`), and a run is constrained by
+both request and runtime budgets. Re-running resumes from actual stored
+observation dates: exact hashes are skipped; changed source hashes create a
+warning and are never overwritten.
+
+`WEATHER_SCHEDULER_ENABLED=false` is the safe default. When deliberately
+enabled, `weather_recovery_daily` runs at `WEATHER_SCHEDULE_TIME` (default
+17:30 Europe/Moscow), before the existing 19:30 product builder. It collects
+only the recent tail, records remaining older gaps as backlog, rebuilds only
+`weather_daily_features`, and does not invoke the product daily builder. The
+manual CLI and the scheduled callback use a PostgreSQL advisory lock, so two
+containers cannot overlap; SQLite development has only an in-process lock.
+
+`fetched_at` remains the actual collection timestamp. `observation_date` is
+event time and must not be treated as proof that a value was available at an
+earlier historical cutoff. The operational report exposes per-region last
+observation/fetch times and explicitly labels strict as-collected safety as
+unavailable until a separate cutoff-aware feature mode is implemented.
+
+Sources: [Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api),
+[model updates](https://open-meteo.com/en/docs/model-updates),
+[terms](https://open-meteo.com/en/terms), and
+[pricing/usage limits](https://open-meteo.com/en/pricing).
+
 Historical Phase 6.3B design-only non-goals:
 
 - No migration in Phase 6.3B.

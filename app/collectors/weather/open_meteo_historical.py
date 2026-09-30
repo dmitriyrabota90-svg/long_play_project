@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time as time_module
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
@@ -107,6 +108,8 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
         raw_store: RawStore | None = None,
         timeout: float = REQUEST_TIMEOUT,
         max_days_per_run: int = MAX_DAYS_PER_RUN,
+        max_attempts: int = 3,
+        sleeper: Any | None = None,
         clock: Any | None = None,
     ) -> None:
         super().__init__()
@@ -114,6 +117,8 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
         self.raw_store = raw_store or RawStore()
         self.timeout = timeout
         self.max_days_per_run = max_days_per_run
+        self.max_attempts = max_attempts
+        self.sleeper = sleeper or time_module.sleep
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def run(
@@ -156,6 +161,7 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
         from_date: date,
         to_date: date,
         run_type: str,
+        prefetched_responses: dict[str, httpx.Response] | None = None,
     ) -> OpenMeteoCollectorResult:
         started_at = _to_utc(self.clock())
         source = session.scalar(select(Source).where(Source.code == self.source_code))
@@ -244,6 +250,7 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
                 region,
                 from_date=from_date,
                 to_date=to_date,
+                response=(prefetched_responses or {}).get(region.region_code),
             )
             raw_response_ids.extend(stats.raw_response_ids)
             all_errors.extend(stats.errors)
@@ -300,6 +307,7 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
         *,
         from_date: date,
         to_date: date,
+        response: httpx.Response | None = None,
     ) -> _RegionStats:
         stats = _RegionStats(region_code=region.region_code)
         checked_at = _to_utc(self.clock())
@@ -315,12 +323,7 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
         )
         request = _request_for_region(region, from_date=from_date, to_date=to_date)
         try:
-            response = self.http_client.get(
-                ENDPOINT,
-                params=open_meteo_params(request),
-                headers=HEADERS,
-                timeout=self.timeout,
-            )
+            response = response or self.fetch_region_response(region, from_date=from_date, to_date=to_date)
             fetched_at = _to_utc(self.clock())
         except (httpx.TimeoutException, httpx.RequestError) as exc:
             message = _request_error_message(region, exc, request=request, timeout=self.timeout)
@@ -421,6 +424,61 @@ class OpenMeteoHistoricalWeatherCollector(BaseCollector):
             stats.records_written += 1
             session.flush()
         return stats
+
+    def fetch_region_response(
+        self, region: WeatherRegion, *, from_date: date, to_date: date
+    ) -> httpx.Response:
+        """Fetch one bounded chunk without opening a database session.
+
+        Recovery orchestration uses this seam so a database transaction is never
+        held while the network request or its retry backoff is in progress.
+        """
+        request = _request_for_region(region, from_date=from_date, to_date=to_date)
+        last_error: Exception | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                response = self.http_client.get(
+                    ENDPOINT, params=open_meteo_params(request), headers=HEADERS, timeout=self.timeout
+                )
+                if response.status_code != 429 and response.status_code < 500:
+                    return response
+                last_error = RuntimeError(f"retryable Open-Meteo status {response.status_code}")
+                if attempt == self.max_attempts:
+                    return response
+                retry_after = response.headers.get("retry-after")
+                delay = min(float(retry_after), 30.0) if retry_after and retry_after.isdigit() else min(0.5 * 2 ** (attempt - 1), 4.0)
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                last_error = exc
+                if attempt == self.max_attempts:
+                    raise
+                delay = min(0.5 * 2 ** (attempt - 1), 4.0)
+            logger.warning("weather request retry region=%s attempt=%s delay_seconds=%s", region.region_code, attempt, delay)
+            self.sleeper(delay)
+        assert last_error is not None
+        raise last_error
+
+    def persist_prefetched_response(
+        self,
+        *,
+        region_code: str,
+        from_date: date,
+        to_date: date,
+        response: httpx.Response,
+        run_type: str = "manual",
+    ) -> OpenMeteoCollectorResult:
+        """Persist a response already fetched outside a database transaction."""
+        run_type = _normalize_run_type(run_type)
+        validate_date_range(from_date=from_date, to_date=to_date, max_days=self.max_days_per_run)
+        with session_scope() as session:
+            selected = _select_regions(session, region_code=region_code, from_date=from_date, to_date=to_date)
+            return self._run_with_session(
+                session,
+                selected_regions=selected,
+                from_date=from_date,
+                to_date=to_date,
+                run_type=run_type,
+                prefetched_responses={region_code: response},
+            )
 
     def _save_raw_response(
         self,
@@ -904,8 +962,8 @@ def _canonical_decimal(value: Decimal | None) -> str | None:
 
 def _normalize_run_type(value: str) -> str:
     normalized = value.strip().lower()
-    if normalized not in {"manual", "backfill"}:
-        raise ValueError("run_type must be either 'manual' or 'backfill'")
+    if normalized not in {"manual", "backfill", "scheduled"}:
+        raise ValueError("run_type must be 'manual', 'backfill', or 'scheduled'")
     return normalized
 
 

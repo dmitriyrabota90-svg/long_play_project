@@ -94,6 +94,38 @@ def test_scheduler_does_not_register_feature_builder_job_by_default(monkeypatch)
     get_settings.cache_clear()
 
 
+def test_scheduler_does_not_register_weather_job_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "false")
+    monkeypatch.delenv("WEATHER_SCHEDULER_ENABLED", raising=False)
+    get_settings.cache_clear()
+
+    scheduler = build_scheduler()
+
+    assert scheduler.get_job("weather_recovery_daily") is None
+    get_settings.cache_clear()
+
+
+def test_scheduler_registers_weather_job_without_changing_daily_builder(monkeypatch) -> None:
+    monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULER_ENABLED", "true")
+    monkeypatch.setenv("FEATURE_BUILDER_SCHEDULE_TIME", "19:30")
+    monkeypatch.setenv("WEATHER_SCHEDULER_ENABLED", "true")
+    monkeypatch.setenv("WEATHER_SCHEDULE_TIME", "17:30")
+    get_settings.cache_clear()
+
+    scheduler = build_scheduler()
+    weather = scheduler.get_job("weather_recovery_daily")
+    builder = scheduler.get_job("daily_feature_builder")
+
+    assert weather is not None
+    assert "hour='17'" in str(weather.trigger)
+    assert builder is not None
+    assert "hour='19'" in str(builder.trigger)
+    get_settings.cache_clear()
+
 def test_scheduler_registers_feature_builder_job_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("CURRENT_PRICE_SCHEDULER_ENABLED", "false")
     monkeypatch.setenv("CBR_FX_SCHEDULER_ENABLED", "false")

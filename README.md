@@ -36,7 +36,8 @@ Not implemented yet:
 
 - Sunflower product and fundamental collectors.
 - Trade/import-export collectors.
-- Automatic schedulers for historical, energy, benchmark, and weather collectors.
+- Automatic schedulers for historical, energy, and benchmark collectors.
+- Bounded Open-Meteo weather recovery and an opt-in daily weather scheduler.
 - Dataset target calculation.
 - ML model training.
 - FastAPI or any web service.
@@ -105,6 +106,14 @@ CBR_FX_SCHEDULER_ENABLED=false
 CBR_FX_SCHEDULE_TIME=10:00
 FEATURE_BUILDER_SCHEDULER_ENABLED=false
 FEATURE_BUILDER_SCHEDULE_TIME=19:30
+WEATHER_SCHEDULER_ENABLED=false
+WEATHER_SCHEDULE_TIME=17:30
+WEATHER_RECOVERY_START_DATE=2026-06-16
+WEATHER_SOURCE_DELAY_DAYS=5
+WEATHER_MAX_DAYS_PER_REQUEST=45
+WEATHER_MAX_REQUESTS_PER_RUN=14
+WEATHER_MAX_RUNTIME_SECONDS=300
+WEATHER_REGULAR_TAIL_DAYS=45
 LOG_MAX_BYTES=10485760
 LOG_BACKUP_COUNT=10
 APP_VERSION=0.1.0

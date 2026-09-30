@@ -1431,6 +1431,34 @@ Do not print the new password in command logs or reports. Do not commit `.env`.
 
 ## Do Not Touch During Routine Deploys
 
+## Phase 9.2 Weather Recovery Candidate (Separate Approval Required)
+
+The local candidate adds a disabled-by-default `weather_recovery_daily` job. It
+is not deployment authority. First inspect the no-write plan:
+
+```bash
+python scripts/weather_recovery.py --mode catchup --from-date 2026-06-16 --dry-run
+```
+
+After separately approved deployment and a bounded manual catch-up, enable only
+the following weather settings; do not alter the existing price, FX, or 19:30
+daily-builder schedules:
+
+```env
+WEATHER_SCHEDULER_ENABLED=true
+WEATHER_SCHEDULE_TIME=17:30
+WEATHER_SOURCE_DELAY_DAYS=5
+WEATHER_MAX_DAYS_PER_REQUEST=45
+WEATHER_MAX_REQUESTS_PER_RUN=14
+WEATHER_MAX_RUNTIME_SECONDS=300
+WEATHER_REGULAR_TAIL_DAYS=45
+```
+
+The job does bounded HTTP outside database transactions, uses a PostgreSQL
+advisory lock to prevent manual/scheduled overlap across containers, and
+rebuilds `weather_daily_features` only. It does not make a late backfill valid
+at an earlier strict as-collected cutoff.
+
 - Existing nginx configuration.
 - Existing PM2 applications.
 - SSL certificates.

@@ -12,6 +12,7 @@ from app.scheduler.jobs import (
     daily_feature_builder_job,
     daily_quality_check_job,
     health_check_job,
+    weather_recovery_job,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,25 @@ def build_scheduler() -> BlockingScheduler:
         )
     else:
         logger.info("daily feature builder scheduler disabled by FEATURE_BUILDER_SCHEDULER_ENABLED")
+    if settings.weather_scheduler_enabled:
+        hour, minute = _parse_schedule_time(settings.weather_schedule_time)
+        scheduler.add_job(
+            weather_recovery_job,
+            "cron",
+            hour=hour,
+            minute=minute,
+            id="weather_recovery_daily",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info(
+            "registered scheduler job id=weather_recovery_daily trigger=cron time=%s timezone=%s",
+            settings.weather_schedule_time,
+            settings.schedule_timezone,
+        )
+    else:
+        logger.info("weather scheduler disabled by WEATHER_SCHEDULER_ENABLED")
     if settings.current_price_test_interval_seconds:
         if settings.current_price_test_interval_seconds <= 0:
             raise ValueError("CURRENT_PRICE_TEST_INTERVAL_SECONDS must be a positive integer")
