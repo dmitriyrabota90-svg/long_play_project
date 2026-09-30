@@ -102,11 +102,12 @@ def weather_recovery_job() -> None:
     try:
         logger.info("scheduler job started job=weather_recovery")
         result = WeatherRecoveryService().run(mode="regular")
-        logger.info(
+        log = logger.info if result.status in {"success", "dry_run"} else logger.warning
+        log(
             "scheduler job finished job=weather_recovery status=%s requests_completed=%s observations_written=%s "
-            "feature_rows_written=%s backlog_days=%s errors_count=%s",
+            "feature_rows_written=%s backlog_days=%s backlog_remaining_estimate=%s conflicts_count=%s errors_count=%s",
             result.status, result.requests_completed, result.observations_written, result.feature_rows_written,
-            result.plan.backlog_days, len(result.errors),
+            result.plan.backlog_days, result.backlog_remaining_estimate, result.conflicts_count, len(result.errors),
         )
     except Exception:
         logger.exception("scheduler job failed job=weather_recovery")

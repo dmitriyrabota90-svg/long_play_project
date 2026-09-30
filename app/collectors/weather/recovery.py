@@ -9,11 +9,12 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Literal, Sequence
 
 from sqlalchemy import select, text
+from sqlalchemy.engine import Connection, Engine
 
 from app.collectors.weather.open_meteo_historical import OpenMeteoHistoricalWeatherCollector
 from app.config.settings import get_settings
 from app.db.models import WeatherDailyFeature, WeatherObservation, WeatherRegion
-from app.db.session import get_session_factory, session_scope
+from app.db.session import get_engine, session_scope
 from app.features.weather_daily import build_weather_daily_features
 
 
@@ -52,6 +53,9 @@ class WeatherRecoveryResult:
     observations_skipped: int
     feature_rows_written: int
     errors: tuple[str, ...]
+    conflicts_count: int = 0
+    collector_errors_count: int = 0
+    backlog_remaining_estimate: int | None = None
 
 
 def safe_weather_end(*, now: datetime, source_delay_days: int) -> date:
@@ -107,65 +111,185 @@ def plan_weather_recovery(
 class WeatherRecoveryService:
     """Fetch outside database transactions, then persist and build by chunk."""
 
-    def __init__(self, *, collector: OpenMeteoHistoricalWeatherCollector | None = None, clock: Callable[[], datetime] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        collector: OpenMeteoHistoricalWeatherCollector | None = None,
+        clock: Callable[[], datetime] | None = None,
+        database_lock_factory: Callable[[], "_DatabaseWeatherLock"] | None = None,
+    ) -> None:
         self.collector = collector or OpenMeteoHistoricalWeatherCollector()
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.database_lock_factory = database_lock_factory or _DatabaseWeatherLock
 
     def run(self, *, mode: RecoveryMode = "regular", dry_run: bool = False, lower_bound: date | None = None) -> WeatherRecoveryResult:
         if not _LOCAL_LOCK.acquire(blocking=False):
-            plan = self.plan(mode=mode, lower_bound=lower_bound)
-            return WeatherRecoveryResult("skipped_overlap", plan, 0, 0, 0, 0, ("weather recovery already running",))
-        database_lock = _DatabaseWeatherLock()
-        if not database_lock.acquire():
-            _LOCAL_LOCK.release()
-            plan = self.plan(mode=mode, lower_bound=lower_bound)
-            return WeatherRecoveryResult("skipped_overlap", plan, 0, 0, 0, 0, ("weather recovery locked by another worker",))
+            return self._overlap_result(mode=mode, lower_bound=lower_bound, reason="weather recovery already running")
+        database_lock: _DatabaseWeatherLock | None = None
+        acquired = False
+        result: WeatherRecoveryResult | None = None
+        release_error: Exception | None = None
         try:
-            plan = self.plan(mode=mode, lower_bound=lower_bound)
-            if dry_run:
-                return WeatherRecoveryResult("dry_run", plan, 0, 0, 0, 0, ())
-            started = time.monotonic()
-            settings = get_settings()
-            written = skipped = features = completed = 0
-            errors: list[str] = []
-            rebuilt: set[tuple[str, date, date]] = set()
-            for chunk in plan.chunks:
-                if time.monotonic() - started >= settings.weather_max_runtime_seconds:
-                    errors.append("weather runtime budget exhausted")
-                    break
-                region = self._region(chunk.region_code)
-                try:
-                    # HTTP (and retry/backoff) occurs before a database transaction is opened.
-                    response = self.collector.fetch_region_response(region, from_date=chunk.from_date, to_date=chunk.to_date)
-                    collected = self.collector.persist_prefetched_response(
-                        region_code=chunk.region_code, from_date=chunk.from_date, to_date=chunk.to_date,
-                        response=response, run_type="scheduled" if mode == "regular" else "manual",
+            try:
+                database_lock = self.database_lock_factory()
+                acquired = database_lock.acquire()
+            except Exception as exc:
+                result = self._failure_result(mode=mode, lower_bound=lower_bound, message=f"weather lock acquire failed: {exc}")
+            else:
+                if not acquired:
+                    result = self._overlap_result(
+                        mode=mode, lower_bound=lower_bound, reason="weather recovery locked by another worker"
                     )
-                    completed += 1
-                    written += collected.records_written
-                    skipped += collected.skipped_existing
-                    if collected.status == "error":
-                        errors.append(collected.error_message or f"collector error for {chunk.region_code}")
-                        continue
-                    build = build_weather_daily_features(region_code=chunk.region_code, from_date=chunk.from_date, to_date=chunk.to_date)
-                    features += build.rows_created + build.rows_updated
-                    rebuilt.add((chunk.region_code, chunk.from_date, chunk.to_date))
-                except Exception as exc:  # chunk failure is resumable; other regions continue
-                    errors.append(f"{chunk.region_code} {chunk.from_date}..{chunk.to_date}: {exc}")
-            for chunk in plan.feature_rebuild_chunks:
-                marker = (chunk.region_code, chunk.from_date, chunk.to_date)
-                if marker in rebuilt:
-                    continue
-                try:
-                    build = build_weather_daily_features(region_code=chunk.region_code, from_date=chunk.from_date, to_date=chunk.to_date)
-                    features += build.rows_created + build.rows_updated
-                except Exception as exc:
-                    errors.append(f"feature rebuild {chunk.region_code}: {exc}")
-            status = "success" if not errors else ("partial_success" if completed or features else "error")
-            return WeatherRecoveryResult(status, plan, completed, written, skipped, features, tuple(errors))
+                else:
+                    result = self._run_locked(
+                        database_lock=database_lock, mode=mode, dry_run=dry_run, lower_bound=lower_bound
+                    )
         finally:
-            database_lock.release()
+            if acquired and database_lock is not None:
+                try:
+                    database_lock.release()
+                except Exception as exc:
+                    release_error = exc
             _LOCAL_LOCK.release()
+        if release_error is not None:
+            return self._failure_result(
+                mode=mode,
+                lower_bound=lower_bound,
+                message=f"weather lock release failed: {release_error}",
+                previous=result,
+            )
+        assert result is not None
+        return result
+
+    def _run_locked(
+        self,
+        *,
+        database_lock: "_DatabaseWeatherLock",
+        mode: RecoveryMode,
+        dry_run: bool,
+        lower_bound: date | None,
+    ) -> WeatherRecoveryResult:
+        plan = self.plan(mode=mode, lower_bound=lower_bound)
+        if dry_run:
+            return WeatherRecoveryResult("dry_run", plan, 0, 0, 0, 0, (), backlog_remaining_estimate=plan.backlog_days)
+        started = time.monotonic()
+        settings = get_settings()
+        written = skipped = features = completed = conflicts = collector_errors = 0
+        recovered_days = 0
+        errors: list[str] = []
+        rebuilt: set[tuple[str, date, date]] = set()
+        for chunk in plan.chunks:
+            if time.monotonic() - started >= settings.weather_max_runtime_seconds:
+                errors.append("weather runtime budget exhausted")
+                break
+            region = self._region(chunk.region_code)
+            try:
+                # HTTP and retry/backoff complete before a write transaction begins.
+                response = self.collector.fetch_region_response(region, from_date=chunk.from_date, to_date=chunk.to_date)
+                database_lock.assert_owned()
+                collected = self.collector.persist_prefetched_response(
+                    region_code=chunk.region_code,
+                    from_date=chunk.from_date,
+                    to_date=chunk.to_date,
+                    response=response,
+                    run_type="scheduled" if mode == "regular" else "manual",
+                )
+                completed += 1
+                written += collected.records_written
+                skipped += collected.skipped_existing
+                conflicts += collected.conflicts_count
+                collector_errors += collected.errors_count
+                has_collector_problem = (
+                    collected.status != "success"
+                    or collected.conflicts_count > 0
+                    or collected.errors_count > 0
+                )
+                if has_collector_problem:
+                    errors.append(
+                        f"{chunk.region_code} {chunk.from_date}..{chunk.to_date}: "
+                        f"collector status={collected.status} errors={collected.errors_count} "
+                        f"conflicts={collected.conflicts_count}"
+                    )
+                else:
+                    recovered_days += (chunk.to_date - chunk.from_date).days + 1
+                database_lock.assert_owned()
+                build = build_weather_daily_features(
+                    region_code=chunk.region_code, from_date=chunk.from_date, to_date=chunk.to_date
+                )
+                features += build.rows_created + build.rows_updated
+                rebuilt.add((chunk.region_code, chunk.from_date, chunk.to_date))
+            except Exception as exc:  # chunk failure is resumable; other regions continue
+                errors.append(f"{chunk.region_code} {chunk.from_date}..{chunk.to_date}: {exc}")
+                if not database_lock.is_owned():
+                    errors.append("weather lock ownership lost; stopping before further writes")
+                    break
+        for chunk in plan.feature_rebuild_chunks:
+            marker = (chunk.region_code, chunk.from_date, chunk.to_date)
+            if marker in rebuilt:
+                continue
+            try:
+                database_lock.assert_owned()
+                build = build_weather_daily_features(
+                    region_code=chunk.region_code, from_date=chunk.from_date, to_date=chunk.to_date
+                )
+                features += build.rows_created + build.rows_updated
+            except Exception as exc:
+                errors.append(f"feature rebuild {chunk.region_code}: {exc}")
+                if not database_lock.is_owned():
+                    errors.append("weather lock ownership lost; stopping before further writes")
+                    break
+        backlog_after = max(0, plan.backlog_days - recovered_days)
+        status = "success" if not errors else ("partial_success" if completed or features else "error")
+        if status == "success" and plan.budget_exhausted:
+            status = "success_with_backlog"
+        return WeatherRecoveryResult(
+            status,
+            plan,
+            completed,
+            written,
+            skipped,
+            features,
+            tuple(errors),
+            conflicts_count=conflicts,
+            collector_errors_count=collector_errors,
+            backlog_remaining_estimate=backlog_after,
+        )
+
+    def _overlap_result(self, *, mode: RecoveryMode, lower_bound: date | None, reason: str) -> WeatherRecoveryResult:
+        return WeatherRecoveryResult(
+            "skipped_overlap", self._safe_plan(mode=mode, lower_bound=lower_bound), 0, 0, 0, 0, (reason,)
+        )
+
+    def _failure_result(
+        self,
+        *,
+        mode: RecoveryMode,
+        lower_bound: date | None,
+        message: str,
+        previous: WeatherRecoveryResult | None = None,
+    ) -> WeatherRecoveryResult:
+        plan = previous.plan if previous else self._safe_plan(mode=mode, lower_bound=lower_bound)
+        errors = (*((previous.errors) if previous else ()), message)
+        return WeatherRecoveryResult(
+            "error",
+            plan,
+            previous.requests_completed if previous else 0,
+            previous.observations_written if previous else 0,
+            previous.observations_skipped if previous else 0,
+            previous.feature_rows_written if previous else 0,
+            errors,
+            conflicts_count=previous.conflicts_count if previous else 0,
+            collector_errors_count=previous.collector_errors_count if previous else 0,
+            backlog_remaining_estimate=(previous.backlog_remaining_estimate if previous else plan.backlog_days),
+        )
+
+    def _safe_plan(self, *, mode: RecoveryMode, lower_bound: date | None) -> WeatherRecoveryPlan:
+        try:
+            return self.plan(mode=mode, lower_bound=lower_bound)
+        except Exception:
+            today = self.clock().astimezone(timezone.utc).date()
+            lower = lower_bound or today
+            return WeatherRecoveryPlan(mode, lower, lower, (), (), 0, 0, 0, False)
 
     def plan(self, *, mode: RecoveryMode, lower_bound: date | None = None) -> WeatherRecoveryPlan:
         settings = get_settings()
@@ -222,37 +346,68 @@ class _DatabaseWeatherLock:
 
     SQLite has no compatible inter-process advisory lock, so local development
     intentionally retains only the process lock above. Production uses PostgreSQL.
-    The held session executes no transaction while HTTP is in flight.
+    The held connection executes no transaction while HTTP is in flight.
     """
 
-    def __init__(self) -> None:
-        self.session = None
+    def __init__(self, *, engine: Engine | None = None) -> None:
+        self.engine = engine
+        self.connection: Connection | None = None
         self.postgres = False
+        self.backend_pid: int | None = None
 
     def acquire(self) -> bool:
-        session = get_session_factory()()
-        self.session = session
-        self.postgres = session.bind is not None and session.bind.dialect.name == "postgresql"
+        engine = self.engine or get_engine()
+        self.postgres = engine.dialect.name == "postgresql"
         if not self.postgres:
-            session.close()
-            self.session = None
             return True
-        acquired = bool(session.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": _POSTGRES_LOCK_KEY}))
-        # Session-level advisory locks survive commit; release the implicit read
-        # transaction before HTTP work begins.
-        session.commit()
-        if not acquired:
-            session.close()
-            self.session = None
-        return acquired
+        connection = engine.connect()
+        try:
+            acquired = bool(connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": _POSTGRES_LOCK_KEY}))
+            # A session-level advisory lock survives commit, while the checked-out
+            # Connection remains pinned to its physical PostgreSQL backend.
+            connection.commit()
+            if not acquired:
+                connection.close()
+                return False
+            self.connection = connection
+            self.backend_pid = int(connection.scalar(text("SELECT pg_backend_pid()")))
+            connection.commit()
+            return True
+        except Exception:
+            connection.rollback()
+            connection.close()
+            raise
+
+    def is_owned(self) -> bool:
+        if not self.postgres:
+            return True
+        if self.connection is None or self.connection.closed or self.backend_pid is None:
+            return False
+        try:
+            current_pid = int(self.connection.scalar(text("SELECT pg_backend_pid()")))
+            self.connection.commit()
+            return current_pid == self.backend_pid
+        except Exception:
+            return False
+
+    def assert_owned(self) -> None:
+        if not self.is_owned():
+            raise RuntimeError("weather advisory lock ownership is unavailable")
 
     def release(self) -> None:
-        if self.session is None:
+        if not self.postgres:
             return
+        connection = self.connection
+        self.connection = None
+        self.backend_pid = None
+        if connection is None:
+            raise RuntimeError("weather advisory lock connection is unavailable during release")
         try:
-            if self.postgres:
-                self.session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _POSTGRES_LOCK_KEY})
-                self.session.commit()
+            if connection.closed:
+                raise RuntimeError("weather advisory lock connection closed before release")
+            unlocked = bool(connection.scalar(text("SELECT pg_advisory_unlock(:key)"), {"key": _POSTGRES_LOCK_KEY}))
+            connection.commit()
+            if not unlocked:
+                raise RuntimeError("weather advisory lock was not owned by this connection")
         finally:
-            self.session.close()
-            self.session = None
+            connection.close()
