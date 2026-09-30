@@ -1,0 +1,27 @@
+{
+  "freeze_date": "2026-09-30",
+  "source": "Sina via AKShare",
+  "instrument": "Y0",
+  "series_type": "daily main continuous series",
+  "raw": {
+    "path": "/home/dmitriy/Projects/parser_dataset/historical_research/raw/akshare_sina/Y0_47f1f8519b87.jsonp",
+    "sha256": "47f1f8519b87ad8d002a5f5771f4bccd821b16990e494953fb9a6fec5208dd78",
+    "fetched_at": "2026-09-30T12:01:11+00:00"
+  },
+  "normalized": {
+    "path": "/home/dmitriy/Projects/parser_dataset/historical_research/normalized/akshare_sina/soybean_oil_Y0_full_quality_checked_47f1f8519b87.csv",
+    "sha256": "207b81576fa3db273cb8bb3e9a06ce91c95c0cc6481ce880661491ddaffe97b5",
+    "actual_start": "2006-01-09",
+    "actual_end": "2026-09-30",
+    "row_count": 5036
+  },
+  "final_run": "/home/dmitriy/Projects/parser_dataset/historical_research/experiments/historical_y0_v1/20260930T125500Z_final/",
+  "numerical_result_sha256": {
+    "HISTORICAL_Y0_BASELINE_REPORT.md": "74f39ec4cd2d76d0cd8871e0f4ccf56db3fb7906ddbc3ca2994b268eccb402a0",
+    "supervised_samples.csv": "1df7064278475d5488c1bffde4e57782ac3499b8810ee95c524bbfbf16d2d6ca",
+    "split_manifest.json": "998250d35375991c9004944d0e072c2bc48d4a96595b59389958b0fb0c00e007",
+    "metrics.csv": "eff0908f2bb1b1c270485b098ecf5b7c4f7bb56755105fb9307cdae229f1ef0f",
+    "test_predictions.csv": "c7d5d86894499e4ff05d719a957d36809e52aa9658703feb970e0f4624d82175",
+    "bootstrap_summary.json": "e9a9d41e9aac625dabaf7ac38dee210343d95129455f363a0c60bc294fe7e15e"
+  }
+}

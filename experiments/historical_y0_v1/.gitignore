@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.venv/
+venv/
+
+# Never version downloaded quotes or generated run artifacts.
+data/
+results/
+runs/
+artifacts/
+models/
+*.joblib
+supervised_samples.csv
+excluded_samples.csv
+test_predictions.csv
+metrics.csv
+bootstrap_summary.json
+run_metadata.json
+input_reference.json
+feature_summary.csv
+yearly_coverage.csv
+alpha_validation.csv
+split_manifest.json

@@ -1,0 +1,80 @@
+{
+  "status": "CONFIRMED_FROM_EXISTING_RUNS",
+  "verified_on": "2026-09-30",
+  "runs": {
+    "final": "20260930T125500Z_final",
+    "reproducibility": "20260930T124500Z_repro"
+  },
+  "shared_input": {
+    "raw_sha256": "47f1f8519b87ad8d002a5f5771f4bccd821b16990e494953fb9a6fec5208dd78",
+    "normalized_sha256": "207b81576fa3db273cb8bb3e9a06ce91c95c0cc6481ce880661491ddaffe97b5",
+    "parameters_equal": true,
+    "selected_alpha_equal": true,
+    "selected_alpha": 100.0
+  },
+  "verified_files": [
+    {
+      "name": "supervised_samples.csv",
+      "final_sha256": "1df7064278475d5488c1bffde4e57782ac3499b8810ee95c524bbfbf16d2d6ca",
+      "repro_sha256": "1df7064278475d5488c1bffde4e57782ac3499b8810ee95c524bbfbf16d2d6ca",
+      "byte_identical": true,
+      "semantic_equal": true,
+      "max_abs_numeric_difference": 0.0
+    },
+    {
+      "name": "split_manifest.json",
+      "final_sha256": "998250d35375991c9004944d0e072c2bc48d4a96595b59389958b0fb0c00e007",
+      "repro_sha256": "998250d35375991c9004944d0e072c2bc48d4a96595b59389958b0fb0c00e007",
+      "byte_identical": true,
+      "semantic_equal": true,
+      "max_abs_numeric_difference": 0.0
+    },
+    {
+      "name": "alpha_validation.csv",
+      "final_sha256": "ab461b0577441ef793ca60822ec3ad5cd61b4242e6a961daee087e1cd6b4039c",
+      "repro_sha256": "ab461b0577441ef793ca60822ec3ad5cd61b4242e6a961daee087e1cd6b4039c",
+      "byte_identical": true,
+      "semantic_equal": true,
+      "max_abs_numeric_difference": 0.0
+    },
+    {
+      "name": "metrics.csv",
+      "final_sha256": "eff0908f2bb1b1c270485b098ecf5b7c4f7bb56755105fb9307cdae229f1ef0f",
+      "repro_sha256": "eff0908f2bb1b1c270485b098ecf5b7c4f7bb56755105fb9307cdae229f1ef0f",
+      "byte_identical": true,
+      "semantic_equal": true,
+      "max_abs_numeric_difference": 0.0,
+      "note": "NaN values occupy identical positions; byte identity is stronger than a numeric tolerance comparison."
+    },
+    {
+      "name": "test_predictions.csv",
+      "final_sha256": "c7d5d86894499e4ff05d719a957d36809e52aa9658703feb970e0f4624d82175",
+      "repro_sha256": "c7d5d86894499e4ff05d719a957d36809e52aa9658703feb970e0f4624d82175",
+      "byte_identical": true,
+      "semantic_equal": true,
+      "max_abs_numeric_difference": 0.0
+    },
+    {
+      "name": "bootstrap_summary.json",
+      "final_sha256": "e9a9d41e9aac625dabaf7ac38dee210343d95129455f363a0c60bc294fe7e15e",
+      "repro_sha256": "e9a9d41e9aac625dabaf7ac38dee210343d95129455f363a0c60bc294fe7e15e",
+      "byte_identical": true,
+      "semantic_equal": true,
+      "max_abs_numeric_difference": 0.0
+    }
+  ],
+  "semantic_checks": [
+    "sample keys and targets",
+    "split membership",
+    "selected alpha",
+    "predictions",
+    "numeric metrics",
+    "bootstrap parameters and results"
+  ],
+  "intentionally_excluded": [
+    "run identifiers and output paths",
+    "created_at timestamps and full run_metadata.json",
+    "human report text that records per-run test-summary wording",
+    "binary ridge_model.joblib"
+  ]
+}
