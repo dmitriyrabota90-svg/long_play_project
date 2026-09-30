@@ -1,0 +1,25 @@
+{
+  "snapshot": {
+    "relative_path": "data/dataset_snapshot.csv",
+    "sha256": "6e4d8457ac2eb5f2fd81b100f6cd5a8901970c360d7da3b1f71786bf6f683269",
+    "row_count": 416,
+    "min_feature_date": "2026-05-20",
+    "max_feature_date": "2026-09-29",
+    "products": [
+      "rapeseed_meal",
+      "rapeseed_oil",
+      "soybean_oil",
+      "soybean_meal"
+    ],
+    "production_commit": "2284aeba2a4fef45a269f0e9116a046119fe33e8",
+    "extraction_timestamp": "2026-09-30T09:09:46+00:00"
+  },
+  "key_result_sha256": {
+    "reports/SMOKE_TEST_REPORT.md": "5b1d70d0211bbebe90a9980bcad55aed4be8a4a2fafc2c7d0d647891c2f92888",
+    "reports/data_validation.json": "8423d15d7b406c983b4f8764f4bb48cafc548cd48b407dd9c4fe8836af54c3be",
+    "reports/metrics.csv": "d13d7ff49fc90faee7a1a33c579400f1fcf429ed508edf90651bd82cb22a0c4d",
+    "reports/predictions.csv": "4f2ba7a666f323863de2954614581435232390603c5af365ee9dd46402ecc3d8",
+    "reports/feature_summary.csv": "37772b50d4da38d5543007e6411aa77fa9294f1c6ca76f4a5f4164d9a74f261b",
+    "reports/run_summary.json": "544f1c4a91797e3c9b6f1175066d8ceea59489e93882ae0e58ea80c8c9e9e562"
+  }
+}

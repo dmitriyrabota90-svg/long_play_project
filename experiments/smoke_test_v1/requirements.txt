@@ -1,0 +1,3 @@
+# Isolated local environment used to freeze Phase 9.0 on Python 3.14.4.
+numpy==2.5.3
+pytest==9.1.1

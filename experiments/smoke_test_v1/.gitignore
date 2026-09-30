@@ -1,0 +1,15 @@
+# Production-derived and rerunnable experiment outputs remain local only.
+data/
+reports/
+models/
+artifacts/
+
+# Local environments and secrets.
+.env
+.env.*
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.pem
+*.key
