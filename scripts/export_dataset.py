@@ -13,6 +13,7 @@ os.chdir(PROJECT_ROOT)
 
 from app.config.logging import setup_logging
 from app.exports.daily_features_export import EXPORT_NAME, DatasetExportError, export_daily_features
+from app.exports.daily_slice_evidence_export import export_daily_slice_evidence
 
 
 def _parse_date(value: str) -> date:
@@ -32,6 +33,10 @@ def _build_parser() -> argparse.ArgumentParser:
     daily.add_argument("--to-date", type=_parse_date, default=None, help="Inclusive end date YYYY-MM-DD.")
     daily.add_argument("--format", choices=["csv", "parquet", "both"], default="csv", help="Output format.")
     daily.add_argument("--output-dir", type=Path, default=None, help="Output directory under data/exports.")
+    evidence = subparsers.add_parser("daily_slice_evidence", help="Explicit immutable daily-slice provenance sidecar.")
+    evidence.add_argument("--from-date", type=_parse_date, default=None, help="Inclusive start date YYYY-MM-DD.")
+    evidence.add_argument("--to-date", type=_parse_date, default=None, help="Inclusive end date YYYY-MM-DD.")
+    evidence.add_argument("--output-dir", type=Path, required=True, help="Explicit output directory; never changes daily CSV contract.")
     return parser
 
 
@@ -52,6 +57,13 @@ def main() -> None:
                 export_format=args.format,
                 output_dir=args.output_dir,
             )
+        elif args.command == "daily_slice_evidence":
+            result = export_daily_slice_evidence(from_date=args.from_date, to_date=args.to_date, output_dir=args.output_dir)
+            print(f"evidence_path={result.evidence_path}")
+            print(f"manifest_path={result.manifest_path}")
+            print(f"row_count={result.row_count}")
+            print(f"sha256={result.sha256}")
+            return
         else:
             parser.error(f"Unsupported command: {args.command}")
             return

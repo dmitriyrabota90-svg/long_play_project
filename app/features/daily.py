@@ -31,6 +31,12 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.features.supply_demand_daily import SUPPLY_DEMAND_NUMERIC_FIELDS
+from app.features.daily_slice_provenance import (
+    DailySliceProvenanceError,
+    confirm_readiness_after_commit,
+    create_build_run,
+    record_slice_revision,
+)
 from app.features.trade_daily import TRADE_NUMERIC_FIELDS
 
 
@@ -270,6 +276,8 @@ class DailyFeatureBuildResult:
     rows_skipped: int = 0
     missing_fx_dates: list[str] = field(default_factory=list)
     warnings_count: int = 0
+    build_run_id: int | None = None
+    slice_revision_ids: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -288,7 +296,11 @@ class _PriceDay:
 
     @property
     def last(self) -> PriceObservation:
-        return self.ordered[-1]
+        ordered = self.ordered
+        latest = ordered[-1]
+        if len(ordered) > 1 and _to_utc(ordered[-2].observed_at) == _to_utc(latest.observed_at):
+            raise DailySliceProvenanceError("ambiguous price_last: multiple observations share the latest observed_at")
+        return latest
 
 
 @dataclass(frozen=True)
@@ -350,7 +362,12 @@ def build_daily_features(
 ) -> DailyFeatureBuildResult:
     if session is None:
         with session_scope() as scoped_session:
-            return _build_daily_features_with_session(scoped_session, from_date=from_date, to_date=to_date)
+            result = _build_daily_features_with_session(scoped_session, from_date=from_date, to_date=to_date)
+        # This independent transaction is entered only after the feature/revision transaction committed.
+        if result.slice_revision_ids:
+            with session_scope() as confirmation_session:
+                confirm_readiness_after_commit(confirmation_session, revision_ids=result.slice_revision_ids)
+        return result
     return _build_daily_features_with_session(session, from_date=from_date, to_date=to_date)
 
 
@@ -389,6 +406,9 @@ def _build_daily_features_with_session(
     missing_fx_dates: set[str] = set()
     warnings_count = 0
     checked_at = datetime.now(timezone.utc)
+    build_mode = "rebuild" if from_date is not None or to_date is not None else "regular"
+    build_run = create_build_run(session, build_mode=build_mode, feature_builder_version=FEATURE_VERSION, started_at=checked_at)
+    slice_revision_ids: list[int] = []
 
     for (product_id, feature_date), price_day in sorted(price_days.items(), key=lambda item: (item[0][1], item[0][0])):
         values, warning_names = _feature_values(
@@ -412,16 +432,27 @@ def _build_daily_features_with_session(
             .limit(1)
         )
         if existing is None:
-            session.add(DailyProductFeature(product_id=product_id, feature_date=feature_date, **values))
+            feature = DailyProductFeature(product_id=product_id, feature_date=feature_date, **values)
+            session.add(feature)
             rows_created += 1
         elif _feature_row_needs_update(existing, values):
             for key, value in values.items():
                 setattr(existing, key, value)
             existing.updated_at = checked_at
+            feature = existing
             rows_updated += 1
         else:
+            feature = existing
             rows_skipped += 1
         session.flush()
+        revision = record_slice_revision(
+            session,
+            build_run=build_run,
+            feature=feature,
+            selected_observation=price_day.last,
+            content=feature.features_json,
+        )
+        slice_revision_ids.append(revision.id)
         _write_feature_quality_checks(
             session,
             product_id=product_id,
@@ -438,6 +469,8 @@ def _build_daily_features_with_session(
         rows_skipped=rows_skipped,
         missing_fx_dates=sorted(missing_fx_dates),
         warnings_count=warnings_count,
+        build_run_id=build_run.id,
+        slice_revision_ids=slice_revision_ids,
     )
 
 

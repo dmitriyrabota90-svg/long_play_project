@@ -137,6 +137,7 @@ class PriceObservation(Base):
     unit: Mapped[str] = mapped_column(String(100), nullable=False)
     basis: Mapped[str | None] = mapped_column(String(255), nullable=True)
     delivery_period: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_time_metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -1251,6 +1252,63 @@ class DailyProductFeature(Base):
     )
 
     product: Mapped[Product] = relationship()
+
+
+class DailySliceBuildRun(Base):
+    """One attempted daily-feature build; revisions remain pending until post-commit confirmation."""
+
+    __tablename__ = "daily_slice_build_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    build_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    feature_builder_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class DailySliceRevision(Base):
+    """Immutable price-lineage and slice-content evidence for one build result."""
+
+    __tablename__ = "daily_slice_revisions"
+    __table_args__ = (
+        UniqueConstraint("build_run_id", "daily_product_feature_id", name="uq_daily_slice_revision_run_feature"),
+        Index("ix_daily_slice_revision_product_date", "product_id", "feature_date"),
+        Index("ix_daily_slice_revision_ready", "readiness_confirmed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    build_run_id: Mapped[int] = mapped_column(ForeignKey("daily_slice_build_runs.id"), nullable=False)
+    daily_product_feature_id: Mapped[int] = mapped_column(ForeignKey("daily_product_features.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    feature_date: Mapped[date] = mapped_column(Date, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    slice_content_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    logical_data_cutoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    readiness_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    selected_price_observation_id: Mapped[int] = mapped_column(ForeignKey("price_observations.id"), nullable=False)
+    selected_raw_response_id: Mapped[int | None] = mapped_column(ForeignKey("raw_responses.id"), nullable=True)
+    product_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    external_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    price_value: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    price_currency: Mapped[str] = mapped_column(String(16), nullable=False)
+    price_unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    observation_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collection_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    build_run: Mapped[DailySliceBuildRun] = relationship()
+    product: Mapped[Product] = relationship()
+    source: Mapped[Source] = relationship()
+    selected_price_observation: Mapped[PriceObservation] = relationship()
+    selected_raw_response: Mapped[RawResponse | None] = relationship()
 
 
 class DatasetExport(Base):

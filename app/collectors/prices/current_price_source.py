@@ -18,6 +18,7 @@ from app.collectors.prices.current_price_config import (
     CURRENT_PRICE_INSTRUMENTS,
     CurrentPriceInstrument,
 )
+from app.collectors.prices.jijinhao_quote_extractor import QuoteExtractionError, extract_quote
 from app.db.models import (
     CollectorRun,
     DataQualityCheck,
@@ -289,7 +290,7 @@ class CurrentPriceSourceCollector(BaseCollector):
             return InstrumentResult(error=message)
 
         try:
-            price = parse_price_response(instrument, response.content)
+            price, source_time_metadata = parse_price_record(instrument, response.content)
         except PriceParseError as exc:
             _write_price_quality_checks(
                 session,
@@ -359,6 +360,7 @@ class CurrentPriceSourceCollector(BaseCollector):
                 unit=instrument.unit,
                 basis=None,
                 delivery_period=None,
+                source_time_metadata_json=source_time_metadata,
                 source_record_hash=source_record_hash,
             )
         )
@@ -413,13 +415,40 @@ class CurrentPriceSourceCollector(BaseCollector):
 
 
 def parse_price_response(instrument: CurrentPriceInstrument, payload: bytes | str) -> Decimal:
+    return parse_price_record(instrument, payload)[0]
+
+
+def parse_price_record(instrument: CurrentPriceInstrument, payload: bytes | str) -> tuple[Decimal, dict[str, Any] | None]:
+    if instrument.external_code == "JO_165951":
+        try:
+            extraction = extract_quote(payload)
+        except QuoteExtractionError as exc:
+            raise PriceParseError(str(exc)) from exc
+        return extraction.price, {
+            "schema_version": "jijinhao_quote_time_v1",
+            "source_symbol": extraction.source_symbol,
+            "raw_sha256": extraction.raw_sha256,
+            "primary_time_semantics": extraction.primary_time_semantics,
+            "primary_time_basis": extraction.primary_time_basis,
+            "primary_time": {
+                "raw_date": extraction.primary_time.raw_date, "raw_time": extraction.primary_time.raw_time,
+                "normalized_civil": extraction.primary_time.normalized_civil, "precision": extraction.primary_time.precision,
+                "timezone": None, "status": extraction.primary_time.status, "error": extraction.primary_time.error,
+            },
+            "secondary_time_semantics": extraction.secondary_time_semantics,
+            "secondary_time": {
+                "raw_date": extraction.secondary_time.raw_date, "raw_time": extraction.secondary_time.raw_time,
+                "normalized_civil": extraction.secondary_time.normalized_civil, "precision": extraction.secondary_time.precision,
+                "timezone": None, "status": extraction.secondary_time.status, "error": extraction.secondary_time.error,
+            },
+        }
     text = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else payload
     body = _strip_response_prefix(text, instrument.response_prefix)
 
     if instrument.parser_type == "json":
-        return _parse_json_price(instrument, body)
+        return _parse_json_price(instrument, body), None
     if instrument.parser_type == "csv":
-        return _parse_csv_price(instrument, body)
+        return _parse_csv_price(instrument, body), None
     raise PriceParseError(f"unsupported parser_type: {instrument.parser_type}")
 
 

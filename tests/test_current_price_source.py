@@ -14,6 +14,7 @@ from app.collectors.prices.current_price_source import (
     CurrentPriceSourceCollector,
     PriceParseError,
     build_source_record_hash,
+    parse_price_record,
     parse_price_response,
 )
 from app.db.models import Base, CollectorRun, DataQualityCheck, PriceObservation
@@ -32,9 +33,21 @@ def test_parse_json_response_for_rapeseed_oil() -> None:
 
 
 def test_parse_csv_response_for_soybean_oil() -> None:
-    payload = 'var hq_str_JO_165951 = "name,open,high,8123.50,low";'
+    payload = 'var hq_str_JO_165951 = "' + ",".join(["name", "open", "high", "8123.50"] + ["0"] * 39) + '";'
 
     assert parse_price_response(instrument("soybean_oil"), payload) == Decimal("8123.50")
+
+
+def test_soybean_oil_record_preserves_source_time_metadata() -> None:
+    fields = ["0"] * 43
+    fields[3], fields[30], fields[31], fields[40], fields[41] = "8123.50", "2026-10-01", "14:59:59", "2026-09-30", "15:00:00"
+    price, metadata = parse_price_record(instrument("soybean_oil"), 'var hq_str_JO_165951 = "' + ",".join(fields) + '";')
+
+    assert price == Decimal("8123.50")
+    assert metadata is not None
+    assert metadata["primary_time"]["raw_time"] == "14:59:59"
+    assert metadata["primary_time"]["timezone"] is None
+    assert metadata["secondary_time"]["status"] == "PARSED"
 
 
 def test_parse_csv_response_for_rapeseed_meal() -> None:
@@ -81,7 +94,7 @@ def test_parse_error_missing_price_path() -> None:
 def test_parse_error_price_index_out_of_range() -> None:
     payload = 'var hq_str_JO_165951 = "name,open";'
 
-    with pytest.raises(PriceParseError, match="price_index out of range"):
+    with pytest.raises(PriceParseError, match="unexpected field count"):
         parse_price_response(instrument("soybean_oil"), payload)
 
 
